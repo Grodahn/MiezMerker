@@ -1,0 +1,13 @@
+.tools/
+.m2/
+build/
+target/
+node_modules/
+dist/
+playwright-report/
+test-results/
+*.log
+*.tsbuildinfo
+.env
+.idea/
+.vscode/

@@ -1,0 +1,83 @@
+name: Foundation CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+  application:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_DB: miezmerker
+          POSTGRES_USER: miezmerker
+          POSTGRES_PASSWORD: miezmerker
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U miezmerker"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Backend build and portable tests; export OpenAPI
+        working-directory: backend
+        run: ./mvnw -B -ntp verify
+      - name: Backend tests against PostgreSQL
+        working-directory: backend
+        env:
+          TEST_DB_URL: jdbc:postgresql://localhost:5432/miezmerker
+          TEST_DB_USER: miezmerker
+          TEST_DB_PASSWORD: miezmerker
+        run: ./mvnw -B -ntp test
+      - working-directory: app
+        run: npm ci
+      - name: Check backend spec and generated TypeScript client for drift
+        working-directory: app
+        run: |
+          npm run api:check
+          npm run api:check
+      - working-directory: app
+        run: npm test
+      - working-directory: app
+        run: npm run build
+      - name: Start packaged backend
+        run: |
+          java -jar backend/target/backend-0.1.0-SNAPSHOT.jar > backend.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8080/api/v1/health; then exit 0; fi
+            sleep 1
+          done
+          cat backend.log
+          exit 1
+      - working-directory: app
+        run: npx playwright install --with-deps chromium
+      - name: Offline collector and same-origin integration
+        working-directory: app
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: failure-diagnostics
+          path: |
+            backend.log
+            backend/target/surefire-reports/
+            app/test-results/

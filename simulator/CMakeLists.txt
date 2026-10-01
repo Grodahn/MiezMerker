@@ -1,0 +1,8 @@
+add_executable(miezmerker-simulator main.cpp)
+target_link_libraries(miezmerker-simulator PRIVATE firmware-core)
+if(BUILD_TESTING)
+  add_test(NAME simulator COMMAND miezmerker-simulator)
+  set_tests_properties(simulator PROPERTIES PASS_REGULAR_EXPRESSION "core ready")
+  add_test(NAME simulator-storage-unavailable COMMAND miezmerker-simulator --storage-unavailable)
+  set_tests_properties(simulator-storage-unavailable PROPERTIES WILL_FAIL TRUE)
+endif()

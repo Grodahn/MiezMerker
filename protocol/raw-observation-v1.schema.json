@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:miezmerker:ble:raw-observation:v1",
+  "title": "Logical BLE raw observation v1 (not an HTTP DTO or GATT frame)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "node_id", "incarnation", "sequence", "chip_id", "monotonic_ms", "observed_at_epoch_ms", "clock_status"],
+  "properties": {
+    "protocol_version": { "const": 1 },
+    "node_id": { "type": "string", "minLength": 1 },
+    "incarnation": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "chip_id": { "type": "string", "minLength": 1 },
+    "monotonic_ms": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "observed_at_epoch_ms": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+    "clock_status": { "enum": ["known", "unknown"] }
+  },
+  "allOf": [{
+    "if": { "properties": { "clock_status": { "const": "known" } } },
+    "then": { "properties": { "observed_at_epoch_ms": { "type": "string" } } },
+    "else": { "properties": { "observed_at_epoch_ms": { "type": "null" } } }
+  }]
+}
