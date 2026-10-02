@@ -21,6 +21,7 @@ import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
 import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationMembership;
+import org.miezmerker.backend.domain.NodeDevice;
 import org.miezmerker.backend.repo.AppDeviceRepository;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
@@ -279,6 +280,94 @@ class NodeClaimTest {
         var res = post("/api/v1/nodes/claim", fakeJson);
         // Same nodeId with a different device key: identity collision -> conflict, no takeover.
         assertEquals(409, res.statusCode(), res.body());
+    }
+
+    @Test
+    void sameOwnerCanRecoverReceiptWithOriginalExpiredProof() throws Exception {
+        Seed s = seed();
+        NodeKeys n = NodeKeys.fresh();
+        NodeDevice committed = new NodeDevice(n.nodeId(), n.x(), n.y(),
+                EcKeyUtils.fingerprintOfXY(n.x(), n.y()), "test-1");
+        committed.claim(s.orgA());
+        nodes.save(committed);
+        long ts = Instant.now().minusSeconds(3600).toEpochMilli();
+        String sig = NodeClaimVerifier.signClaim(n.kp().getPrivate(), n.nodeId(), n.x(), n.y(), ts);
+        login("admin-a@example.org", "supersecret-password-a");
+        assertEquals(200, post("/api/v1/nodes/claim",
+                claimJson(n, s.orgA().getId(), ts, sig)).statusCode());
+        String wrong = NodeClaimVerifier.signClaim(EcKeyUtils.generateP256().getPrivate(),
+                n.nodeId(), n.x(), n.y(), ts);
+        assertEquals(403, post("/api/v1/nodes/claim",
+                claimJson(n, s.orgA().getId(), ts, wrong)).statusCode());
+        login("admin-b@example.org", "supersecret-password-b");
+        assertEquals(403, post("/api/v1/nodes/claim",
+                claimJson(n, s.orgB().getId(), ts, sig)).statusCode());
+        assertEquals(s.orgA().getId(), nodes.findById(n.nodeId()).orElseThrow()
+                .getOrganization().getId());
+    }
+
+    @Test
+    void concurrentClaimsCannotOverwriteOwnership() throws Exception {
+        // Cover both an absent factory-new identity and a pre-registered UNCLAIMED row.
+        for (boolean preregistered : new boolean[] {false, true}) {
+            Seed s = seed();
+            NodeKeys n = NodeKeys.fresh();
+            if (preregistered) nodes.save(new NodeDevice(n.nodeId(), n.x(), n.y(),
+                    EcKeyUtils.fingerprintOfXY(n.x(), n.y()), "test-1"));
+            login("admin-a@example.org", "supersecret-password-a");
+            HttpClient clientA = client;
+            String tokenA = csrf();
+            http();
+            login("admin-b@example.org", "supersecret-password-b");
+            HttpClient clientB = client;
+            String tokenB = csrf();
+            long ts = Instant.now().toEpochMilli();
+            String sig = NodeClaimVerifier.signClaim(n.kp().getPrivate(), n.nodeId(), n.x(), n.y(), ts);
+            var requestA = HttpRequest.newBuilder(URI.create(base("/api/v1/nodes/claim")))
+                    .header("Content-Type", "application/json").header("X-XSRF-TOKEN", tokenA)
+                    .POST(HttpRequest.BodyPublishers.ofString(claimJson(n, s.orgA().getId(), ts, sig))).build();
+            var requestB = HttpRequest.newBuilder(URI.create(base("/api/v1/nodes/claim")))
+                    .header("Content-Type", "application/json").header("X-XSRF-TOKEN", tokenB)
+                    .POST(HttpRequest.BodyPublishers.ofString(claimJson(n, s.orgB().getId(), ts, sig))).build();
+            var a = clientA.sendAsync(requestA, HttpResponse.BodyHandlers.ofString());
+            var b = clientB.sendAsync(requestB, HttpResponse.BodyHandlers.ofString());
+            var responseA = a.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            var responseB = b.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(java.util.Set.of(200, 409),
+                    java.util.Set.of(responseA.statusCode(), responseB.statusCode()));
+            UUID winner = responseA.statusCode() == 200 ? s.orgA().getId() : s.orgB().getId();
+            assertEquals(winner, nodes.findById(n.nodeId()).orElseThrow().getOrganization().getId());
+            assertEquals(1, nodes.count());
+        }
+    }
+
+    @Test
+    void inactiveAdminsCannotClaim() throws Exception {
+        for (MembershipStatus status : new MembershipStatus[] {
+                MembershipStatus.PENDING, MembershipStatus.DISABLED}) {
+            Seed s = seed();
+            AppUser inactive = users.save(new AppUser("inactive@example.org", passwords.encode("inactive-password")));
+            memberships.save(new OrganizationMembership(s.orgA(), inactive, MembershipRole.ADMIN, status));
+            http();
+            login("inactive@example.org", "inactive-password");
+            NodeKeys n = NodeKeys.fresh();
+            long ts = Instant.now().toEpochMilli();
+            String sig = NodeClaimVerifier.signClaim(n.kp().getPrivate(), n.nodeId(), n.x(), n.y(), ts);
+            assertEquals(403, post("/api/v1/nodes/claim", claimJson(n, s.orgA().getId(), ts, sig)).statusCode());
+            assertEquals(0, nodes.count());
+        }
+    }
+
+    @Test
+    void rejectsNonRandomNodeIdentity() throws Exception {
+        Seed s = seed();
+        login("admin-a@example.org", "supersecret-password-a");
+        NodeKeys generated = NodeKeys.fresh();
+        NodeKeys n = new NodeKeys(new UUID(0, 1), generated.kp(), generated.x(), generated.y());
+        long ts = Instant.now().toEpochMilli();
+        String sig = NodeClaimVerifier.signClaim(n.kp().getPrivate(), n.nodeId(), n.x(), n.y(), ts);
+        assertEquals(400, post("/api/v1/nodes/claim", claimJson(n, s.orgA().getId(), ts, sig)).statusCode());
+        assertEquals(0, nodes.count());
     }
 
     @Test

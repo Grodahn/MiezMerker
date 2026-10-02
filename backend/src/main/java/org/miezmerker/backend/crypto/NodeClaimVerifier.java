@@ -33,11 +33,16 @@ public class NodeClaimVerifier {
 
     public void verify(UUID nodeId, String x, String y, long timestampMillis,
             String signatureB64u) {
+        verify(nodeId, x, y, timestampMillis, signatureB64u, true);
+    }
+
+    public void verify(UUID nodeId, String x, String y, long timestampMillis,
+            String signatureB64u, boolean requireFresh) {
         if (timestampMillis <= 0) {
             throw new IllegalArgumentException("missing timestamp");
         }
         long age = Math.abs(Instant.now().toEpochMilli() - timestampMillis);
-        if (age > FRESHNESS_MILLIS) {
+        if (requireFresh && age > FRESHNESS_MILLIS) {
             throw new IllegalArgumentException("stale claim advertisement");
         }
         byte[] sig;

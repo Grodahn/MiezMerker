@@ -14,9 +14,15 @@ sequence**, persisted via the `NodeIdentityStore` port. Never BLE MAC, ESP MAC, 
 PK or FeedingSite ID.
 
 - Reboot/power loss/firmware update: identity and sequence are reloaded unchanged.
-- Factory reset: `clear()` + new identity + new sequence lifetime. The old `node_id` is
+- Factory reset: atomic replacement with a new identity + new sequence lifetime. The old `node_id` is
   never reused with a reset sequence, so observation event identities cannot collide.
 - Sequence is allocated by the core (`next_sequence()`) and persisted before use.
+  Failed writes return the reserved failure value `0` and disable use until reload;
+  exhaustion also fails without wrapping. Store errors are distinct from first boot.
+- `NodeCrypto` is a required adapter for P-256 key generation/signing and pinned-key
+  claim verification. The core does not invent unrelated random public/private bytes.
+  `NodeIdentityStore` serializes the full record and replaces it atomically; the C++
+  object contains strings and must not be stored using raw `memcpy`.
 
 **Claim mode** is the `ClaimMode` port. The core never claims without `active() == true`.
 Tests use `FakeClaimMode`; the real ESP32-C3 button handling belongs to #4. The backend
@@ -27,7 +33,9 @@ physically in claim mode.
 **Claim flow** (backend, transactional):
 1. Verify ACTIVE ADMIN membership for the target organization (server-side; client org id
    is never authority).
-2. Verify the node's claim advertisement signature and freshness.
+2. Verify the node's claim advertisement signature and freshness. For a retry of an
+   already committed same-owner/same-key claim, still verify the signature but allow
+   the original proof after its freshness window, enabling recovery after lost delivery.
 3. Atomically create/adopt the node row as `CLAIMED` with the organization, or return a
    fresh receipt for an idempotent retry of the same organization + key.
 4. Reject (`409`) a `node_id` already claimed by another organization, or the same
@@ -35,8 +43,32 @@ physically in claim mode.
 5. Issue a signed claim receipt (JWS/ES256, see ADR-0012) carrying organization id, owner
    display name, optional public contact and the issuer trust anchor.
 
-No half-claimed state: the node row is created directly in `CLAIMED` state; retries are
-idempotent.
+The backend reserves ownership in its transaction. A fixed database lock row serializes
+lookup and creation/adoption across backend instances, including initially absent nodes.
+Concurrent claims have one winner; a loser cannot overwrite ownership.
+
+The node calls `apply_claim(receipt)`. The crypto adapter verifies ES256 with a backend
+key pinned independently of the incoming receipt, plus issuer/kind/version/expiry.
+The core checks node ID and public-key binding, requires physical claim mode for the
+first commit, and atomically stores organization, owner metadata and the signed trust
+context together with the identity. Same-owner receipt delivery is idempotent after
+commit; another organization is rejected. If transport fails between backend reservation
+and node commit, repeat receipt retrieval and delivery (reactivate physical claim mode
+if necessary). There is no distributed atomic transaction across backend and BLE.
+
+## Later node authenticity
+
+`sign_session_challenge` signs `MM-NODE-SESSION-v1\n{node_id}\n{base64url_nonce}` with
+the persisted device private key, only after claim. Session domain separation prevents
+the session endpoint being used to sign a claim proof. The PWA's
+`beginNodeAuthentication` uses a random 32-byte nonce, a 30-second validity window and
+a single-use verifier. Its public key must come from the authenticated backend or an
+already verified receipt, never from the peer under test. Tests use real Web Crypto
+P-256 signatures and reject another key, copied IDs, stale signatures and replay.
+
+ESP32 crypto/flash/button adapters (#4) and GATT wiring (#6) remain required before
+hardware use. Domain tests use explicitly fake adapters and do not establish hardware
+cryptographic correctness or end-to-end protected GATT operation authorization.
 
 ## Foreign-organization owner hint
 

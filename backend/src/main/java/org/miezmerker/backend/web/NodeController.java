@@ -98,6 +98,9 @@ public class NodeController {
         }
         // Only ACTIVE ADMIN may claim; PENDING/MEMBER/DISABLED get 403 here.
         tenants.requireAdmin(principal.getId(), request.organizationId());
+        if (request.nodeId().version() != 4 || request.nodeId().variant() != 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "node identity must be UUIDv4");
+        }
         var org = organizations.findById(request.organizationId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
@@ -108,16 +111,20 @@ public class NodeController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid node public key");
         }
+        nodes.lockClaims();
+        NodeDevice existing = nodes.findById(request.nodeId()).orElse(null);
+        boolean retry = existing != null && existing.getState() == NodeState.CLAIMED
+                && existing.getOrganization().getId().equals(org.getId())
+                && existing.getFingerprint().equals(fingerprint);
         try {
             claimVerifier.verify(request.nodeId(), request.publicKeyX(), request.publicKeyY(),
-                    request.timestampMillis(), request.claimSignature());
+                    request.timestampMillis(), request.claimSignature(), !retry);
         } catch (IllegalArgumentException e) {
             // Includes: outside claim mode (bad signature/marker), stale advertisement.
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "claim mode proof invalid: "
                     + e.getMessage());
         }
 
-        NodeDevice existing = nodes.findById(request.nodeId()).orElse(null);
         if (existing != null) {
             if (existing.getState() == NodeState.CLAIMED) {
                 if (!existing.getOrganization().getId().equals(org.getId())) {
