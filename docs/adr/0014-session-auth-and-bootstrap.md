@@ -29,6 +29,9 @@ and a reproducible test-phase bootstrap without secrets in git.
   (`BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` min 12 chars / max 72 UTF-8 bytes, optional
   `BOOTSTRAP_ORG_SLUG/_NAME/_CONTACT`). Bootstrap is idempotent and stores only the
   BCrypt hash. See `docs/bootstrap.md`.
+- Validate bootstrap email and organization metadata before any writes. An invalid
+  email or disabled existing organization must not leave a first admin unable to log in
+  or access their organization.
 
 ## Tenant isolation
 
@@ -46,6 +49,10 @@ available for onboarding, while disabled organizations are excluded from selecti
 `OrganizationMembership` separates `role` (`ADMIN|MEMBER`) from `status`
 (`PENDING|ACTIVE|DISABLED`). `PENDING` is a status, not a role. A user may belong to
 multiple organizations; the PWA works in an explicit active organization context.
+The selected organization survives same-tab page navigation in session storage, bound
+to the user and revalidated against current ACTIVE memberships. Logout or revocation
+clears it. Authentication data and CSRF tokens stay in memory. Session refresh responses
+cannot overwrite newer login/logout or membership refresh results.
 
 ## Deferred
 

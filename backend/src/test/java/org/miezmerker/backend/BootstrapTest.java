@@ -19,6 +19,7 @@ class BootstrapTest {
     @Autowired OrganizationRepository organizations;
     @Autowired MembershipRepository memberships;
     @Autowired PasswordEncoder passwords;
+    @Autowired jakarta.validation.Validator validator;
 
     @Test
     void bootstrapCreatesFirstOrgAndAdminOnce() {
@@ -26,7 +27,7 @@ class BootstrapTest {
         users.deleteAll();
         organizations.deleteAll();
 
-        var runner = new BootstrapRunner(users, organizations, memberships, passwords,
+        var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
                 "bootstrap-admin@example.org", "supersecret-bootstrap-1", "versuch",
                 "Versuchsorganisation", null);
         runner.run(null);
@@ -47,7 +48,7 @@ class BootstrapTest {
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
-        var runner = new BootstrapRunner(users, organizations, memberships, passwords,
+        var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
                 "too-long@example.org", "ä".repeat(37), "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> runner.run(null));
         assertEquals(0, users.count());
@@ -70,9 +71,56 @@ class BootstrapTest {
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
-        var weak = new BootstrapRunner(users, organizations, memberships, passwords,
+        var weak = new BootstrapRunner(users, organizations, memberships, passwords, validator,
                 "weak@example.org", "short", "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> weak.run(null));
         assertTrue(users.findByEmail("weak@example.org").isEmpty());
+    }
+
+    @Test
+    void bootstrapRejectsAnEmailThatCannotBeUsedByTheLoginApi() {
+        memberships.deleteAll();
+        users.deleteAll();
+        organizations.deleteAll();
+        var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
+                "invalid-address", "supersecret-bootstrap-1", "versuch", "V", null);
+        assertThrows(IllegalStateException.class, () -> runner.run(null));
+        assertEquals(0, users.count());
+        assertEquals(0, organizations.count());
+    }
+
+    @Test
+    void invalidBootstrapMetadataIsRejectedBeforeWritingAnyEntities() {
+        memberships.deleteAll();
+        users.deleteAll();
+        organizations.deleteAll();
+        for (String[] metadata : new String[][] {
+                { "a".repeat(65), "Name", null },
+                { "valid", "a".repeat(256), null },
+                { "valid", "Name", "a".repeat(501) }
+        }) {
+            var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
+                    "valid@example.org", "supersecret-bootstrap-1", metadata[0], metadata[1], metadata[2]);
+            assertThrows(IllegalStateException.class, () -> runner.run(null));
+            assertEquals(0, users.count());
+            assertEquals(0, organizations.count());
+            assertEquals(0, memberships.count());
+        }
+    }
+
+    @Test
+    void bootstrapCannotAttachTheFirstAdminToADisabledOrganization() {
+        memberships.deleteAll();
+        users.deleteAll();
+        organizations.deleteAll();
+        var organization = new org.miezmerker.backend.domain.Organization("disabled", "Disabled", null);
+        organization.setStatus(org.miezmerker.backend.domain.OrganizationStatus.DISABLED);
+        organizations.save(organization);
+        var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
+                "valid@example.org", "supersecret-bootstrap-1", "disabled", "Disabled", null);
+        assertThrows(IllegalStateException.class, () -> runner.run(null));
+        assertEquals(0, users.count());
+        assertEquals(0, memberships.count());
+        assertEquals(1, organizations.count());
     }
 }

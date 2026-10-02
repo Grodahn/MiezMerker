@@ -2,12 +2,17 @@ package org.miezmerker.backend.bootstrap;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import jakarta.validation.Validator;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import org.miezmerker.backend.domain.AppUser;
 import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
 import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationMembership;
+import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
@@ -39,6 +44,12 @@ public class BootstrapRunner implements ApplicationRunner {
     private final OrganizationRepository organizations;
     private final MembershipRepository memberships;
     private final PasswordEncoder passwords;
+    private final Validator validator;
+
+    private record BootstrapInput(@NotBlank @Email @Size(max = 320) String email,
+            @NotBlank @Size(max = 64) String slug,
+            @NotBlank @Size(max = 255) String name,
+            @Size(max = 500) String contact) {}
 
     private final String adminEmail;
     private final String adminPassword;
@@ -47,7 +58,7 @@ public class BootstrapRunner implements ApplicationRunner {
     private final String orgContact;
 
     public BootstrapRunner(AppUserRepository users, OrganizationRepository organizations,
-            MembershipRepository memberships, PasswordEncoder passwords,
+            MembershipRepository memberships, PasswordEncoder passwords, Validator validator,
             @Value("${miezmerker.bootstrap.admin-email:}") String adminEmail,
             @Value("${miezmerker.bootstrap.admin-password:}") String adminPassword,
             @Value("${miezmerker.bootstrap.org-slug:versuch}") String orgSlug,
@@ -57,6 +68,7 @@ public class BootstrapRunner implements ApplicationRunner {
         this.organizations = organizations;
         this.memberships = memberships;
         this.passwords = passwords;
+        this.validator = validator;
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
         this.orgSlug = orgSlug;
@@ -84,10 +96,17 @@ public class BootstrapRunner implements ApplicationRunner {
         }
         String slug = orgSlug == null || orgSlug.isBlank() ? "versuch"
                 : orgSlug.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
+        String name = orgName == null || orgName.isBlank() ? "Versuchsorganisation" : orgName.trim();
+        String contact = orgContact == null || orgContact.isBlank() ? null : orgContact.trim();
+        // Validate only public metadata; password validation errors must never log a secret.
+        if (!validator.validate(new BootstrapInput(email, slug, name, contact)).isEmpty()) {
+            throw new IllegalStateException("Invalid bootstrap email or organization metadata");
+        }
         Organization org = organizations.findBySlug(slug)
-                .orElseGet(() -> organizations.save(new Organization(slug,
-                        orgName == null || orgName.isBlank() ? "Versuchsorganisation" : orgName,
-                        orgContact == null || orgContact.isBlank() ? null : orgContact)));
+                .orElseGet(() -> organizations.save(new Organization(slug, name, contact)));
+        if (org.getStatus() != OrganizationStatus.ACTIVE) {
+            throw new IllegalStateException("Bootstrap organization must be active");
+        }
         AppUser user = users.save(new AppUser(email, passwords.encode(adminPassword)));
         OrganizationMembership membership =
                 new OrganizationMembership(org, user, MembershipRole.ADMIN, MembershipStatus.ACTIVE);

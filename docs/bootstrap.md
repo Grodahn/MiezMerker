@@ -17,6 +17,10 @@ the database contains no users yet.
 The password is hashed with BCrypt at creation time and never stored or logged in
 plaintext. Bootstrap secrets belong in your shell environment or a local `.env` file —
 never in git.
+Bootstrap validates the email against the login API's email rules and checks organization
+field lengths before writing anything. If the slug already exists, its organization must
+be ACTIVE. Invalid configuration fails startup so it can be corrected and retried without
+leaving an unusable first admin in the database.
 
 ## Local start
 

@@ -161,6 +161,20 @@ class TenancyAuthTest {
     }
 
     @Test
+    void overlongLoginPasswordsReturnGenericUnauthorizedWithoutChangingTheSession() throws Exception {
+        seed();
+        for (String password : new String[] { "a".repeat(73), "ä".repeat(37) }) {
+            var known = post("/api/v1/auth/login", mapper.writeValueAsString(
+                    java.util.Map.of("email", "admin-a@example.org", "password", password)));
+            var unknown = post("/api/v1/auth/login", mapper.writeValueAsString(
+                    java.util.Map.of("email", "unknown@example.org", "password", password)));
+            assertEquals(401, known.statusCode(), known.body());
+            assertEquals(401, unknown.statusCode(), unknown.body());
+            assertEquals(401, get("/api/v1/auth/session").statusCode());
+        }
+    }
+
+    @Test
     void loginLogoutSessionAndPasswordHashing() throws Exception {
         Fixture f = seed();
 

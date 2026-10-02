@@ -24,6 +24,7 @@ describe('auth session (#16)', () => {
   beforeEach(() => {
     get.mockReset();
     post.mockReset();
+    sessionStorage.clear();
   });
 
   test('fetches CSRF token and stores it', async () => {
@@ -31,6 +32,92 @@ describe('auth session (#16)', () => {
     const token = await fetchCsrfToken();
     expect(token).toBe('csrf-123');
     expect(getAuthState().csrfToken).toBe('csrf-123');
+  });
+
+  test('a delayed anonymous session response cannot undo login', async () => {
+    let complete!: (value: unknown) => void;
+    get.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const pending = fetchSession();
+    get.mockResolvedValue({ data: { token: 'csrf' } });
+    post.mockResolvedValue({ data: { userId: 'new-user', email: 'new@example.org', memberships: [] } });
+    await login('new@example.org', 'password');
+    complete({ error: {}, response: { status: 401 } });
+    await pending;
+    expect(getAuthState().user?.userId).toBe('new-user');
+  });
+
+  test('a delayed authenticated response cannot resurrect a logged-out session', async () => {
+    let complete!: (value: unknown) => void;
+    get.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const pending = fetchSession();
+    get.mockResolvedValue({ data: { token: 'csrf' } });
+    post.mockResolvedValue({ response: { ok: true, status: 200 } });
+    await logout();
+    complete({ data: { userId: 'old-user', email: 'old@example.org', memberships: [] } });
+    await pending;
+    expect(getAuthState().user).toBeNull();
+  });
+
+  test('a slower session response cannot replace newer membership status', async () => {
+    let complete!: (value: unknown) => void;
+    get.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const pending = fetchSession();
+    get.mockResolvedValue({ data: { userId: 'u-status', email: 'status@example.org', memberships: [] } });
+    await fetchSession();
+    complete({ data: { userId: 'u-status', email: 'status@example.org', memberships: [
+      { organizationId: 'revoked', status: 'ACTIVE' },
+    ] } });
+    await pending;
+    expect(activeOrganizationIds()).toEqual([]);
+  });
+
+  test('overlapping login and logout run in order so their cookies cannot race', async () => {
+    let complete!: (value: unknown) => void;
+    get.mockResolvedValue({ data: { token: 'csrf' } });
+    post.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    post.mockResolvedValueOnce({ response: { ok: true, status: 200 } });
+    const signingIn = login('race@example.org', 'password');
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const signingOut = logout();
+    await Promise.resolve();
+    expect(post).toHaveBeenCalledTimes(1);
+    complete({ data: { userId: 'race-user', email: 'race@example.org', memberships: [] } });
+    await Promise.all([signingIn, signingOut]);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[1][0]).toBe('/api/v1/auth/logout');
+    expect(getAuthState().user).toBeNull();
+  });
+
+  test('organization selection saved for another account cannot become the current context', async () => {
+    sessionStorage.setItem('miezmerker-active-organization', JSON.stringify({
+      userId: 'foreign-user', organizationId: 'shared-org',
+    }));
+    get.mockResolvedValue({ data: { userId: 'current-user', email: 'current@example.org', memberships: [
+      { organizationId: 'shared-org', status: 'ACTIVE' },
+      { organizationId: 'second-org', status: 'ACTIVE' },
+    ] } });
+    await fetchSession();
+    expect(getAuthState().activeOrganizationId).toBeNull();
+    expect(sessionStorage.getItem('miezmerker-active-organization')).toBeNull();
+  });
+
+  test('organization selection survives page navigation and remains bound to active membership', async () => {
+    const memberships = [
+      { membershipId: 'm1', organizationId: 'o1', status: 'ACTIVE' },
+      { membershipId: 'm2', organizationId: 'o2', status: 'ACTIVE' },
+    ];
+    get.mockResolvedValue({ data: { userId: 'navigation-user', email: 'nav@example.org', memberships } });
+    await fetchSession();
+    selectOrganization('o2');
+    vi.resetModules();
+    const restored = await import('./auth');
+    await restored.fetchSession();
+    expect(restored.getAuthState().activeOrganizationId).toBe('o2');
+    get.mockResolvedValue({ data: { userId: 'navigation-user', email: 'nav@example.org',
+      memberships: memberships.map(m => ({ ...m, status: 'DISABLED' })) } });
+    await restored.fetchSession();
+    expect(restored.getAuthState().activeOrganizationId).toBeNull();
+    expect(sessionStorage.getItem('miezmerker-active-organization')).toBeNull();
   });
 
   test('login posts credentials with CSRF header and stores the session', async () => {
