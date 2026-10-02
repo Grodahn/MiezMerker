@@ -93,3 +93,25 @@ never broadcast in BLE advertisements.
 Not supported in the MVP. A node owned by organization A cannot be reassigned to B;
 B's admin gets `409`. Reuse requires a factory reset (new identity). Historical data of
 the old identity stays bound to the old organization.
+
+## Capture integration (#5 / epic #15 review)
+
+`NodeIdentityManager` implements the capture `DeviceIdentityStore` port. Inject
+that same manager into `Core`; persist the optional capture metadata together
+with node UUID, key pair, sequence, owner and receipt in the atomic
+`NodeIdentityStore` record. Both boot orders are supported. Claim writes reload
+the current record before changing owner fields, and capture reservations
+preserve ownership. Calls run on the same single writer firmware loop.
+
+Once capture metadata exists, `Core` is the only sequence allocator and reset
+coordinator. Use `Core::factory_reset()` to atomically rotate UUID/key pair,
+commit the reset journal, clear old observations and their acknowledgement
+cursor, then complete the journal. Failed or interrupted cleanup blocks claim
+and session signing until capture boot resumes the journal. The standalone
+manager reset and sequence allocator reject calls after capture attachment.
+Do not compose a second independent `DeviceIdentityStore` alongside the manager.
+
+The adapter validates loaded UUID/key shape and metadata consistency, rejects
+zero UUID entropy, and refuses a reset that repeats the prior UUID or device
+key. Existing #5-only identities without a device key require explicit board
+migration/provisioning; they are not silently adopted as a claimed identity.

@@ -1,4 +1,10 @@
-add_library(firmware-core src/core.cpp src/node_identity.cpp)
+add_library(firmware-core
+  src/core.cpp
+  src/node_identity.cpp
+  src/memory_stores.cpp
+  src/protocol_view.cpp
+  src/types.cpp
+)
 target_include_directories(firmware-core PUBLIC include)
 if(MSVC)
   target_compile_options(firmware-core PRIVATE /W4 /WX)
@@ -12,4 +18,29 @@ if(BUILD_TESTING)
   add_executable(node-identity-test tests/node_identity_test.cpp)
   target_link_libraries(node-identity-test PRIVATE firmware-core)
   add_test(NAME node-identity COMMAND node-identity-test)
+
+  add_executable(observation-test tests/observation_test.cpp)
+  target_link_libraries(observation-test PRIVATE firmware-core)
+  if(MSVC)
+    target_compile_options(observation-test PRIVATE /W4 /WX)
+  else()
+    target_compile_options(observation-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME firmware-observations COMMAND observation-test)
+  add_executable(recovery-test tests/recovery_test.cpp)
+  target_link_libraries(recovery-test PRIVATE firmware-core)
+  if(MSVC)
+    target_compile_options(recovery-test PRIVATE /W4 /WX)
+  else()
+    target_compile_options(recovery-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME firmware-recovery COMMAND recovery-test)
+  # Assertions include operations under test; keep them in Release/CI builds.
+  foreach(test_target core-test node-identity-test observation-test recovery-test)
+    if(MSVC)
+      target_compile_options(${test_target} PRIVATE /UNDEBUG)
+    else()
+      target_compile_options(${test_target} PRIVATE -UNDEBUG)
+    endif()
+  endforeach()
 endif()

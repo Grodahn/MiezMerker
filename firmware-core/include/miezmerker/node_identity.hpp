@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <optional>
 #include "miezmerker/ports.hpp"
 
 namespace miezmerker {
@@ -20,6 +21,8 @@ struct NodeIdentity {
     std::array<std::byte, PUBKEY_SIZE> public_key{};
     std::array<std::byte, PRIVKEY_SIZE> private_key{};
     std::uint64_t sequence{0};
+    // #5 capture metadata shares this atomic record with keys and ownership.
+    std::optional<IdentityRecord> observations;
     // Saved in the same atomic record as the identity; empty until provisioned.
     std::string organization_id;
     std::string organization_name;
@@ -50,11 +53,11 @@ struct ClaimAdvertisement {
 // Durable identity store. Save atomically replaces the whole record (including
 // ownership); implementations must serialize fields, not memcpy this C++ object.
 // A load error must never be reported as missing and silently reprovision a node.
-enum class IdentityLoadResult { missing, loaded, error };
+enum class NodeIdentityLoadResult { missing, loaded, error };
 class NodeIdentityStore {
 public:
     virtual ~NodeIdentityStore() = default;
-    virtual IdentityLoadResult load(NodeIdentity& identity) = 0;
+    virtual NodeIdentityLoadResult load(NodeIdentity& identity) = 0;
     virtual bool save(const NodeIdentity& identity) = 0;
     virtual bool clear() = 0;
 };
@@ -82,7 +85,7 @@ public:
     virtual bool verify_claim(const std::string& receipt, VerifiedClaim& claim) = 0;
 };
 
-class NodeIdentityManager {
+class NodeIdentityManager : public DeviceIdentityStore {
 public:
     NodeIdentityManager(NodeIdentityStore& store, ClaimMode& claim_mode, RandomSource& random,
                         NodeCrypto& crypto, ClaimClock& clock);
@@ -92,6 +95,13 @@ public:
     bool initialize();
     bool ready() const { return ready_; }
     const NodeIdentity& identity() const { return identity_; }
+
+    // Inject this same manager into Core as its DeviceIdentityStore. Core owns
+    // capture sequence reservation and the reset journal/log cleanup; there is
+    // no second UUID/sequence store. All calls are serialized by the board loop.
+    IdentityLoadResult load(IdentityRecord& out) override;
+    bool store(const IdentityRecord& record) override;
+    bool erase() override { return false; } // Reset must rotate identity and keys.
 
     // True only while the physical claim mode is active (fake in tests, button in #4).
     bool in_claim_mode() const { return ready_ && !claimed() && claim_mode_.active(); }
@@ -108,12 +118,15 @@ public:
     // factory reset (which creates a new node_id).
     std::uint64_t next_sequence();
 
-    // Factory reset: new node_id + new key pair + new sequence lifetime.
+    // Standalone reset: new node_id + new key pair + new sequence lifetime.
+    // After attachment to capture, call Core::factory_reset() instead so log
+    // and cursor cleanup complete before any use of the new identity.
     // Historical data of the old identity stays bound to the old node_id.
     bool factory_reset();
 
 private:
     bool provision_new();
+    bool reload();
     NodeIdentityStore& store_;
     ClaimMode& claim_mode_;
     RandomSource& random_;

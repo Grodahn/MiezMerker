@@ -16,6 +16,8 @@ RFID → Node (Rohdaten) → BLE → PWA (lokale Outbox) → HTTP Backend
 Node-Sync funktioniert ohne Internet; Backend-Sync ist ein unabhängiger Ablauf.
 Rohbeobachtungen bleiben unverändert. Firmware und PWA aggregieren keine Visits.
 Issue [#2](https://github.com/Grodahn/MiezMerker/issues/2) liefert das Fundament.
+Issue #5 ergänzt die hardwareunabhängige Rohdaten-Erfassung mit RTC, Sequence
+und persistentem Store (`firmware-core/README.md`).
 Organisationen, Benutzer, Memberships und Login (#16), signierte Offline-BLE-
 Berechtigungen mit AppDevice-Identitäten (#17) sowie Node-Identität und Claiming (#18)
 sind implementiert. #19 (Invite-per-E-Mail) und die übrigen Features folgen.
