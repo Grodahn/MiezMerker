@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "node_id": "fixture-node-1",
+  "incarnation": "fixture-incarnation-1",
+  "sequence": "9007199254740993",
+  "chip_id": "276098106000001",
+  "monotonic_ms": "12345",
+  "observed_at_epoch_ms": null,
+  "clock_status": "unknown"
+}

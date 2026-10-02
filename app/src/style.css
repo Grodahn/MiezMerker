@@ -1,0 +1,10 @@
+:root { font-family: system-ui, sans-serif; color: #173b32; background: #f4f7f5; line-height: 1.6; }
+body { margin: 0; }
+header, main, footer { max-width: 65rem; margin: auto; padding: 1.5rem; }
+header { border-bottom: 1px solid #bdd0c6; }
+header strong { font-size: 1.6rem; }
+nav { display: flex; flex-wrap: wrap; gap: .7rem 1.3rem; margin-top: 1rem; }
+a { color: #24584b; }
+a:focus-visible { outline: 3px solid #24584b; outline-offset: 4px; }
+main { min-height: 45vh; }
+footer { border-top: 1px solid #bdd0c6; font-size: .9rem; }

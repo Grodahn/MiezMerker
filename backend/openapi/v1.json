@@ -1,0 +1,86 @@
+{
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "VersionResponse": {
+        "properties": {
+          "apiVersion": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiVersion",
+          "version"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "MiezMerker HTTP API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Application liveness (database initialized at startup)",
+        "tags": [
+          "system-controller"
+        ]
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Build and HTTP API version",
+        "tags": [
+          "system-controller"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}
