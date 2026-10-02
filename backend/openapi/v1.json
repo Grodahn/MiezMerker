@@ -5,6 +5,7 @@
         "properties": {
           "claimSignature": {
             "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{86}$",
             "type": "string"
           },
           "firmwareVersion": {
@@ -313,6 +314,9 @@
           "claimedAt": {
             "type": "string"
           },
+          "fingerprint": {
+            "type": "string"
+          },
           "firmwareVersion": {
             "type": "string"
           },
@@ -321,6 +325,12 @@
             "type": "string"
           },
           "organizationId": {
+            "type": "string"
+          },
+          "publicKeyX": {
+            "type": "string"
+          },
+          "publicKeyY": {
             "type": "string"
           },
           "state": {

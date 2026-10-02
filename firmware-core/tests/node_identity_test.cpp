@@ -52,12 +52,17 @@ struct FakeCrypto final : NodeCrypto {
         out = claim; return valid_receipt;
     }
 };
+struct TestClaimClock final : ClaimClock {
+    std::uint64_t time{123456};
+    std::uint64_t epoch_ms() const override { return time; }
+};
 int main() {
     MemoryIdentityStore store;
     TestRandom random;
     FakeClaimMode mode;
     FakeCrypto crypto;
-    NodeIdentityManager mgr(store, mode, random, crypto);
+    TestClaimClock clock;
+    NodeIdentityManager mgr(store, mode, random, crypto, clock);
     assert(!mgr.in_claim_mode());
     assert(mgr.initialize());
     auto initial = mgr.identity();
@@ -65,7 +70,7 @@ int main() {
     assert((std::to_integer<unsigned>(initial.node_id[8]) & 0xc0) == 0x80);
     assert(mgr.next_sequence() == 1);
     assert(mgr.next_sequence() == 2);
-    NodeIdentityManager reboot(store, mode, random, crypto);
+    NodeIdentityManager reboot(store, mode, random, crypto, clock);
     assert(reboot.initialize());
     assert(reboot.identity().node_id == initial.node_id);
     assert(reboot.identity().public_key == initial.public_key);
@@ -104,12 +109,21 @@ int main() {
     assert(reboot.identity().node_id == reset.node_id);
 
     std::array<std::byte, 64> signature{};
-    assert(!reboot.sign_claim(123456, signature));
+    ClaimAdvertisement advertisement;
+    assert(!reboot.sign_claim(advertisement));
     mode.enabled = true;
-    assert(reboot.sign_claim(123456, signature));
+    assert(reboot.sign_claim(advertisement));
+    assert(advertisement.timestamp_ms == clock.time);
     assert(crypto.signed_message == "MM-CLAIM-v1\ne7062544-6382-41c0-9ffe-1d3c5b7a99b8\n"
         "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\n"
         "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\n123456\nclaim-mode");
+    clock.time = 0;
+    assert(!reboot.sign_claim(advertisement));
+    assert(advertisement.timestamp_ms == 0);
+    clock.time = 123457;
+    assert(reboot.sign_claim(advertisement));
+    assert(advertisement.timestamp_ms == 123457);
+    assert(crypto.signed_message.ends_with("\n123457\nclaim-mode"));
     crypto.claim = {reset.node_id, reset.public_key, "org-a", "Org A", "help@example.org"};
     mode.enabled = false;
     assert(!reboot.apply_claim("receipt"));
@@ -131,7 +145,7 @@ int main() {
     assert(!reboot.claimed());
     assert(reboot.apply_claim("receipt"));
     assert(reboot.claimed() && !reboot.in_claim_mode());
-    assert(!reboot.sign_claim(123456, signature));
+    assert(!reboot.sign_claim(advertisement));
     assert(reboot.initialize());
     assert(reboot.identity().organization_name == "Org A");
     assert(reboot.identity().claim_receipt == "receipt");

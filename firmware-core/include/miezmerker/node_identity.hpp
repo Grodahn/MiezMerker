@@ -35,6 +35,18 @@ public:
     virtual bool active() const = 0;
 };
 
+// Trusted node wall clock. Never take proof timestamps from the BLE peer: that
+// would let it stockpile future-dated claims during one physical claim window.
+class ClaimClock {
+public:
+    virtual ~ClaimClock() = default;
+    virtual std::uint64_t epoch_ms() const = 0;
+};
+struct ClaimAdvertisement {
+    std::uint64_t timestamp_ms{0};
+    std::array<std::byte, 64> signature{};
+};
+
 // Durable identity store. Save atomically replaces the whole record (including
 // ownership); implementations must serialize fields, not memcpy this C++ object.
 // A load error must never be reported as missing and silently reprovision a node.
@@ -73,7 +85,7 @@ public:
 class NodeIdentityManager {
 public:
     NodeIdentityManager(NodeIdentityStore& store, ClaimMode& claim_mode, RandomSource& random,
-                        NodeCrypto& crypto);
+                        NodeCrypto& crypto, ClaimClock& clock);
 
     // Loads existing identity or provisions a new one. Reboot/power loss/firmware
     // update keep identity; only factory_reset() creates a new one.
@@ -87,7 +99,7 @@ public:
     bool apply_claim(const std::string& receipt);
 
     // Produce the canonical backend claim proof internally, only in claim mode.
-    bool sign_claim(std::uint64_t timestamp_ms, std::span<std::byte, 64> signature);
+    bool sign_claim(ClaimAdvertisement& advertisement);
     // A later session challenge proves possession of the persisted device key.
     bool sign_session_challenge(std::span<const std::byte> challenge,
                                 std::span<std::byte, 64> signature);
@@ -106,6 +118,7 @@ private:
     ClaimMode& claim_mode_;
     RandomSource& random_;
     NodeCrypto& crypto_;
+    ClaimClock& clock_;
     NodeIdentity identity_;
     bool ready_{false};
 };

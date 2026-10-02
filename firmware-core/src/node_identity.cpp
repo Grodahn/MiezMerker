@@ -28,8 +28,8 @@ std::string uuid(const std::array<std::byte, 16>& id) {
 }
 }
 NodeIdentityManager::NodeIdentityManager(NodeIdentityStore& store, ClaimMode& claim_mode,
-        RandomSource& random, NodeCrypto& crypto)
-    : store_(store), claim_mode_(claim_mode), random_(random), crypto_(crypto) {}
+        RandomSource& random, NodeCrypto& crypto, ClaimClock& clock)
+    : store_(store), claim_mode_(claim_mode), random_(random), crypto_(crypto), clock_(clock) {}
 
 bool NodeIdentityManager::initialize() {
     ready_ = false;
@@ -76,15 +76,20 @@ bool NodeIdentityManager::factory_reset() {
     return provision_new();
 }
 
-bool NodeIdentityManager::sign_claim(std::uint64_t timestamp_ms,
-        std::span<std::byte, 64> signature) {
+bool NodeIdentityManager::sign_claim(ClaimAdvertisement& advertisement) {
+    advertisement = {};
+    const auto timestamp_ms = clock_.epoch_ms();
     if (!in_claim_mode() || timestamp_ms == 0) return false;
     auto key = std::span<const std::byte>(identity_.public_key);
     std::string message = "MM-CLAIM-v1\n" + uuid(identity_.node_id) + "\n"
         + base64url(key.subspan(1, 32)) + "\n" + base64url(key.subspan(33, 32))
         + "\n" + std::to_string(timestamp_ms) + "\nclaim-mode";
-    return crypto_.sign(identity_.private_key,
-        std::as_bytes(std::span(message.data(), message.size())), signature);
+    ClaimAdvertisement candidate;
+    candidate.timestamp_ms = timestamp_ms;
+    if (!crypto_.sign(identity_.private_key,
+        std::as_bytes(std::span(message.data(), message.size())), candidate.signature)) return false;
+    advertisement = candidate;
+    return true;
 }
 
 bool NodeIdentityManager::apply_claim(const std::string& receipt) {

@@ -153,6 +153,10 @@ class NodeClaimTest {
         var list = get("/api/v1/nodes?organizationId=" + s.orgA().getId());
         assertEquals(200, list.statusCode(), list.body());
         assertTrue(list.body().contains(n.nodeId().toString()));
+        var detail = mapper.readTree(get("/api/v1/nodes/" + n.nodeId()).body());
+        assertEquals(n.x(), detail.get("publicKeyX").asText());
+        assertEquals(n.y(), detail.get("publicKeyY").asText());
+        assertEquals(EcKeyUtils.fingerprintOfXY(n.x(), n.y()), detail.get("fingerprint").asText());
     }
 
     @Test
@@ -244,6 +248,8 @@ class NodeClaimTest {
         assertEquals("help-a@example.org", body.get("publicContact").asText());
         assertFalse(owner.body().contains("chip"));
         assertFalse(owner.body().contains("observation"));
+        assertFalse(owner.body().contains("publicKey"));
+        assertFalse(owner.body().contains("fingerprint"));
 
         // Foreign user cannot read the full node record.
         login("admin-b@example.org", "supersecret-password-b");
@@ -356,6 +362,32 @@ class NodeClaimTest {
             assertEquals(403, post("/api/v1/nodes/claim", claimJson(n, s.orgA().getId(), ts, sig)).statusCode());
             assertEquals(0, nodes.count());
         }
+    }
+
+    @Test
+    void rejectsOversizedClaimSignatureBeforeProcessing() throws Exception {
+        Seed s = seed();
+        login("admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = NodeKeys.fresh();
+        assertEquals(400, post("/api/v1/nodes/claim",
+                claimJson(n, s.orgA().getId(), Instant.now().toEpochMilli(), "A".repeat(1024))).statusCode());
+        assertEquals(0, nodes.count());
+    }
+
+    @Test
+    void resetMustRotateDeviceKeyAndDuplicateKeyReturnsConflict() throws Exception {
+        Seed s = seed();
+        login("admin-a@example.org", "supersecret-password-a");
+        NodeKeys original = NodeKeys.fresh();
+        long ts = Instant.now().toEpochMilli();
+        String sig = NodeClaimVerifier.signClaim(original.kp().getPrivate(), original.nodeId(),
+                original.x(), original.y(), ts);
+        assertEquals(200, post("/api/v1/nodes/claim", claimJson(original, s.orgA().getId(), ts, sig)).statusCode());
+        NodeKeys reused = new NodeKeys(UUID.randomUUID(), original.kp(), original.x(), original.y());
+        String reusedSig = NodeClaimVerifier.signClaim(reused.kp().getPrivate(), reused.nodeId(),
+                reused.x(), reused.y(), ts);
+        assertEquals(409, post("/api/v1/nodes/claim", claimJson(reused, s.orgA().getId(), ts, reusedSig)).statusCode());
+        assertEquals(1, nodes.count());
     }
 
     @Test

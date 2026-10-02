@@ -417,10 +417,13 @@ export interface components {
         };
         NodeView: {
             claimedAt?: string;
+            fingerprint?: string;
             firmwareVersion?: string;
             /** Format: uuid */
             nodeId?: string;
             organizationId?: string;
+            publicKeyX?: string;
+            publicKeyY?: string;
             state?: string;
         };
         OrganizationView: {

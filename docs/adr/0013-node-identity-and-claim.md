@@ -30,6 +30,12 @@ additionally requires a node-signed claim advertisement (canonical message + ECD
 signature + 5-minute freshness), so a PWA flag alone cannot claim a node that is not
 physically in claim mode.
 
+The signing API returns a `ClaimAdvertisement` with a timestamp sampled from the
+node's trusted `ClaimClock`; the BLE caller cannot choose that timestamp. Otherwise
+a peer could stockpile future-dated signatures during one physical window and submit
+them long after the window closed. An unavailable clock (`0`) fails closed. The clock
+adapter must obtain current epoch time independently of untrusted peer input.
+
 **Claim flow** (backend, transactional):
 1. Verify ACTIVE ADMIN membership for the target organization (server-side; client org id
    is never authority).
@@ -62,7 +68,12 @@ if necessary). There is no distributed atomic transaction across backend and BLE
 the persisted device private key, only after claim. Session domain separation prevents
 the session endpoint being used to sign a claim proof. The PWA's
 `beginNodeAuthentication` uses a random 32-byte nonce, a 30-second validity window and
-a single-use verifier. Its public key must come from the authenticated backend or an
+a single-use verifier. Expiry uses a monotonic clock and is checked before and after
+signature verification, so wall-clock rollback cannot extend the window.
+`loadTrustedNodeIdentity` obtains the persisted key from the tenant-authorized node
+record, checks the identity/state and fails on denied or incomplete responses.
+The public owner endpoint continues to expose only the permitted owner metadata.
+Its public key must come from the authenticated backend or an
 already verified receipt, never from the peer under test. Tests use real Web Crypto
 P-256 signatures and reject another key, copied IDs, stale signatures and replay.
 

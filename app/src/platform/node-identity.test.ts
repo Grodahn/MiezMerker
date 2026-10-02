@@ -47,9 +47,11 @@ test('expired and malformed proofs fail closed', async () => {
   const real = await keys();
   const attempt = await beginNodeAuthentication(real.identity);
   const signature = await sign(real.pair.privateKey, attempt.challenge);
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31_000);
+  const wallClock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 3_600_000);
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 31_000);
   expect(await attempt.verify(signature)).toBe(false);
   clock.mockRestore();
+  wallClock.mockRestore();
   const malformed = await beginNodeAuthentication(real.identity);
   expect(await malformed.verify(new Uint8Array(63))).toBe(false);
 });

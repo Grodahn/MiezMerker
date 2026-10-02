@@ -66,7 +66,7 @@ public class NodeController {
             @Size(max = 64) String firmwareVersion,
             @NotNull UUID organizationId,
             @NotNull Long timestampMillis,
-            @NotBlank String claimSignature) {}
+            @NotBlank @Pattern(regexp = "^[A-Za-z0-9_-]{86}$") String claimSignature) {}
 
     @Schema(name = "ClaimReceiptView")
     public record ClaimReceiptView(UUID nodeId, String organizationId, String receipt,
@@ -74,7 +74,8 @@ public class NodeController {
 
     @Schema(name = "NodeView")
     public record NodeView(UUID nodeId, String organizationId, String state,
-            String firmwareVersion, String claimedAt) {}
+            String firmwareVersion, String claimedAt, String publicKeyX,
+            String publicKeyY, String fingerprint) {}
 
     @Schema(name = "NodeOwnerView")
     public record NodeOwnerView(UUID nodeId, String state, String organizationId,
@@ -84,7 +85,8 @@ public class NodeController {
         return new NodeView(n.getNodeId(),
                 n.getOrganization() == null ? null : n.getOrganization().getId().toString(),
                 n.getState().name(), n.getFirmwareVersion(),
-                n.getClaimedAt() == null ? null : n.getClaimedAt().toString());
+                n.getClaimedAt() == null ? null : n.getClaimedAt().toString(),
+                n.getPublicKeyX(), n.getPublicKeyY(), n.getFingerprint());
     }
 
     @PostMapping(value = "/claim", consumes = "application/json", produces = "application/json")
@@ -160,6 +162,12 @@ public class NodeController {
                     "Claim-ES256-JWT");
         }
 
+        // A reset must rotate both the UUID and device key. Reject duplicate keys
+        // explicitly instead of letting the unique constraint become a 500.
+        if (nodes.findByFingerprint(fingerprint).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "node device key already registered; factory reset must rotate the key");
+        }
         // Factory-new node: create CLAIMED atomically (no half-claimed state).
         NodeDevice node = new NodeDevice(request.nodeId(), request.publicKeyX(),
                 request.publicKeyY(), fingerprint,
