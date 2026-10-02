@@ -93,6 +93,18 @@ public final class EcKeyUtils {
             }
             ECParameterSpec params = p256Params();
             ECPoint point = new ECPoint(new BigInteger(1, xb), new BigInteger(1, yb));
+            // KeyFactory can construct off-curve points; validate registration explicitly.
+            BigInteger p = ((java.security.spec.ECFieldFp) params.getCurve().getField()).getP();
+            BigInteger x = point.getAffineX(), y = point.getAffineY();
+            if (x.compareTo(p) >= 0 || y.compareTo(p) >= 0
+                    || !y.multiply(y).mod(p).equals(x.multiply(x).multiply(x)
+                        .add(params.getCurve().getA().multiply(x))
+                        .add(params.getCurve().getB()).mod(p))) {
+                throw new IllegalArgumentException("Public key is not a P-256 point");
+            }
+            if (!b64u(xb).equals(xB64u) || !b64u(yb).equals(yB64u)) {
+                throw new IllegalArgumentException("Noncanonical P-256 coordinates");
+            }
             KeyFactory kf = KeyFactory.getInstance("EC");
             return (ECPublicKey) kf.generatePublic(new ECPublicKeySpec(point, params));
         } catch (IllegalArgumentException e) {

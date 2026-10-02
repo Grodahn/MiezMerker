@@ -304,6 +304,37 @@ class OfflineCredentialTest {
     }
 
     @Test
+    void offCurveDeviceRegistrationIsRejected() throws Exception {
+        seed();
+        login("member-a@example.org", "supersecret-password-m");
+        String zero = EcKeyUtils.b64u(new byte[32]);
+        var response = post("/api/v1/devices", "{\"publicKeyX\":\"" + zero
+                + "\",\"publicKeyY\":\"" + zero + "\"}");
+        assertEquals(400, response.statusCode(), response.body());
+    }
+
+    @Test
+    void recentlyExpiredAndFutureCredentialsAreRejected() throws Exception {
+        Seed s = seed();
+        DeviceKeys dev = newDevice();
+        Instant now = Instant.now();
+        for (Instant[] times : new Instant[][] {
+                {now.minusSeconds(60), now.minusSeconds(1)},
+                {now.plusSeconds(60), now.plusSeconds(3600)},
+                {now, now.minusSeconds(1)}}) {
+            String credential = issuer.issueOfflineCredentialWithTimes(s.memberA().getId(),
+                    s.orgA().getId(), s.orgA().getSlug(), UUID.randomUUID(), dev.x(), dev.y(),
+                    dev.fingerprint(), "MEMBER", times[0], times[1]);
+            assertThrows(IllegalArgumentException.class,
+                    () -> offline.verifyForOrganization(credential, s.orgA().getId()));
+        }
+        assertThrows(IllegalArgumentException.class, () -> new CredentialIssuerService("", "", 0));
+        assertThrows(IllegalArgumentException.class, () -> new CredentialIssuerService("", "", -1));
+        assertThrows(ArithmeticException.class,
+                () -> new CredentialIssuerService("", "", Long.MAX_VALUE));
+    }
+
+    @Test
     void fingerprintBindingPreventsSubstitution() throws Exception {
         // A credential whose fingerprint does not match its embedded key is rejected,
         // even if the issuer signature were somehow valid (defense in depth, also checked offline).

@@ -50,6 +50,22 @@ export class WebCryptoDeviceKeys implements AppDeviceKeys {
     return new WebCryptoDeviceKeys(pair.privateKey, pair.publicKey, jwk.x, jwk.y);
   }
 
+  // CryptoKey handles are structured-cloneable in IndexedDB; never export private material.
+  static async restore(pair: CryptoKeyPair): Promise<WebCryptoDeviceKeys> {
+    if (pair.privateKey.extractable || pair.privateKey.type !== 'private'
+        || pair.privateKey.algorithm.name !== 'ECDSA'
+        || (pair.privateKey.algorithm as EcKeyAlgorithm).namedCurve !== 'P-256') {
+      throw new Error('Invalid persisted AppDevice key');
+    }
+    const jwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+    if (!jwk.x || !jwk.y) throw new Error('Missing device coordinates');
+    return new WebCryptoDeviceKeys(pair.privateKey, pair.publicKey, jwk.x, jwk.y);
+  }
+
+  keyHandles(): CryptoKeyPair {
+    return { privateKey: this.privateKey, publicKey: this.publicKeyHandle };
+  }
+
   async publicKey(): Promise<JsonWebKey> {
     return { kty: 'EC', crv: 'P-256', x: this.x, y: this.y };
   }
@@ -61,6 +77,7 @@ export class WebCryptoDeviceKeys implements AppDeviceKeys {
   // ECDSA P-256 + SHA-256 via Web Crypto returns raw 64-byte r||s for this curve,
   // which is exactly the backend/ESP32 wire format (IEEE P1363).
   async signChallenge(challenge: Uint8Array): Promise<Uint8Array> {
+    if (challenge.length !== 32) throw new Error('BLE challenge must be 32 bytes');
     const buffer = new Uint8Array(challenge);
     const signature = await crypto.subtle.sign(
       { name: 'ECDSA', hash: 'SHA-256' },

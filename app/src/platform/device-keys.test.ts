@@ -24,6 +24,7 @@ describe('Web Crypto AppDevice keys (#17)', () => {
     const challenge = new Uint8Array(32).map((_, i) => i);
     const signature = await keys.signChallenge(challenge);
     expect(signature).toHaveLength(64);
+    await expect(keys.signChallenge(new Uint8Array(16))).rejects.toThrow('32 bytes');
   });
 
   test('signatures differ per challenge (fresh challenge protection)', async () => {

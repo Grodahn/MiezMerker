@@ -22,6 +22,8 @@ import org.miezmerker.backend.crypto.NodeClaimVerifier;
  * valid examples, not expected byte-identical outputs of future sign operations.
  */
 class InteropVectorTest {
+    private static final java.nio.file.Path FIXTURE = java.nio.file.Path.of("..", "protocol",
+            "fixtures", "offline-credential-v1.json");
     // Fixed keys generated once for vectors (P-256). Do NOT use in production.
     // Issuer keypair for vectors:
     // (generated 2026-10-02, committed for interop; production keys come from env/file)
@@ -121,34 +123,20 @@ class InteropVectorTest {
         root.put("revocation_note", "DISABLED membership/device blocks new issuance; "
                 + "already-issued credentials stay valid until exp (no immediate offline revocation).");
 
-        java.nio.file.Path out = java.nio.file.Path.of("..", "protocol", "fixtures",
-                "offline-credential-v1.json");
-        // Also try backend-relative path when run from backend/.
-        if (!java.nio.file.Files.exists(out)) {
-            out = java.nio.file.Path.of("protocol", "fixtures", "offline-credential-v1.json");
-        }
         java.nio.file.Path alt = java.nio.file.Path.of("target", "interop-vectors.json");
         java.nio.file.Files.createDirectories(alt.toAbsolutePath().getParent());
         String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(root) + "\n";
         java.nio.file.Files.writeString(alt, json);
-        // Write to the canonical protocol location (repo root).
-        java.nio.file.Path canonical = java.nio.file.Path.of("..", "protocol", "fixtures",
-                "offline-credential-v1.json").toAbsolutePath().normalize();
-        java.nio.file.Path fromBackend = java.nio.file.Path.of(
-                System.getProperty("user.dir"), "..", "protocol", "fixtures",
-                "offline-credential-v1.json").normalize();
-        // Simplest robust path: walk up until protocol/ exists.
-        java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("user.dir")).toAbsolutePath();
-        while (dir != null && !java.nio.file.Files.exists(dir.resolve("protocol"))) {
-            dir = dir.getParent();
-        }
-        if (dir != null) {
-            java.nio.file.Path target = dir.resolve("protocol/fixtures/offline-credential-v1.json");
-            java.nio.file.Files.createDirectories(target.getParent());
-            java.nio.file.Files.writeString(target, json);
-            System.out.println("Wrote interop vectors to " + target);
-        }
-        System.out.println(json);
+        // Verify the committed bytes. Generating random signatures must never overwrite
+        // the shared golden fixture or hide a broken/corrupted published credential.
+        var fixed = mapper.readTree(java.nio.file.Files.readString(FIXTURE));
+        org.junit.jupiter.api.Assertions.assertEquals(issuer.publicXB64u(),
+                fixed.get("issuer_public_key").get("x").asText());
+        org.junit.jupiter.api.Assertions.assertEquals(orgId.toString(),
+                issuer.verify(fixed.get("credential_jwt").asText()).getStringClaim("org"));
+        byte[] fixedChallenge = HexFormat.of().parseHex(fixed.get("challenge_hex").asText());
+        byte[] fixedProof = EcKeyUtils.b64uDecode(fixed.get("challenge_signature_b64u").asText());
+        org.junit.jupiter.api.Assertions.assertTrue(EcKeyUtils.verifyRaw(devicePub, fixedChallenge, fixedProof));
     }
 
     private static KeyPair deterministicKey(String label) throws Exception {

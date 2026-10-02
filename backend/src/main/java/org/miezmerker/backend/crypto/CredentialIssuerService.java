@@ -52,6 +52,8 @@ public class CredentialIssuerService {
             @Value("${miezmerker.issuer.private-key-pkcs8-b64:}") String privateKeyB64,
             @Value("${miezmerker.issuer.public-key-spki-b64:}") String publicKeySpkiB64,
             @Value("${miezmerker.credential.ttl-hours:168}") long ttlHours) {
+        if (ttlHours <= 0) throw new IllegalArgumentException("Credential TTL must be positive");
+        long configuredTtl = Math.multiplyExact(ttlHours, 3600L);
         if (privateKeyB64 != null && !privateKeyB64.isBlank()) {
             if (publicKeySpkiB64 == null || publicKeySpkiB64.isBlank()) {
                 throw new IllegalArgumentException(
@@ -68,7 +70,7 @@ public class CredentialIssuerService {
                         new java.security.spec.X509EncodedKeySpec(pubDer));
                 this.privateKey = priv;
                 this.publicKey = pub;
-                this.ttlSeconds = ttlHours * 3600L;
+                this.ttlSeconds = configuredTtl;
                 log.info("Using configured credential issuer key (kid={}).", KEY_ID);
                 return;
             } catch (IllegalArgumentException e) {
@@ -82,7 +84,7 @@ public class CredentialIssuerService {
         KeyPair kp = EcKeyUtils.generateP256();
         this.privateKey = (ECPrivateKey) kp.getPrivate();
         this.publicKey = (ECPublicKey) kp.getPublic();
-        this.ttlSeconds = ttlHours * 3600L;
+        this.ttlSeconds = configuredTtl;
         log.warn("Using ephemeral credential issuer key (kid={}). "
                 + "Configure a stable miezmerker.issuer key for production.", KEY_ID);
     }
@@ -95,6 +97,7 @@ public class CredentialIssuerService {
 
     private CredentialIssuerService(ECPrivateKey privateKey, ECPublicKey publicKey,
             long ttlSeconds, boolean stable) {
+        if (ttlSeconds <= 0) throw new IllegalArgumentException("Credential TTL must be positive");
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.ttlSeconds = ttlSeconds;
@@ -205,9 +208,14 @@ public class CredentialIssuerService {
         }
         JWTClaimsSet claims = jwt.getJWTClaimsSet();
         Date exp = claims.getExpirationTime();
-        if (exp == null || exp.toInstant().isBefore(Instant.now().minusSeconds(30))) {
-            // 30s clock-skew tolerance for expiry only; iat freshness is checked by callers.
+        Instant now = Instant.now();
+        if (exp == null || !exp.toInstant().isAfter(now)) {
             throw new IllegalArgumentException("Credential expired");
+        }
+        Date issued = claims.getIssueTime();
+        if (issued == null || issued.toInstant().isAfter(now)
+                || !issued.before(exp)) {
+            throw new IllegalArgumentException("Invalid credential validity interval");
         }
         if (!ISSUER.equals(claims.getIssuer())) {
             throw new IllegalArgumentException("Unknown issuer");

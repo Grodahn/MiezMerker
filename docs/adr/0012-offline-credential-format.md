@@ -30,7 +30,8 @@ CWT/COSE remains a valid future optimization if CBOR size on GATT becomes critic
 - Key fingerprint: `base64url(SHA-256(0x04 || x || y))` (43 chars).
 - Challenge signature: ECDSA P-256/SHA-256 over the raw 32-byte challenge, raw 64-byte
   `r||s`, base64url. Java JCA emits DER; `EcKeyUtils.rawToDer`/`derToRaw` convert at the
-  boundary. Web Crypto and ESP32 mbed TLS emit raw natively.
+  boundary. Web Crypto emits raw; the node reads raw `r`/`s` into Mbed TLS MPIs
+  for `mbedtls_ecdsa_verify` (Mbed TLS signature serialization helpers use DER).
 - Credential claims: `iss, sub=userId, org, org_slug, dev=deviceId, dpk_x, dpk_y, dpf,
   role, scope=["node:sync"], iat, exp, jti, ver=1, kind="offline"`.
 - Claim receipt claims: `sub=nodeId, org, org_slug, org_name, contact, ndpk_x/y, ndpf,
@@ -43,12 +44,26 @@ per BLE connection; the PWA signs it with the private key. A copied credential w
 private key cannot produce a valid signature. Replay fails because the signature binds the
 exact challenge bytes.
 
+`firmware-esp32/components/offline-auth` provides the offline verifier as an ESP-IDF
+component. A connection owns one `OfflineAuthSession`; `begin` replaces its challenge
+and clears authorization, and every `authorize` attempt consumes the challenge.
+Protected operations must call `can_sync` with trusted UTC seconds, including during
+long connections. Missing time, `now >= exp`, future `iat`, or malformed intervals fail
+closed. Time supplied by the untrusted PWA must never be used as the authority for expiry.
+GATT/board wiring belongs to #6/#4. Host tests compile this same component against Mbed TLS
+3.6.x and cJSON 1.7.x (see `firmware-esp32/tests/CMakeLists.txt`).
+
 ## Revocation boundary
 
 A DISABLED membership or revoked AppDevice blocks new credential issuance immediately.
 Already-issued offline credentials remain usable until `exp` — there is no immediate
 offline revocation in the MVP. Credential TTL is configurable
 (`miezmerker.credential.ttl-hours`, default 168h/7d) and should be renewed online.
+Seven days permits a week of field work without internet while bounding stale access;
+deployments with a shorter acceptable revocation window must reduce this setting.
+The PWA persists non-exportable CryptoKeys and credentials in IndexedDB and renews on
+online session discovery, connectivity restoration and near expiry. Credential checks
+accept no expiry grace period. Clearing browser storage removes the installation identity.
 
 ## Interop vectors
 

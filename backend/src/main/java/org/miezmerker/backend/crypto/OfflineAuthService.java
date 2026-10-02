@@ -115,7 +115,7 @@ public class OfflineAuthService {
     private static Integer extractInt(JWTClaimsSet claims, String name) {
         try {
             Object v = claims.getClaim(name);
-            if (v instanceof Number n) {
+            if (v instanceof Number n && n.doubleValue() == n.intValue()) {
                 return n.intValue();
             }
             return null;
