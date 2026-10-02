@@ -16,7 +16,9 @@ RFID → Node (Rohdaten) → BLE → PWA (lokale Outbox) → HTTP Backend
 Node-Sync funktioniert ohne Internet; Backend-Sync ist ein unabhängiger Ablauf.
 Rohbeobachtungen bleiben unverändert. Firmware und PWA aggregieren keine Visits.
 Issue [#2](https://github.com/Grodahn/MiezMerker/issues/2) liefert das Fundament;
-die Features aus #5–#19 sind noch nicht implementiert.
+Issue [#5](https://github.com/Grodahn/MiezMerker/issues/5) implementiert die
+hardwareunabhängige Rohdaten-Erfassung (`firmware-core/README.md`); die
+Features aus #6–#19 sind noch nicht implementiert.
 
 ## Repository
 
@@ -165,7 +167,9 @@ zusätzlich gegen PostgreSQL und mit dem gepackten Backend-JAR.
 Vorhanden: Shell-Routen, installierbare/offline-fähige Assets, lokale Dexie-Outbox,
 explizite NodeTransport-/AppDeviceKeys-Ports, unabhängige Sync-Zustandstypen,
 System-Endpunkte, HTTP-Client-Generierung und gemeinsame Core-Komposition.
-BLE/Schlüssel/Login/Tenant-Fachendpunkte, Rohdaten-Erfassung, echte Uploads,
+Seit #5 zusätzlich: hardwareunabhängige RFID-Rohdatenerfassung mit RTC,
+Sequence und persistentem Store im `firmware-core`, getestet ohne Hardware.
+BLE/Schlüssel/Login/Tenant-Fachendpunkte, echte Uploads,
 Visit-Ableitung, Verwaltung und Hardware-Adapter folgen in ihren Tickets. Kein
 gemeinsames Mitarbeiter-Secret und keine Umdeutung historischer Daten über die
 aktuelle Node-Futterstelle sind zulässig.
