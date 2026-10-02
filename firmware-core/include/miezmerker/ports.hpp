@@ -20,4 +20,8 @@ struct BleTransport {
     virtual ~BleTransport() = default;
     virtual bool send(std::span<const std::byte> message) = 0;
 };
+struct RandomSource {
+    virtual ~RandomSource() = default;
+    virtual void random_bytes(std::span<std::byte> out) = 0;
+};
 } // namespace miezmerker
