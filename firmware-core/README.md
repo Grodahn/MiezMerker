@@ -25,7 +25,8 @@ Fields: `node_id`, `incarnation`, `sequence`, `chip_id`,
 ## Sequence guarantees
 
 - `sequence` starts at 1 per node identity; 0 is invalid and never used.
-- Strictly monotonic per `(node_id, incarnation)` across reboots.
+- Strictly monotonic per `node_id` across reboots; reconciliation considers
+  every record for that node even if incarnation metadata differs.
 - Strategy: **reserve-then-append with reboot reconciliation**.
   The identity counter is persisted *before* the observation is appended, so a
   crash between the two leaves a gap, never a duplicate. Every boot
@@ -47,10 +48,17 @@ Fields: `node_id`, `incarnation`, `sequence`, `chip_id`,
   `incarnation`, the sequence counter, all persisted observations and the
   acknowledgement watermark. Only the volatile debounce cache and
   `boot_counter` (incremented, persisted) change.
-- **Factory reset** (`Core::factory_reset`) is a distinct operation: it erases
-  observations, ack state and debounce memory, then provisions a **new**
-  `node_id` + `incarnation` starting a new sequence lifetime at 1. The same
-  `node_id` with a reset counter is impossible by construction.
+- **Factory reset** (`Core::factory_reset`) first commits a **new** `node_id`
+  + `incarnation` with a persistent `reset_pending` marker, then atomically
+  clears observations and ack state, and finally clears the marker. Capture
+  and record export stay disabled until every step succeeds; reboot resumes
+  an interrupted reset before accepting reads. The new lifetime starts at 1.
+  All-zero entropy and IDs matching the current identity or retained log are
+  rejected before any data is erased.
+- Identity loading distinguishes `NOT_FOUND` from `IO_ERROR`. Unreadable or
+  invalid identity state stops capture without overwriting it. Automatic
+  first-boot provisioning requires both an empty log and a zero ack cursor;
+  orphaned observations require explicit recovery or factory reset.
 - `ClaimState` (`UNCLAIMED`/`CLAIMED`) is persisted as a minimal #18
   placeholder; cryptographic device keys and organization claiming are #17/#18
   work and intentionally absent here.
@@ -81,6 +89,8 @@ Fields: `node_id`, `incarnation`, `sequence`, `chip_id`,
   no record and refresh no timer; different chip IDs are independent.
 - The window lives in RAM and is lost on reboot (a read right after reboot
   records; suppressing it would risk silent loss).
+- Expired entries are pruned after successful reads; disabled debounce keeps
+  no cache. RAM tracks active windows rather than every chip ever seen.
 - NOT allowed and NOT implemented: grouping reads into visits, inferring
   feeding sessions, deleting observations for business reasons.
 
@@ -96,6 +106,8 @@ Fields: `node_id`, `incarnation`, `sequence`, `chip_id`,
   acknowledged data. Acknowledging (`set_ack_watermark`, monotonic, persisted
   across reboot) does not free space; compaction of synced records belongs to
   #6.
+- Acknowledgements beyond the last durable observation are rejected, including
+  reserved sequences whose append failed; sequence gaps remain valid.
 - Operators must sync (#6) and, once #6 provides compaction, reclaim space.
   Until then a full node keeps serving old data and refuses new reads loudly.
 
@@ -108,6 +120,10 @@ Fields: `node_id`, `incarnation`, `sequence`, `chip_id`,
   reported (`IO_ERROR`) and can be retried by presenting the tag again.
 - Reboot preserves identity, sequence state, all persisted observations
   (including unacknowledged ones) and the ack watermark.
+- Host recovery tests inject failures before writes and power loss after durable
+  sequence reservation, append, and each factory-reset commit. The in-memory
+  cells model durable media by outliving Core; physical flash validation remains
+  the responsibility of the ESP32-C3 adapter ticket.
 
 ## Ports (for #6, #7, #18 and ESP32-C3 adapters)
 

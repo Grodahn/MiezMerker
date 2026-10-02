@@ -16,11 +16,18 @@ mechanism.
 
 - **Reserve-then-append with reboot reconciliation.** The identity store
   persists `next_sequence + 1` before the observation is appended; boot
-  reconciles the counter against `max(persisted sequence) + 1`. Gaps after a
+  reconciles the counter against `max(persisted sequence for node_id) + 1`,
+  independently of incarnation metadata. Gaps after a
   crash are accepted; reuse is excluded. Uniqueness outranks gaplessness.
 - **Identity pair.** `node_id` (UUIDv4 app identity, never MAC/DB id) plus an
   `incarnation` value; both are regenerated together on factory reset, never
   on reboot. Event identity is `(node_id, incarnation, sequence)`.
+- **Fail-closed identity loading and resumable reset.** Read errors and invalid
+  identity records never trigger automatic provisioning. First boot requires
+  an empty log and zero ack cursor. Reset commits a fresh identity with a
+  `reset_pending` journal before atomically clearing the log/cursor, then clears
+  the journal. Every write is checked; boot resumes pending reset before reads
+  or record export. Repeated generated IDs are rejected before erasure.
 - **Clock states `SYNCED` / `RTC_ONLY` / `UNKNOWN`.** The RTC value at read
   time is stored with its then-current trust; `UNKNOWN` stores no epoch value;
   corrections affect future reads only. Maps to protocol v1 (`SYNCED` and
@@ -33,6 +40,7 @@ mechanism.
   the common path); never overwrite pending or acknowledged data to continue
   recording. Compaction of synced records is #6 work; the ack watermark is
   persisted now so #6 can build on it.
+  The watermark cannot advance beyond the last durably recorded sequence.
 - **Crypto/claim deferred.** A persisted `UNCLAIMED`/`CLAIMED` placeholder
   keeps the #18 shape; key generation and claiming stay out of #5.
 
@@ -41,6 +49,8 @@ mechanism.
 - An ESP32-C3 adapter must implement atomic identity/observation writes
   (commit markers, torn-tail discard) to inherit the proven guarantees; the
   core cannot compensate for a non-atomic store.
+  Log/cursor clear must also be atomic and idempotent, and identity loading must
+  distinguish a missing record from an I/O error.
 - Sync (#6) must treat sequence gaps as normal and must never assume
   contiguity; backend ingestion (#7) deduplicates by full event identity.
 - Protocol v1 stays unchanged in #5; the lossy `SYNCED`/`RTC_ONLY` → `known`

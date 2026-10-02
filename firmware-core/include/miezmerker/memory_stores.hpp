@@ -40,6 +40,7 @@ public:
     // --- Fault injection for deterministic power-loss tests ---
     void set_fail_next_append(bool fail) { fail_next_append_ = fail; }
     void set_fail_next_watermark(bool fail) { fail_next_watermark_ = fail; }
+    void set_fail_next_clear(bool fail) { fail_next_clear_ = fail; }
     std::size_t append_attempts() const { return append_attempts_; }
 
 private:
@@ -48,6 +49,7 @@ private:
     std::uint64_t ack_watermark_{0};
     bool fail_next_append_{false};
     bool fail_next_watermark_{false};
+    bool fail_next_clear_{false};
     std::size_t append_attempts_{0};
 };
 
@@ -57,12 +59,13 @@ class InMemoryIdentityStore final : public DeviceIdentityStore {
 public:
     InMemoryIdentityStore() = default;
 
-    bool load(IdentityRecord& out) override;
+    IdentityLoadResult load(IdentityRecord& out) override;
     bool store(const IdentityRecord& record) override;
     bool erase() override;
 
     // --- Fault injection ---
     void set_fail_next_store(bool fail) { fail_next_store_ = fail; }
+    void set_fail_next_load(bool fail) { fail_next_load_ = fail; }
     void set_has_record(bool has) { has_record_ = has; }
     bool has_record() const { return has_record_; }
     std::size_t store_attempts() const { return store_attempts_; }
@@ -71,6 +74,7 @@ private:
     IdentityRecord record_{};
     bool has_record_{false};
     bool fail_next_store_{false};
+    bool fail_next_load_{false};
     std::size_t store_attempts_{0};
 };
 

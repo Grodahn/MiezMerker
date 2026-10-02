@@ -18,24 +18,47 @@ Core::Core(Clock& clock, Storage& storage, ObservationStore& observations,
 Core::Core(Clock& clock, Storage& storage)
     : clock_(&clock), storage_(&storage), legacy_mode_(true) {}
 
-bool Core::provision_fresh_identity(bool /*is_factory_reset*/) {
+bool Core::provision_fresh_identity(bool is_factory_reset) {
     if (identity_store_ == nullptr || random_ == nullptr) return false;
     NodeId node{};
     IncarnationId incarnation{};
     random_->fill_random(std::span<std::uint8_t>(node.bytes.data(), node.bytes.size()));
     random_->fill_random(std::span<std::uint8_t>(incarnation.bytes.data(), incarnation.bytes.size()));
+    // Check before setting UUID format bits, which would hide an all-zero
+    // entropy failure behind an apparently nonzero identifier.
+    if (!node.is_set() || !incarnation.is_set()) return false;
     apply_uuidv4_variant(node.bytes);
     apply_uuidv4_variant(incarnation.bytes);
-    if (!node.is_set() || !incarnation.is_set()) return false;
+    // A repeated RNG stream must never restart an existing sequence lifetime.
+    if (is_factory_reset && (node == identity_.node_id || incarnation == identity_.incarnation)) {
+        return false;
+    }
+    for (const auto& obs : observations_->load_all()) {
+        if (obs.node_id == node) return false;
+    }
     IdentityRecord fresh{};
     fresh.node_id = node;
     fresh.incarnation = incarnation;
     fresh.next_sequence = kFirstSequence;
     fresh.boot_counter = 1;
     fresh.claim_state = ClaimState::UNCLAIMED;
+    fresh.reset_pending = is_factory_reset;
     if (!fresh.valid()) return false;
     if (!identity_store_->store(fresh)) return false;
     identity_ = fresh;
+    return true;
+}
+
+bool Core::complete_pending_reset() {
+    if (!identity_.reset_pending) return true;
+    // Persisting the fresh identity first makes this two-store operation
+    // resumable. Until the journal is cleared, no read or sync is permitted.
+    if (!observations_->clear()) return false;
+    IdentityRecord completed = identity_;
+    completed.reset_pending = false;
+    if (!identity_store_->store(completed)) return false;
+    identity_ = completed;
+    last_recorded_ms_.clear();
     return true;
 }
 
@@ -44,7 +67,10 @@ bool Core::reconcile_after_load() {
     std::vector<RawObservation> records = observations_->load_all();
     Sequence max_seen = kInvalidSequence;
     for (const auto& obs : records) {
-        if (obs.node_id == identity_.node_id && obs.incarnation == identity_.incarnation) {
+        if (!obs.valid()) return false;
+        // Sequence belongs to node_id's lifetime, even if incarnation metadata
+        // differs. A fresh lifetime is permitted only with a fresh node_id.
+        if (obs.node_id == identity_.node_id) {
             if (obs.sequence > max_seen) max_seen = obs.sequence;
         }
     }
@@ -65,6 +91,7 @@ bool Core::reconcile_after_load() {
 }
 
 bool Core::initialize() {
+    ready_ = false;
     if (legacy_mode_) {
         // Preserved #2 boot gate.
         ready_ = storage_ != nullptr && storage_->open();
@@ -84,11 +111,11 @@ bool Core::initialize() {
     started_at_ms_ = clock_->monotonic_ms();
 
     IdentityRecord loaded{};
-    if (identity_store_->load(loaded) && loaded.valid()) {
-        identity_ = loaded;
-    } else {
-        // First boot (or corrupted/missing record): provision the persistent
-        // random application identity. Never derive it from MAC/database IDs.
+    const auto load = identity_store_->load(loaded);
+    if (load == IdentityLoadResult::NOT_FOUND) {
+        // Only a genuinely empty device may be provisioned automatically.
+        // An orphaned log/cursor requires explicit recovery or factory reset.
+        if (observations_->size() != 0 || observations_->ack_watermark() != 0) return false;
         if (!provision_fresh_identity(false)) {
             ready_ = false;
             return false;
@@ -97,6 +124,9 @@ bool Core::initialize() {
         ready_ = true;
         return true;
     }
+    if (load != IdentityLoadResult::OK || !loaded.valid()) return false;
+    identity_ = loaded;
+    if (!complete_pending_reset()) return false;
 
     // Normal reboot path: identity (node_id + incarnation) is retained.
     // Reconcile the sequence counter before accepting any read so no normal
@@ -144,11 +174,6 @@ RecordResult Core::record_chip_read(const std::string& chip_id) {
         }
     }
 
-    // Avoid needless sequence gaps: refuse early when the store is full.
-    // (A TOCTOU FULL between this check and append still yields a gap, which
-    // is the documented safe direction: skip, never reuse.)
-    if (observations_->status() == StoreStatus::FULL) return RecordResult::REJECTED_FULL;
-
     // RTC value actually observed at read time, with the trust status that
     // applied at that instant. Never synthesize a trustworthy timestamp.
     WallClockReading wall = clock_->wall_clock();
@@ -159,6 +184,9 @@ RecordResult Core::record_chip_read(const std::string& chip_id) {
     } else if (!epoch.has_value()) {
         status = ClockStatus::UNKNOWN;
     }
+
+    // Sample the RTC before any potentially slow persistence-adapter call.
+    if (observations_->status() == StoreStatus::FULL) return RecordResult::REJECTED_FULL;
 
     // Reserve-then-append: persist the advanced counter BEFORE the observation
     // so any crash between the two leaves a gap, never a duplicate.
@@ -190,7 +218,17 @@ RecordResult Core::record_chip_read(const std::string& chip_id) {
     if (put == PutResult::FULL) return RecordResult::REJECTED_FULL;
     if (put != PutResult::OK) return RecordResult::IO_ERROR;
 
-    last_recorded_ms_[chip_id] = now_ms;
+    if (config_.debounce_interval_ms > 0) {
+        // Keep only live windows rather than all chips ever seen by the node.
+        for (auto it = last_recorded_ms_.begin(); it != last_recorded_ms_.end();) {
+            if (now_ms - it->second >= config_.debounce_interval_ms) {
+                it = last_recorded_ms_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        last_recorded_ms_[chip_id] = now_ms;
+    }
     return RecordResult::RECORDED;
 }
 
@@ -202,6 +240,7 @@ std::optional<RecordResult> Core::poll_reader(RfidReader& reader) {
 
 bool Core::factory_reset() {
     if (legacy_mode_) return false;
+    ready_ = false;
     if (clock_ == nullptr || storage_ == nullptr || observations_ == nullptr ||
         identity_store_ == nullptr || random_ == nullptr) {
         return false;
@@ -210,15 +249,26 @@ bool Core::factory_reset() {
         ready_ = false;
         return false;
     }
-    // Erase the old lifetime first so the old (node_id, sequence) space can
-    // never be continued with a reset counter.
-    identity_store_->erase();
-    observations_->clear();
-    last_recorded_ms_.clear();
+    // Read the durable identity even when called before initialize(). Never
+    // erase it before generating the replacement: it is the collision guard
+    // and the journal needed to resume reset after any interruption.
+    IdentityRecord loaded{};
+    const auto load = identity_store_->load(loaded);
+    if (load != IdentityLoadResult::OK && load != IdentityLoadResult::NOT_FOUND) return false;
+    if (load == IdentityLoadResult::OK) {
+        identity_ = loaded;
+        if (identity_.valid() && identity_.reset_pending) {
+            if (!complete_pending_reset()) return false;
+            started_at_ms_ = clock_->monotonic_ms();
+            ready_ = true;
+            return true;
+        }
+    }
     if (!provision_fresh_identity(true)) {
         ready_ = false;
         return false;
     }
+    if (!complete_pending_reset()) return false;
     started_at_ms_ = clock_->monotonic_ms();
     ready_ = true;
     return true;
@@ -241,6 +291,13 @@ std::uint64_t Core::ack_watermark() const {
 
 bool Core::set_ack_watermark(std::uint64_t sequence) {
     if (!ready_ || observations_ == nullptr) return false;
+    // Never pre-acknowledge data that has not yet been recorded. Gaps are
+    // allowed, but the cursor cannot pass the last durable observation.
+    Sequence last = kInvalidSequence;
+    for (const auto& obs : observations_->load_all()) {
+        if (obs.node_id == identity_.node_id && obs.sequence > last) last = obs.sequence;
+    }
+    if (sequence > last) return false;
     return observations_->set_ack_watermark(sequence);
 }
 

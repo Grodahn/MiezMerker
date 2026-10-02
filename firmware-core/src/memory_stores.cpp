@@ -30,7 +30,7 @@ StoreStatus InMemoryObservationStore::status() const {
     if (records_.size() >= capacity_) return StoreStatus::FULL;
     if (capacity_ > 0 && records_.size() > 0) {
         // NEARLY_FULL at >= 90% occupancy (integer math, no floats in core).
-        const std::size_t threshold = (capacity_ * 9) / 10;
+        const std::size_t threshold = capacity_ - capacity_ / 10;
         if (records_.size() >= threshold) return StoreStatus::NEARLY_FULL;
     }
     return StoreStatus::OK;
@@ -44,11 +44,16 @@ bool InMemoryObservationStore::set_ack_watermark(std::uint64_t sequence) {
         return false;
     }
     if (sequence < ack_watermark_) return false;
+    if (sequence > 0 && (records_.empty() || sequence > records_.back().sequence)) return false;
     ack_watermark_ = sequence;
     return true;
 }
 
 bool InMemoryObservationStore::clear() {
+    if (fail_next_clear_) {
+        fail_next_clear_ = false;
+        return false;
+    }
     records_.clear();
     ack_watermark_ = 0;
     return true;
@@ -56,10 +61,14 @@ bool InMemoryObservationStore::clear() {
 
 // --- InMemoryIdentityStore ---
 
-bool InMemoryIdentityStore::load(IdentityRecord& out) {
-    if (!has_record_) return false;
+IdentityLoadResult InMemoryIdentityStore::load(IdentityRecord& out) {
+    if (fail_next_load_) {
+        fail_next_load_ = false;
+        return IdentityLoadResult::IO_ERROR;
+    }
+    if (!has_record_) return IdentityLoadResult::NOT_FOUND;
     out = record_;
-    return true;
+    return IdentityLoadResult::OK;
 }
 
 bool InMemoryIdentityStore::store(const IdentityRecord& record) {

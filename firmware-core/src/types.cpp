@@ -80,8 +80,10 @@ bool RawObservation::valid() const {
     if (!chip_id.valid()) return false;
     if (clock_status == ClockStatus::UNKNOWN) {
         if (observed_at_epoch_ms.has_value()) return false;
-    } else {
+    } else if (clock_status == ClockStatus::SYNCED || clock_status == ClockStatus::RTC_ONLY) {
         if (!observed_at_epoch_ms.has_value()) return false;
+    } else {
+        return false;
     }
     return true;
 }
@@ -89,6 +91,9 @@ bool RawObservation::valid() const {
 bool IdentityRecord::valid() const {
     if (!node_id.is_set() || !incarnation.is_set()) return false;
     if (next_sequence == kInvalidSequence) return false;
+    if (claim_state != ClaimState::UNCLAIMED && claim_state != ClaimState::CLAIMED) return false;
+    if (reset_pending && (next_sequence != kFirstSequence || boot_counter != 1 ||
+                          claim_state != ClaimState::UNCLAIMED)) return false;
     return true;
 }
 

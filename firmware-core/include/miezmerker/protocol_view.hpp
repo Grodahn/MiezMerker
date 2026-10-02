@@ -4,8 +4,8 @@
 //
 // Maps a persisted RawObservation to the logical BLE record v1 defined in
 // protocol/raw-observation-v1.schema.json. This is NOT the GATT codec (owned
-// by #6); it is a lossless JSON reference rendering so the simulator and tests
-// can prove the core preserves every field the transfer layer will need.
+// by #6); it is a JSON reference rendering of the protocol-v1 fields.
+// boot_counter and the local clock-trust distinction are not present in v1.
 //
 // Mapping (documented, testable):
 //   SYNCED | RTC_ONLY -> clock_status "known" with observed_at_epoch_ms string

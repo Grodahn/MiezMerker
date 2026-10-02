@@ -105,10 +105,9 @@ public:
     /// reader reports no tag.
     std::optional<RecordResult> poll_reader(RfidReader& reader);
 
-    /// Distinct lifecycle operation: erases observations, ack state and
-    /// debounce memory, then provisions a fresh node_id + incarnation with a
-    /// new sequence lifetime starting at kFirstSequence. Never reuses the old
-    /// identity with a reset counter.
+    /// Distinct lifecycle operation: journals a fresh identity before erasing
+    /// observations and ack state. Boot resumes an interrupted reset before
+    /// accepting reads. Never reuses the old identity with a reset counter.
     bool factory_reset();
 
     // --- Introspection for #6/#7, simulator and tests ---
@@ -127,6 +126,7 @@ public:
 private:
     bool reconcile_after_load();
     bool provision_fresh_identity(bool is_factory_reset);
+    bool complete_pending_reset();
 
     Clock* clock_{nullptr};
     Storage* storage_{nullptr};

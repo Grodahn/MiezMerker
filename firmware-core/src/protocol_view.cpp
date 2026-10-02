@@ -1,6 +1,7 @@
 #include "miezmerker/protocol_view.hpp"
 
 #include <cstdio>
+#include <locale>
 #include <sstream>
 
 namespace miezmerker {
@@ -61,6 +62,7 @@ void append_json_string(std::ostringstream& out, const std::string& value) {
 
 std::string observation_to_protocol_json(const RawObservation& observation) {
     std::ostringstream out;
+    out.imbue(std::locale::classic());
     out << "{";
     out << "\"protocol_version\":1,";
     out << "\"node_id\":";

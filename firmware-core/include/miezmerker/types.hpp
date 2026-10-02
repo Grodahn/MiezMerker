@@ -129,6 +129,9 @@ struct IdentityRecord {
     Sequence next_sequence{kFirstSequence};
     std::uint32_t boot_counter{0};
     ClaimState claim_state{ClaimState::UNCLAIMED};
+    /// Durable reset journal: new identity committed, old log not yet erased.
+    /// Capture stays disabled until clear() and final identity commit succeed.
+    bool reset_pending{false};
 
     bool valid() const;
 };

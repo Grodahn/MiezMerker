@@ -36,6 +36,8 @@ struct Clock {
 
 /// Entropy for UUIDv4 node/incarnation generation. Injected so tests stay
 /// deterministic and ESP32-C3 can later use its hardware RNG.
+/// Production adapters must provide fresh random bytes across reboots/resets;
+/// a deterministic host source is suitable only for tests and the simulator.
 struct RandomSource {
     virtual ~RandomSource() = default;
     virtual void fill_random(std::span<std::uint8_t> out) = 0;
@@ -45,11 +47,13 @@ struct RandomSource {
 ///
 /// Implementations must provide atomic record updates: a power loss during
 /// store() leaves either the previous record or the new record readable, never
-/// a torn half-record. load() returns false when no record exists yet (first
-/// boot); valid records always satisfy IdentityRecord::valid().
+/// a torn half-record. load() distinguishes first boot from an unreadable
+/// record: an IO_ERROR must never cause automatic reprovisioning.
+enum class IdentityLoadResult : std::uint8_t { OK = 0, NOT_FOUND = 1, IO_ERROR = 2 };
+
 struct DeviceIdentityStore {
     virtual ~DeviceIdentityStore() = default;
-    virtual bool load(IdentityRecord& out) = 0;
+    virtual IdentityLoadResult load(IdentityRecord& out) = 0;
     virtual bool store(const IdentityRecord& record) = 0;
     virtual bool erase() = 0;
 };
@@ -74,6 +78,8 @@ enum class StoreStatus : std::uint8_t { OK = 0, NEARLY_FULL = 1, FULL = 2 };
 /// - The ack watermark (for BLE sync in #6) is persisted separately from raw
 ///   records and survives reboot. The core never deletes records in #5;
 ///   compaction of acknowledged records belongs to #6.
+/// - clear() atomically erases records and the ack cursor, or preserves both.
+///   It is idempotent so an interrupted factory reset can resume on boot.
 struct ObservationStore {
     virtual ~ObservationStore() = default;
     virtual PutResult append(const RawObservation& observation) = 0;
