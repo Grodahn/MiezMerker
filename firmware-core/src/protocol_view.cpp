@@ -1,5 +1,6 @@
 #include "miezmerker/protocol_view.hpp"
 
+#include <cstdio>
 #include <sstream>
 
 namespace miezmerker {
@@ -19,13 +20,19 @@ namespace {
 
 void append_json_string(std::ostringstream& out, const std::string& value) {
     out << '"';
-    for (const char c : value) {
+    for (const unsigned char c : value) {
         switch (c) {
             case '"':
                 out << "\\\"";
                 break;
             case '\\':
                 out << "\\\\";
+                break;
+            case '\b':
+                out << "\\b";
+                break;
+            case '\f':
+                out << "\\f";
                 break;
             case '\n':
                 out << "\\n";
@@ -37,7 +44,13 @@ void append_json_string(std::ostringstream& out, const std::string& value) {
                 out << "\\t";
                 break;
             default:
-                out << c;
+                if (c < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out << buf;
+                } else {
+                    out << static_cast<char>(c);
+                }
                 break;
         }
     }

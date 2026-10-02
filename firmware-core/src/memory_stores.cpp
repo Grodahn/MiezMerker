@@ -28,10 +28,10 @@ std::size_t InMemoryObservationStore::capacity() const { return capacity_; }
 
 StoreStatus InMemoryObservationStore::status() const {
     if (records_.size() >= capacity_) return StoreStatus::FULL;
-    if (capacity_ > 0) {
+    if (capacity_ > 0 && records_.size() > 0) {
         // NEARLY_FULL at >= 90% occupancy (integer math, no floats in core).
         const std::size_t threshold = (capacity_ * 9) / 10;
-        if (records_.size() >= threshold && threshold < capacity_) return StoreStatus::NEARLY_FULL;
+        if (records_.size() >= threshold) return StoreStatus::NEARLY_FULL;
     }
     return StoreStatus::OK;
 }

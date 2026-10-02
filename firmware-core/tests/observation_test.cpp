@@ -540,6 +540,45 @@ void test_protocol_view_mapping() {
     std::cout << "PASS protocol_view\n";
 }
 
+void test_store_status_small_capacity() {
+    miezmerker::InMemoryObservationStore store(1);
+    // An empty capacity-1 store is OK, not NEARLY_FULL (threshold would be 0).
+    CHECK(store.status() == miezmerker::StoreStatus::OK);
+    miezmerker::RawObservation obs{};
+    const auto node = miezmerker::NodeId::parse("11121314-1516-4718-991a-1b1c1d1e1f20");
+    const auto incarn = miezmerker::IncarnationId::parse("21222324-2526-4728-a92a-2b2c2d2e2f30");
+    CHECK(node.has_value() && incarn.has_value());
+    obs.node_id = *node;
+    obs.incarnation = *incarn;
+    obs.sequence = 1;
+    obs.chip_id.value = "chip-1";
+    obs.clock_status = miezmerker::ClockStatus::SYNCED;
+    obs.observed_at_epoch_ms = 100;
+    obs.monotonic_ms = 1;
+    CHECK(store.append(obs) == miezmerker::PutResult::OK);
+    CHECK(store.status() == miezmerker::StoreStatus::FULL);
+    std::cout << "PASS store_status_small_capacity\n";
+}
+
+void test_protocol_view_escaping() {
+    miezmerker::RawObservation obs{};
+    const auto node = miezmerker::NodeId::parse("11121314-1516-4718-991a-1b1c1d1e1f20");
+    const auto incarn = miezmerker::IncarnationId::parse("21222324-2526-4728-a92a-2b2c2d2e2f30");
+    CHECK(node.has_value() && incarn.has_value());
+    obs.node_id = *node;
+    obs.incarnation = *incarn;
+    obs.sequence = 1;
+    obs.chip_id.value = "chip\"with\\control\x01";
+    obs.clock_status = miezmerker::ClockStatus::SYNCED;
+    obs.observed_at_epoch_ms = 42;
+    obs.monotonic_ms = 7;
+    const std::string json = miezmerker::observation_to_protocol_json(obs);
+    CHECK(json.find("\\\"") != std::string::npos);
+    CHECK(json.find("\\\\") != std::string::npos);
+    CHECK(json.find("\\u0001") != std::string::npos);
+    std::cout << "PASS protocol_view_escaping\n";
+}
+
 void test_uuid_format_and_claim_placeholder() {
     Fixture f;
     sync_clock(f.clock, 0, miezmerker::ClockStatus::UNKNOWN, std::nullopt);
@@ -579,6 +618,8 @@ int main() {
     test_normal_reboot_keeps_identity();
     test_poll_reader();
     test_protocol_view_mapping();
+    test_store_status_small_capacity();
+    test_protocol_view_escaping();
     test_uuid_format_and_claim_placeholder();
     if (failures == 0) {
         std::cout << "All observation tests passed (" << checks << " checks)\n";

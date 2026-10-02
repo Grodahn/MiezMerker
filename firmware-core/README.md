@@ -7,8 +7,8 @@ Target board for the real firmware is **ESP32-C3**; its adapters live in
 ## RawObservation lifecycle
 
 ```text
-RFID read → validate chip_id → debounce check → reserve sequence
-  → sample RTC (timestamp + clock_status at read time)
+RFID read → validate chip_id → debounce check → sample RTC
+  (timestamp + clock_status at read time) → reserve sequence
   → durable append → RECORDED
 ```
 
