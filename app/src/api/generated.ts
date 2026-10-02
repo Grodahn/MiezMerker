@@ -229,7 +229,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Organizations of the authenticated user (via ACTIVE or any membership) */
+        /** Active organizations of the authenticated user's ACTIVE memberships */
         get: operations["listMyOrganizations"];
         put?: never;
         /** Create an organization; caller becomes ACTIVE ADMIN (test-phase provisioning) */
@@ -264,7 +264,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List members of my organization (ADMIN and MEMBER see the roster; cross-organization access is forbidden) */
+        /** ADMIN lists members of their own organization */
         get: operations["listMembers"];
         put?: never;
         /** ADMIN creates a user and/or ACTIVE membership (test-phase bootstrap, no mail) */
@@ -335,6 +335,7 @@ export interface components {
         CreateMemberRequest: {
             /** Format: email */
             email: string;
+            /** @description Initial password: at least 12 characters, at most 72 UTF-8 bytes */
             password?: string;
             /** @enum {string} */
             role: "ADMIN" | "MEMBER";

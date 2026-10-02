@@ -17,14 +17,8 @@ import {
   login,
   logout,
   subscribeAuth,
+  selectOrganization,
 } from './auth';
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
 
 describe('auth session (#16)', () => {
   beforeEach(() => {
@@ -67,7 +61,7 @@ describe('auth session (#16)', () => {
       if (path.includes('/auth/login')) {
         return { data: { userId: 'u-1', email: 'a@example.org', memberships: [] }, error: undefined };
       }
-      return { data: undefined, error: undefined };
+      return { data: undefined, error: undefined, response: { ok: true, status: 200 } };
     });
     await login('a@example.org', 'supersecret-password');
     expect(getAuthState().user).not.toBeNull();
@@ -77,9 +71,44 @@ describe('auth session (#16)', () => {
   });
 
   test('fetchSession returns null when unauthenticated', async () => {
-    get.mockResolvedValue({ data: undefined, error: { message: 'unauthorized' } });
+    get.mockResolvedValue({ data: undefined, error: {}, response: { status: 401 } });
     expect(await fetchSession()).toBeNull();
     expect(getAuthState().user).toBeNull();
+  });
+
+  test('a rejected logout keeps the authenticated state', async () => {
+    get.mockResolvedValue({ data: { token: 'fresh' } });
+    post.mockResolvedValueOnce({ data: { userId: 'u-1', email: 'a@example.org', memberships: [] } });
+    await login('a@example.org', 'password');
+    post.mockResolvedValueOnce({ error: {}, response: { status: 403 } });
+    await expect(logout()).rejects.toThrow('Abmelden fehlgeschlagen');
+    expect(getAuthState().user?.userId).toBe('u-1');
+    expect(post).toHaveBeenLastCalledWith('/api/v1/auth/logout', { headers: { 'X-XSRF-TOKEN': 'fresh' } });
+  });
+
+  test('multiple memberships require a selection and revocation clears it', async () => {
+    const memberships = [
+      { membershipId: 'm-1', organizationId: 'o-1', role: 'MEMBER', status: 'ACTIVE' },
+      { membershipId: 'm-2', organizationId: 'o-2', role: 'ADMIN', status: 'ACTIVE' },
+    ];
+    get.mockResolvedValue({ data: { userId: 'u-multi', email: 'multi@example.org', memberships } });
+    await fetchSession();
+    expect(getAuthState().activeOrganizationId).toBeNull();
+    selectOrganization('o-2');
+    expect(getAuthState().activeOrganizationId).toBe('o-2');
+    expect(() => selectOrganization('foreign')).toThrow();
+    get.mockResolvedValue({ data: { userId: 'u-multi', email: 'multi@example.org',
+      memberships: memberships.map(m => ({ ...m, status: 'DISABLED' })) } });
+    await fetchSession();
+    expect(getAuthState().activeOrganizationId).toBeNull();
+  });
+
+  test('network failures do not silently clear an authenticated session', async () => {
+    get.mockResolvedValue({ data: { userId: 'u-1', email: 'a@example.org', memberships: [] } });
+    await fetchSession();
+    get.mockResolvedValue({ error: {}, response: { status: 503 } });
+    await expect(fetchSession()).rejects.toThrow();
+    expect(getAuthState().user?.userId).toBe('u-1');
   });
 
   test('activeOrganizationIds only includes ACTIVE memberships', async () => {

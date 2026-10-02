@@ -68,11 +68,13 @@
         "properties": {
           "email": {
             "format": "email",
-            "minLength": 1,
+            "maxLength": 320,
+            "minLength": 0,
             "type": "string"
           },
           "password": {
-            "maxLength": 200,
+            "description": "Initial password: at least 12 characters, at most 72 UTF-8 bytes",
+            "maxLength": 72,
             "minLength": 12,
             "type": "string"
           },
@@ -849,7 +851,7 @@
             "description": "OK"
           }
         },
-        "summary": "Organizations of the authenticated user (via ACTIVE or any membership)",
+        "summary": "Active organizations of the authenticated user's ACTIVE memberships",
         "tags": [
           "organization-controller"
         ]
@@ -945,7 +947,7 @@
             "description": "OK"
           }
         },
-        "summary": "List members of my organization (ADMIN and MEMBER see the roster; cross-organization access is forbidden)",
+        "summary": "ADMIN lists members of their own organization",
         "tags": [
           "member-controller"
         ]

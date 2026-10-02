@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
@@ -36,7 +37,7 @@ public class AppUser {
     protected AppUser() {}
 
     public AppUser(String email, String passwordHash) {
-        this.email = email;
+        this.email = normalizeEmail(email);
         this.passwordHash = passwordHash;
         this.status = UserStatus.ACTIVE;
         this.createdAt = Instant.now();
@@ -54,6 +55,6 @@ public class AppUser {
     public void setLastLoginAt(Instant lastLoginAt) { this.lastLoginAt = lastLoginAt; }
 
     public static String normalizeEmail(String email) {
-        return email == null ? null : email.trim().toLowerCase();
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 }

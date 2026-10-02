@@ -9,11 +9,16 @@ import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.miezmerker.backend.domain.AppUser;
 import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
 import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationMembership;
+import org.miezmerker.backend.domain.OrganizationStatus;
+import org.miezmerker.backend.domain.UserStatus;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
@@ -22,7 +27,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -33,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Import(TenancyAuthTest.SessionTestConfiguration.class)
 class TenancyAuthTest {
     @Value("${local.server.port}") int port;
 
@@ -44,6 +55,22 @@ class TenancyAuthTest {
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
     CookieManager cookies;
+
+    @TestConfiguration
+    static class SessionTestConfiguration {
+        @Bean ExpiryProbe expiryProbe() { return new ExpiryProbe(); }
+    }
+
+    @RestController
+    static class ExpiryProbe {
+        @GetMapping("/api/v1/test/expire-session")
+        int expire(HttpServletRequest request) {
+            var session = request.getSession(false);
+            int configuredTimeout = session.getMaxInactiveInterval();
+            session.setMaxInactiveInterval(1);
+            return configuredTimeout;
+        }
+    }
 
     @BeforeEach
     void http() {
@@ -171,10 +198,10 @@ class TenancyAuthTest {
         Fixture f = seed();
         UUID orgA = f.orgA().getId();
 
-        // MEMBER can list roster.
+        // The member roster is an ADMIN endpoint.
         login("member-a@example.org", "supersecret-password-m", 200);
         var list = get("/api/v1/organizations/" + orgA + "/members");
-        assertEquals(200, list.statusCode(), list.body());
+        assertEquals(403, list.statusCode(), list.body());
         // MEMBER can read own org.
         var org = get("/api/v1/organizations/" + orgA);
         assertEquals(200, org.statusCode(), org.body());
@@ -261,7 +288,7 @@ class TenancyAuthTest {
     void selfSignupIsDisabled() throws Exception {
         seed();
         // No public registration endpoint exists.
-        assertEquals(401, get("/api/v1/organizations").statusCode() == 401 ? 401 : 401);
+        assertEquals(401, get("/api/v1/organizations").statusCode());
         var res = post("/api/v1/organizations/nope/members",
                 "{\"email\":\"x@example.org\",\"password\":\"supersecret-new-1\",\"role\":\"MEMBER\"}");
         assertTrue(res.statusCode() == 401 || res.statusCode() == 403 || res.statusCode() == 404,
@@ -276,5 +303,103 @@ class TenancyAuthTest {
         assertEquals(MembershipStatus.PENDING, m.get().getStatus());
         // Role is still ADMIN|MEMBER, never PENDING.
         assertTrue(m.get().getRole() == MembershipRole.ADMIN || m.get().getRole() == MembershipRole.MEMBER);
+    }
+
+    @Test
+    void organizationEndpointsRejectInactiveMembershipsAndDisabledOrganizations() throws Exception {
+        Fixture f = seed();
+        login("pending-a@example.org", "supersecret-password-p", 200);
+        assertEquals(0, mapper.readTree(get("/api/v1/organizations").body()).size());
+        login("disabled-a@example.org", "supersecret-password-d", 200);
+        assertEquals(0, mapper.readTree(get("/api/v1/organizations").body()).size());
+        login("admin-a@example.org", "supersecret-password-a", 200);
+        f.orgA().setStatus(OrganizationStatus.DISABLED);
+        organizations.save(f.orgA());
+        assertEquals(403, get("/api/v1/organizations/" + f.orgA().getId()).statusCode());
+        assertEquals(403, get("/api/v1/organizations/" + f.orgA().getId() + "/members").statusCode());
+        assertEquals(0, mapper.readTree(get("/api/v1/organizations").body()).size());
+        assertEquals(0, mapper.readTree(get("/api/v1/auth/session").body()).get("memberships").size());
+    }
+
+    @Test
+    void disabledAccountCannotReuseItsSessionOrLogin() throws Exception {
+        Fixture f = seed();
+        login("admin-a@example.org", "supersecret-password-a", 200);
+        f.adminA().setStatus(UserStatus.DISABLED);
+        users.save(f.adminA());
+        assertEquals(401, get("/api/v1/auth/session").statusCode());
+        assertEquals(403, get("/api/v1/organizations").statusCode());
+        assertEquals(403, get("/api/v1/organizations/" + f.orgA().getId()).statusCode());
+        assertEquals(403, post("/api/v1/organizations",
+                "{\"slug\":\"bypass\",\"displayName\":\"Bypass\"}").statusCode());
+        assertEquals(2, organizations.count());
+        login("admin-a@example.org", "supersecret-password-a", 401);
+    }
+
+    @Test
+    void sessionExpiresAndUsesTheConfiguredTwelveHourTimeout() throws Exception {
+        seed();
+        login("admin-a@example.org", "supersecret-password-a", 200);
+        var probe = get("/api/v1/test/expire-session");
+        assertEquals(200, probe.statusCode(), probe.body());
+        assertEquals(12 * 60 * 60, Integer.parseInt(probe.body()));
+        Thread.sleep(1200);
+        assertEquals(401, get("/api/v1/auth/session").statusCode());
+        assertEquals(401, get("/api/v1/organizations").statusCode());
+    }
+
+    @Test
+    void loginRotatesSessionIdAndCsrfAndLogoutClearsCsrf() throws Exception {
+        seed();
+        login("admin-a@example.org", "supersecret-password-a", 200);
+        String beforeId = cookies.getCookieStore().getCookies().stream()
+                .filter(c -> c.getName().equals("JSESSIONID")).findFirst().orElseThrow().getValue();
+        String beforeCsrf = csrfToken();
+        login("member-a@example.org", "supersecret-password-m", 200);
+        String afterId = cookies.getCookieStore().getCookies().stream()
+                .filter(c -> c.getName().equals("JSESSIONID")).findFirst().orElseThrow().getValue();
+        assertNotEquals(beforeId, afterId);
+        assertNotEquals(beforeCsrf, csrfToken());
+        assertEquals("member-a@example.org", mapper.readTree(get("/api/v1/auth/session").body()).get("email").asText());
+        var stale = client.send(HttpRequest.newBuilder(URI.create(base("/api/v1/auth/logout")))
+                .header("X-XSRF-TOKEN", beforeCsrf).POST(HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, stale.statusCode());
+        var signedOut = post("/api/v1/auth/logout", "{}");
+        assertEquals(200, signedOut.statusCode());
+        assertTrue(signedOut.headers().allValues("set-cookie").stream()
+                .anyMatch(cookie -> cookie.startsWith("XSRF-TOKEN=;")
+                        && java.net.HttpCookie.parse(cookie).get(0).hasExpired()),
+                signedOut.headers().allValues("set-cookie").toString());
+        assertEquals(401, get("/api/v1/auth/session").statusCode());
+    }
+
+    @Test
+    void membershipRevocationAndRoleChangesApplyToExistingSessions() throws Exception {
+        Fixture f = seed();
+        login("admin-a@example.org", "supersecret-password-a", 200);
+        var membership = memberships.findByOrganizationIdAndUserId(f.orgA().getId(), f.adminA().getId()).orElseThrow();
+        membership.setRole(MembershipRole.MEMBER);
+        memberships.save(membership);
+        assertEquals(403, get("/api/v1/organizations/" + f.orgA().getId() + "/members").statusCode());
+        assertEquals(200, get("/api/v1/organizations/" + f.orgA().getId()).statusCode());
+        membership.disable();
+        memberships.save(membership);
+        assertEquals(403, get("/api/v1/organizations/" + f.orgA().getId()).statusCode());
+        assertEquals(0, mapper.readTree(get("/api/v1/organizations").body()).size());
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void invalidBcryptPasswordsAreRejectedWithoutWritingOrLoggingSecrets(CapturedOutput output) throws Exception {
+        Fixture f = seed();
+        login("admin-a@example.org", "supersecret-password-a", 200);
+        for (String password : new String[] { "a".repeat(73), "ä".repeat(37), "weak-secret" }) {
+            var response = post("/api/v1/organizations/" + f.orgA().getId() + "/members",
+                    mapper.writeValueAsString(java.util.Map.of("email", "too-long@example.org", "password", password, "role", "MEMBER")));
+            assertEquals(400, response.statusCode(), response.body());
+            assertTrue(users.findByEmail("too-long@example.org").isEmpty());
+            assertFalse(output.getAll().contains(password), "rejected password must not be logged");
+        }
     }
 }

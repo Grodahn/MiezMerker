@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.miezmerker.backend.domain.AppUser;
 import org.miezmerker.backend.domain.MembershipRole;
@@ -60,8 +61,9 @@ public class MemberController {
 
     @Schema(name = "CreateMemberRequest")
     public record CreateMemberRequest(
-            @Email @NotBlank String email,
-            @Size(min = 12, max = 200) String password,
+            @Email @NotBlank @Size(max = 320) String email,
+            @Schema(minLength = 12, maxLength = 72,
+                    description = "Initial password: at least 12 characters, at most 72 UTF-8 bytes") String password,
             @NotNull MembershipRole role) {
         // password is required when the user does not exist yet; optional when adding a
         // membership for an existing user. Validation of presence happens in the handler.
@@ -77,15 +79,14 @@ public class MemberController {
 
     @GetMapping(produces = "application/json")
     @Operation(operationId = "listMembers",
-            summary = "List members of my organization (ADMIN and MEMBER see the roster; "
-                    + "cross-organization access is forbidden)")
+            summary = "ADMIN lists members of their own organization")
     @Transactional(readOnly = true)
     public List<MemberView> list(@PathVariable UUID organizationId,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireActive(principal.getId(), organizationId);
+        tenants.requireAdmin(principal.getId(), organizationId);
         return memberships.findByOrganizationIdWithUser(organizationId).stream()
                 .map(MemberController::toView)
                 .toList();
@@ -104,6 +105,12 @@ public class MemberController {
         tenants.requireAdmin(principal.getId(), organizationId);
         Organization org = organizations.findById(organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        // Do not use field validation for secrets: validation errors log rejected values.
+        if (request.password() != null && (request.password().length() < 12
+                || request.password().getBytes(StandardCharsets.UTF_8).length > 72)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "password must have at least 12 characters and at most 72 UTF-8 bytes");
+        }
         String email = AppUser.normalizeEmail(request.email());
         AppUser user = users.findByEmail(email).orElse(null);
         if (user == null) {

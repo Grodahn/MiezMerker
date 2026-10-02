@@ -63,7 +63,7 @@ Terminal 1:
 
 ```sh
 cd backend
-./mvnw spring-boot:run
+COOKIE_SECURE=false ./mvnw spring-boot:run
 ```
 
 Terminal 2:

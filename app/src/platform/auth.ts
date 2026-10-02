@@ -14,9 +14,10 @@ export interface SessionUser {
 export interface AuthState {
   user: SessionUser | null;
   csrfToken: string | null;
+  activeOrganizationId: string | null;
 }
 
-let state: AuthState = { user: null, csrfToken: null };
+let state: AuthState = { user: null, csrfToken: null, activeOrganizationId: null };
 const listeners = new Set<(state: AuthState) => void>();
 
 function emit() {
@@ -32,6 +33,21 @@ export function getAuthState(): AuthState {
   return state;
 }
 
+function storeUser(user: SessionUser | null) {
+  const activeIds = user?.memberships.filter(m => m.status === 'ACTIVE')
+    .map(m => m.organizationId).filter((id): id is string => Boolean(id)) ?? [];
+  const previous = state.user?.userId === user?.userId ? state.activeOrganizationId : null;
+  state = { ...state, user, activeOrganizationId: previous && activeIds.includes(previous)
+    ? previous : activeIds.length === 1 ? activeIds[0] : null };
+  emit();
+}
+
+export function selectOrganization(organizationId: string): void {
+  if (!activeOrganizationIds().includes(organizationId)) throw new Error('Organisation nicht verfügbar');
+  state = { ...state, activeOrganizationId: organizationId };
+  emit();
+}
+
 export async function fetchCsrfToken(): Promise<string> {
   const { data, error } = await api.GET('/api/v1/auth/csrf');
   if (error || !data || !data.token) throw new Error('CSRF token unavailable');
@@ -41,10 +57,11 @@ export async function fetchCsrfToken(): Promise<string> {
 }
 
 export async function fetchSession(): Promise<SessionUser | null> {
-  const { data, error } = await api.GET('/api/v1/auth/session');
+  const { data, error, response } = await api.GET('/api/v1/auth/session');
   if (error || !data || !data.userId || !data.email) {
-    state = { user: null, csrfToken: state.csrfToken };
-    emit();
+    if (response?.status !== 401) throw new Error('Sitzung konnte nicht geladen werden');
+    state = { ...state, csrfToken: null };
+    storeUser(null);
     return null;
   }
   const user: SessionUser = {
@@ -52,13 +69,12 @@ export async function fetchSession(): Promise<SessionUser | null> {
     email: data.email,
     memberships: data.memberships ?? [],
   };
-  state = { ...state, user };
-  emit();
+  storeUser(user);
   return user;
 }
 
 export async function login(email: string, password: string): Promise<SessionUser> {
-  const token = state.csrfToken ?? (await fetchCsrfToken());
+  const token = await fetchCsrfToken();
   const { data, error } = await api.POST('/api/v1/auth/login', {
     body: { email, password },
     headers: { 'X-XSRF-TOKEN': token },
@@ -69,15 +85,17 @@ export async function login(email: string, password: string): Promise<SessionUse
     email: data.email,
     memberships: data.memberships ?? [],
   };
-  state = { ...state, user };
-  emit();
+  // The server rotates the CSRF token after authentication.
+  state = { ...state, csrfToken: null };
+  storeUser(user);
   return user;
 }
 
 export async function logout(): Promise<void> {
-  const token = state.csrfToken ?? (await fetchCsrfToken());
-  await api.POST('/api/v1/auth/logout', { headers: { 'X-XSRF-TOKEN': token } });
-  state = { user: null, csrfToken: null };
+  const token = await fetchCsrfToken();
+  const { response } = await api.POST('/api/v1/auth/logout', { headers: { 'X-XSRF-TOKEN': token } });
+  if (!response.ok && response.status !== 401) throw new Error('Abmelden fehlgeschlagen');
+  state = { user: null, csrfToken: null, activeOrganizationId: null };
   emit();
 }
 

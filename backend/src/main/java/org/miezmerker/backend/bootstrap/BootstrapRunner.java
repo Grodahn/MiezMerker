@@ -1,5 +1,8 @@
 package org.miezmerker.backend.bootstrap;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+
 import org.miezmerker.backend.domain.AppUser;
 import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
@@ -76,8 +79,11 @@ public class BootstrapRunner implements ApplicationRunner {
         if (adminPassword.length() < 12) {
             throw new IllegalStateException("BOOTSTRAP_ADMIN_PASSWORD must have at least 12 characters");
         }
+        if (adminPassword.getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new IllegalStateException("BOOTSTRAP_ADMIN_PASSWORD must not exceed 72 UTF-8 bytes");
+        }
         String slug = orgSlug == null || orgSlug.isBlank() ? "versuch"
-                : orgSlug.trim().toLowerCase().replaceAll("[^a-z0-9-]", "-");
+                : orgSlug.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
         Organization org = organizations.findBySlug(slug)
                 .orElseGet(() -> organizations.save(new Organization(slug,
                         orgName == null || orgName.isBlank() ? "Versuchsorganisation" : orgName,

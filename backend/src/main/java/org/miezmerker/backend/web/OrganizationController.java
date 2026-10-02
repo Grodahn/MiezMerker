@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
@@ -14,6 +15,7 @@ import org.miezmerker.backend.domain.OrganizationMembership;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.security.AppUserDetails;
+import org.miezmerker.backend.security.TenantService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,13 +33,15 @@ public class OrganizationController {
     private final OrganizationRepository organizations;
     private final MembershipRepository memberships;
     private final org.miezmerker.backend.repo.AppUserRepository users;
+    private final TenantService tenants;
 
     public OrganizationController(OrganizationRepository organizations,
             MembershipRepository memberships,
-            org.miezmerker.backend.repo.AppUserRepository users) {
+            org.miezmerker.backend.repo.AppUserRepository users, TenantService tenants) {
         this.organizations = organizations;
         this.memberships = memberships;
         this.users = users;
+        this.tenants = tenants;
     }
 
     @Schema(name = "OrganizationView")
@@ -57,13 +61,15 @@ public class OrganizationController {
 
     @GetMapping(value = "/organizations", produces = "application/json")
     @Operation(operationId = "listMyOrganizations",
-            summary = "Organizations of the authenticated user (via ACTIVE or any membership)")
+            summary = "Active organizations of the authenticated user's ACTIVE memberships")
     @Transactional(readOnly = true)
     public List<OrganizationView> listMine(@AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         return memberships.findByUserIdWithRefs(principal.getId()).stream()
+                .filter(m -> m.getStatus() == MembershipStatus.ACTIVE
+                        && m.getOrganization().getStatus() == org.miezmerker.backend.domain.OrganizationStatus.ACTIVE)
                 .map(m -> toView(m.getOrganization()))
                 .toList();
     }
@@ -78,7 +84,7 @@ public class OrganizationController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        String slug = request.slug().trim().toLowerCase().replaceAll("[^a-z0-9-]", "-");
+        String slug = request.slug().trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
         if (slug.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid slug");
         }
@@ -105,12 +111,7 @@ public class OrganizationController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        OrganizationMembership membership = memberships
-                .findByOrganizationIdAndUserId(organizationId, principal.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "membership not active");
-        }
+        OrganizationMembership membership = tenants.requireActive(principal.getId(), organizationId);
         return toView(membership.getOrganization());
     }
 }

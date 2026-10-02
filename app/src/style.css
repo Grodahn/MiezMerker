@@ -8,3 +8,9 @@ a { color: #24584b; }
 a:focus-visible { outline: 3px solid #24584b; outline-offset: 4px; }
 main { min-height: 45vh; }
 footer { border-top: 1px solid #bdd0c6; font-size: .9rem; }
+.auth-panel { margin-top: 1.5rem; }
+.auth-panel form { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+.auth-panel label { display: flex; flex-direction: column; gap: .25rem; }
+.auth-panel input, .auth-panel select, .auth-panel button { font: inherit; padding: .4rem .6rem; }
+.auth-panel button { margin-top: .5rem; cursor: pointer; }
+.auth-panel [role="alert"] { color: #a32424; }

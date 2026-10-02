@@ -43,6 +43,29 @@ class BootstrapTest {
     }
 
     @Test
+    void bootstrapRejectsPasswordsOverBcryptsByteLimitBeforeWriting() {
+        memberships.deleteAll();
+        users.deleteAll();
+        organizations.deleteAll();
+        var runner = new BootstrapRunner(users, organizations, memberships, passwords,
+                "too-long@example.org", "ä".repeat(37), "versuch", "V", null);
+        assertThrows(IllegalStateException.class, () -> runner.run(null));
+        assertEquals(0, users.count());
+        assertEquals(0, organizations.count());
+    }
+
+    @Test
+    void emailNormalizationIsIndependentOfTheServersLocale() {
+        var previous = java.util.Locale.getDefault();
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"));
+            assertEquals("initial@example.org", org.miezmerker.backend.domain.AppUser.normalizeEmail(" INITIAL@EXAMPLE.ORG "));
+        } finally {
+            java.util.Locale.setDefault(previous);
+        }
+    }
+
+    @Test
     void bootstrapRequiresNoSecretsInRepoAndStrongPassword() {
         memberships.deleteAll();
         users.deleteAll();

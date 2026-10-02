@@ -3,14 +3,16 @@ package org.miezmerker.backend.web;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import org.miezmerker.backend.domain.MembershipStatus;
+import org.miezmerker.backend.domain.AppUser;
+import org.miezmerker.backend.domain.UserStatus;
+import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.domain.OrganizationMembership;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
@@ -22,6 +24,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfLogoutHandler;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,12 +42,18 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final AppUserRepository users;
     private final MembershipRepository memberships;
+    private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
+    private final CookieCsrfTokenRepository csrfRepository;
+    private final HttpSessionSecurityContextRepository contexts = new HttpSessionSecurityContextRepository();
 
     public AuthController(AuthenticationManager authenticationManager, AppUserRepository users,
-            MembershipRepository memberships) {
+            MembershipRepository memberships, SessionAuthenticationStrategy sessionAuthenticationStrategy,
+            CookieCsrfTokenRepository csrfRepository) {
         this.authenticationManager = authenticationManager;
         this.users = users;
         this.memberships = memberships;
+        this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
+        this.csrfRepository = csrfRepository;
     }
 
     @Schema(name = "LoginRequest")
@@ -62,25 +74,16 @@ public class AuthController {
     @Operation(operationId = "login", summary = "Email/password login, establishes a server-side session")
     @Transactional
     public SessionView login(@Valid @RequestBody LoginRequest request,
-            HttpServletRequest httpRequest) {
-        String email = request.email() == null ? "" : request.email().trim().toLowerCase();
+            HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        String email = AppUser.normalizeEmail(request.email());
         try {
             Authentication auth = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.password()));
-            SecurityContextHolder.getContext().setAuthentication(auth);
-            // Session fixation protection for programmatic login: rotate the session id.
-            HttpSession previous = httpRequest.getSession(false);
-            if (previous != null) {
-                try {
-                    httpRequest.changeSessionId();
-                } catch (Exception ignored) {
-                    previous.invalidate();
-                }
-            }
-            HttpSession session = httpRequest.getSession(true);
-            session.setAttribute(
-                    HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-                    SecurityContextHolder.getContext());
+            sessionAuthenticationStrategy.onAuthentication(auth, httpRequest, httpResponse);
+            var context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(auth);
+            SecurityContextHolder.setContext(context);
+            contexts.saveContext(context, httpRequest, httpResponse);
             AppUserDetails principal = (AppUserDetails) auth.getPrincipal();
             users.findById(principal.getId()).ifPresent(user -> {
                 user.setLastLoginAt(Instant.now());
@@ -95,12 +98,10 @@ public class AuthController {
 
     @PostMapping("/logout")
     @Operation(operationId = "logout", summary = "Invalidate the current server-side session")
-    public void logout(HttpServletRequest request) {
-        HttpSession session = request.getSession(false);
-        if (session != null) {
-            session.invalidate();
-        }
-        SecurityContextHolder.clearContext();
+    public void logout(HttpServletRequest request, HttpServletResponse response) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        new CsrfLogoutHandler(csrfRepository).logout(request, response, auth);
+        new SecurityContextLogoutHandler().logout(request, response, auth);
     }
 
     @GetMapping(value = "/session", produces = "application/json")
@@ -135,7 +136,11 @@ public class AuthController {
     private SessionView sessionFor(UUID userId) {
         var user = users.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "account disabled");
+        }
         List<MembershipView> views = memberships.findByUserIdWithRefs(userId).stream()
+                .filter(m -> m.getOrganization().getStatus() == OrganizationStatus.ACTIVE)
                 .map(this::toView)
                 .toList();
         return new SessionView(user.getId(), user.getEmail(), views);
