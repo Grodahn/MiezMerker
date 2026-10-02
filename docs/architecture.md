@@ -85,7 +85,9 @@ use a production build/preview to verify offline behavior. A future update UI
 must coordinate worker updates with active transfers; no auto-reload mid-sync.
 
 Dexie schema versions own local migrations. The v1 upload store is minimal,
-isolated behind `Outbox`, and opens only in the collector. Management pages do not
+isolated behind `Outbox`, and opens only in the collector. Outbox batch IDs are stable and globally unique;
+identical retries are idempotent, while conflicting payloads or metadata are
+rejected in one IndexedDB transaction without overwriting queued data. Management pages do not
 need NodeTransport, Crypto or collector storage. NodeTransport and AppDeviceKeys
 are interfaces with explicit unconfigured adapters; they cannot perform real BLE
 or issue/sign credentials yet. Service-worker registration is also an adapter.
