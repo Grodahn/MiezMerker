@@ -149,8 +149,13 @@ production. Production proxy/hosting configuration belongs to deployment work.
 
 ## Decisions and deliberately unfinished features
 
-See `docs/adr/` for decisions. Detailed RFID, crash-safe Node storage, GATT codecs,
-collector transfers, admin features, derivation, auth, keys and claim/reset belong
-to #5–#19. This foundation establishes ownership, contracts and build boundaries
-without pretending to implement those features. Host ESP32 composition builds;
-a flashable ESP-IDF image requires actual board adapters and is outside #2.
+See `docs/adr/` for decisions. Issue #5 implements the hardware-independent
+capture pipeline (RawObservations with RTC/sequence/persistent store) in
+`firmware-core`; see `firmware-core/README.md` and ADR 0012 for its lifecycle,
+sequence, clock, debounce, storage-full and crash guarantees, which #6 and #7
+build on. Detailed RFID drivers, crash-safe ESP32-C3 flash adapters, GATT
+codecs, collector transfers, admin features, derivation, auth, keys and
+claim/reset belong to #6–#19. This foundation establishes ownership, contracts
+and build boundaries without pretending to implement those features. Host ESP32
+composition builds; a flashable ESP-IDF image requires actual board adapters
+and is outside #2/#5.

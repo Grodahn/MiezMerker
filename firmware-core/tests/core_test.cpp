@@ -1,12 +1,19 @@
-#include "miezmerker/core.hpp"
 #include <iostream>
+
+#include "miezmerker/core.hpp"
+
 struct Clock final : miezmerker::Clock {
     std::uint64_t monotonic_ms() const override { return 42; }
+    miezmerker::WallClockReading wall_clock() const override {
+        return miezmerker::WallClockReading{miezmerker::ClockStatus::UNKNOWN, std::nullopt};
+    }
 };
+
 struct Storage final : miezmerker::Storage {
     bool available{true};
     bool open() override { return available; }
 };
+
 int main() {
     Clock clock;
     Storage storage;
@@ -15,4 +22,5 @@ int main() {
     storage.available = false;
     if (core.initialize() || core.ready() || core.started_at_ms() != 0) return 2;
     std::cout << "Core initializes through ports and reports unavailable storage\n";
+    return 0;
 }
