@@ -52,6 +52,7 @@ class OfflineCredentialTest {
     @Autowired PasswordEncoder passwords;
     @Autowired CredentialIssuerService issuer;
     @Autowired OfflineAuthService offline;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
@@ -269,6 +270,41 @@ class OfflineCredentialTest {
         assertFalse(offline.authorizeSync(credential, s.orgA().getId(), challenge2, sig1));
         // Wrong challenge length fails as well.
         assertFalse(offline.authorizeSync(credential, s.orgA().getId(), new byte[16], sig1));
+    }
+
+    @Test
+    void revocationSerializesWithIssuanceAndReregistration() throws Exception {
+        Seed s = seed();
+        login("member-a@example.org", "supersecret-password-m");
+        DeviceKeys dev = newDevice();
+        String deviceId = registerDevice(dev.x(), dev.y());
+        String token = csrf();
+        var requests = java.util.List.of(
+                HttpRequest.newBuilder(URI.create(base("/api/v1/devices/" + deviceId + "/credentials")))
+                    .header("Content-Type", "application/json").header("X-XSRF-TOKEN", token)
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"organizationId\":\"" + s.orgA().getId() + "\"}")).build(),
+                HttpRequest.newBuilder(URI.create(base("/api/v1/devices")))
+                    .header("Content-Type", "application/json").header("X-XSRF-TOKEN", token)
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"publicKeyX\":\"" + dev.x()
+                            + "\",\"publicKeyY\":\"" + dev.y() + "\"}")).build());
+        var pending = new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                .execute(status -> {
+                    var locked = devices.findLockedById(UUID.fromString(deviceId)).orElseThrow();
+                    var responses = requests.stream().map(request -> client.sendAsync(request,
+                            HttpResponse.BodyHandlers.ofString())).toList();
+                    for (var response : responses) {
+                        assertThrows(java.util.concurrent.TimeoutException.class,
+                                () -> response.get(500, java.util.concurrent.TimeUnit.MILLISECONDS));
+                    }
+                    locked.revoke();
+                    devices.saveAndFlush(locked);
+                    return responses;
+                });
+        for (var response : pending) {
+            var denied = response.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(403, denied.statusCode(), denied.body());
+        }
+        assertTrue(devices.findById(UUID.fromString(deviceId)).orElseThrow().isRevoked());
     }
 
     @Test

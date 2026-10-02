@@ -12,9 +12,11 @@ interface CachedCredential {
 export class OfflineIdentityDatabase extends Dexie {
   identities!: Table<DeviceIdentity, string>;
   credentials!: Table<CachedCredential, [string, string]>;
+  invalidations!: Table<{ userId: string; generation: number }, string>;
   constructor(name = 'miezmerker-offline-identity') {
     super(name);
     this.version(1).stores({ identities: 'userId', credentials: '[userId+organizationId], userId' });
+    this.version(2).stores({ invalidations: 'userId' });
   }
 }
 
@@ -38,7 +40,10 @@ export class OfflineIdentity {
     return WebCryptoDeviceKeys.restore(pair);
   }
 
-  async renew(userId: string, organizationId: string): Promise<string> {
+  async renew(userId: string, organizationId: string, expectedGeneration?: number): Promise<string> {
+    const currentGeneration = (await this.database.invalidations.get(userId))?.generation ?? 0;
+    const generation = expectedGeneration ?? currentGeneration;
+    if (generation !== currentGeneration) throw new Error('Offline credential renewal superseded by logout');
     const keys = await this.keys(userId);
     // Fresh CSRF token also works immediately after Spring rotates it on login.
     const token = await fetchCsrfToken();
@@ -64,9 +69,15 @@ export class OfflineIdentity {
     if (claims.sub !== userId || claims.org !== organizationId || claims.dev !== device.id
         || claims.dpk_x !== keys.coordinates().x || claims.dpk_y !== keys.coordinates().y
         || !Number.isSafeInteger(claims.exp)) throw new Error('Offline credential binding mismatch');
-    await this.database.credentials.put({ userId, organizationId, deviceId: device.id,
+    const cached: CachedCredential = { userId, organizationId, deviceId: device.id,
       credential: data.credential, expiresAt: Math.min(claims.exp * 1000,
-        startedAt + data.expiresInSeconds * 1000 - 1000) });
+        startedAt + data.expiresInSeconds * 1000 - 1000) };
+    await this.database.transaction('rw', this.database.invalidations, this.database.credentials, async () => {
+      if (((await this.database.invalidations.get(userId))?.generation ?? 0) !== generation) {
+        throw new Error('Offline credential renewal superseded by logout');
+      }
+      await this.database.credentials.put(cached);
+    });
     return data.credential;
   }
 
@@ -80,13 +91,22 @@ export class OfflineIdentity {
 
   // Call on an online authenticated session and on connectivity restoration.
   async renewActive(userId: string, organizationIds: string[], force = true): Promise<void> {
+    const failures: unknown[] = [];
+    const generation = (await this.database.invalidations.get(userId))?.generation ?? 0;
     for (const organizationId of organizationIds) {
-      const cached = await this.database.credentials.get([userId, organizationId]);
-      if (force || !cached || cached.expiresAt <= Date.now() + 300000) await this.renew(userId, organizationId);
+      try {
+        const cached = await this.database.credentials.get([userId, organizationId]);
+        if (force || !cached || cached.expiresAt <= Date.now() + 300000) await this.renew(userId, organizationId, generation);
+      } catch (error) { failures.push(error); }
     }
+    if (failures.length) throw new AggregateError(failures, 'Some offline credentials could not be renewed');
   }
 
   async forgetCredentials(userId: string): Promise<void> {
-    await this.database.credentials.where('userId').equals(userId).delete();
+    await this.database.transaction('rw', this.database.invalidations, this.database.credentials, async () => {
+      const generation = (await this.database.invalidations.get(userId))?.generation ?? 0;
+      await this.database.invalidations.put({ userId, generation: generation + 1 });
+      await this.database.credentials.where('userId').equals(userId).delete();
+    });
   }
 }

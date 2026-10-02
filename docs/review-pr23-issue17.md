@@ -31,3 +31,26 @@ from durably provisioned owner and issuer-public-key data, supply an unpredictab
 and trusted UTC time, gate every protected read/write through can_sync(), and disconnect
 on link teardown. This review verifies the component on a host; it does not claim a flashed
 ESP32 hardware or GATT test.
+
+## Second review
+
+- **P1: Concurrent issuance/re-registration could undo device revocation.**
+  Hold a pessimistic device-row lock in all three transactions. A regression holds the
+  revocation lock while concurrent issuance and registration requests wait; both must see
+  the committed revocation and return 403, with the device still revoked.
+- **P1: Logout cleanup waited behind network renewal and late responses could restore credentials.**
+  Start cleanup immediately. A shared IndexedDB generation invalidates in-flight renewals
+  across tabs, including later organizations in the same renewal batch. Queued work also
+  checks that its captured session is still current before making requests.
+- **P2: One failed organization prevented all later organizations from renewing.**
+  Continue the batch, cache successful credentials and report aggregate failure afterward.
+- **P2: Role changes did not trigger renewal when organization IDs were unchanged.**
+  Include membership details in the session-change comparison.
+- **P2: Invalid issuer key configuration failed only after issuing unusable credentials.**
+  Reject missing halves, non-P-256 keys and mismatched private/public keys at startup.
+  Correct the bootstrap command to encode DER PKCS#8 rather than PEM text. A restart test
+  confirms a new issuer instance verifies a credential issued with the same stored pair.
+
+Second-pass validation: 31 app tests, TypeScript compilation and production build;
+backend credential, concurrent revocation, issuer configuration, interop and node-claim
+regressions (28 tests). ESP32 board/GATT limitations from the first review still apply.

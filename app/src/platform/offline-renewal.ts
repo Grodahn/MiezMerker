@@ -12,19 +12,26 @@ export function startOfflineRenewal(): () => void {
     const previousUser = lastUser;
     lastUser = user?.userId;
     const orgs = activeOrganizationIds();
+    // Cleanup must not wait behind a slow/hung HTTP request. The shared database
+    // generation also prevents an in-flight request in another tab from restoring it.
+    const cleanup = previousUser && previousUser !== user?.userId
+      ? identity.forgetCredentials(previousUser) : Promise.resolve();
+    void cleanup.catch(() => {
+      if (active) window.dispatchEvent(new Event('offline-credential-renewal-failed'));
+    });
     queue = queue.then(async () => {
-      if (!active) return;
-      if (previousUser && previousUser !== user?.userId) await identity.forgetCredentials(previousUser);
+      await cleanup;
+      if (!active || getAuthState().user !== user) return;
       if (user && navigator.onLine) await identity.renewActive(user.userId, orgs, force);
     }).catch(() => {
       // Retain a still-valid offline credential during a transient online failure.
-      window.dispatchEvent(new Event('offline-credential-renewal-failed'));
+      if (active) window.dispatchEvent(new Event('offline-credential-renewal-failed'));
     });
   };
   // CSRF notifications also emit auth state; only session/membership changes trigger renewal.
   let sessionSignature = '';
   const unsubscribe = subscribeAuth(() => {
-    const signature = JSON.stringify([getAuthState().user?.userId, activeOrganizationIds()]);
+    const signature = JSON.stringify([getAuthState().user?.userId, getAuthState().user?.memberships]);
     if (signature !== sessionSignature) { sessionSignature = signature; renew(); }
   });
   const online = () => { void fetchSession().then(() => renew()).catch(() => {}); };

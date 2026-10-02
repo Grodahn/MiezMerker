@@ -72,9 +72,9 @@ restarts (and later for nodes provisioned against it), configure a persistent ke
 ```sh
 # Generate a P-256 key pair once (e.g. with openssl)
 openssl ecparam -name prime256v1 -genkey -noout -out issuer.pem
-openssl pkcs8 -topk8 -nocrypt -in issuer.pem -out issuer.pkcs8.pem
+openssl pkcs8 -topk8 -nocrypt -in issuer.pem -outform DER -out issuer.pkcs8.der
 
-ISSUER_PRIVATE_PKCS8_B64=$(base64 -w0 issuer.pkcs8.pem)
+ISSUER_PRIVATE_PKCS8_B64=$(base64 -w0 issuer.pkcs8.der)
 ISSUER_PUBLIC_SPKI_B64=$(openssl ec -in issuer.pem -pubout -outform DER | base64 -w0)
 ```
 

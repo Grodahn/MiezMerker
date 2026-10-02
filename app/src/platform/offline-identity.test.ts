@@ -63,3 +63,42 @@ test('a response issued for another logged-in account cannot be cached', async (
   await expect(identity.renew('user-a', 'org-a')).rejects.toThrow('binding mismatch');
   expect(await identity.credential('user-a', 'org-a')).toBeNull();
 });
+
+test('logout in another tab invalidates a renewal already waiting for the backend', async () => {
+  const identity = new OfflineIdentity(db);
+  const keys = await identity.keys('user-a');
+  const token = 'header.' + btoa(JSON.stringify({ sub: 'user-a', org: 'org-a', dev: 'device-a',
+    dpk_x: keys.coordinates().x, dpk_y: keys.coordinates().y, exp: Math.floor(Date.now() / 1000) + 60 })) + '.signature';
+  let finish!: (value: unknown) => void;
+  let requested!: () => void;
+  const waiting = new Promise<void>(resolve => { requested = resolve; });
+  post.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/devices') return { data: { id: 'device-a' } };
+    requested();
+    return new Promise(resolve => { finish = resolve; });
+  });
+  const renewal = identity.renew('user-a', 'org-a');
+  const rejected = expect(renewal).rejects.toThrow('superseded by logout');
+  await waiting;
+  const otherTab = new OfflineIdentityDatabase('identity-test');
+  await new OfflineIdentity(otherTab).forgetCredentials('user-a');
+  otherTab.close();
+  finish({ data: { credential: token, expiresInSeconds: 60, organizationId: 'org-a', deviceId: 'device-a' } });
+  await rejected;
+  expect(await identity.credential('user-a', 'org-a')).toBeNull();
+});
+
+test('one organization failure does not block renewal for the remaining organizations', async () => {
+  const identity = new OfflineIdentity(db);
+  const keys = await identity.keys('user-a');
+  const token = 'header.' + btoa(JSON.stringify({ sub: 'user-a', org: 'org-b', dev: 'device-a',
+    dpk_x: keys.coordinates().x, dpk_y: keys.coordinates().y, exp: Math.floor(Date.now() / 1000) + 60 })) + '.signature';
+  post.mockImplementation(async (path: string, options: { body: { organizationId: string } }) => {
+    if (path === '/api/v1/devices') return { data: { id: 'device-a' } };
+    if (options.body.organizationId === 'org-a') return { error: { status: 403 } };
+    return { data: { credential: token, expiresInSeconds: 60, organizationId: 'org-b', deviceId: 'device-a' } };
+  });
+  await expect(identity.renewActive('user-a', ['org-a', 'org-b'])).rejects.toThrow('Some offline credentials');
+  expect(await identity.credential('user-a', 'org-a')).toBeNull();
+  expect(await identity.credential('user-a', 'org-b')).toBe(token);
+});

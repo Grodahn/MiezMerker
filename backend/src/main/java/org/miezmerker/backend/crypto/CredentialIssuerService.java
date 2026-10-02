@@ -54,6 +54,10 @@ public class CredentialIssuerService {
             @Value("${miezmerker.credential.ttl-hours:168}") long ttlHours) {
         if (ttlHours <= 0) throw new IllegalArgumentException("Credential TTL must be positive");
         long configuredTtl = Math.multiplyExact(ttlHours, 3600L);
+        if ((privateKeyB64 == null || privateKeyB64.isBlank())
+                && publicKeySpkiB64 != null && !publicKeySpkiB64.isBlank()) {
+            throw new IllegalArgumentException("Issuer private key is required with the public key");
+        }
         if (privateKeyB64 != null && !privateKeyB64.isBlank()) {
             if (publicKeySpkiB64 == null || publicKeySpkiB64.isBlank()) {
                 throw new IllegalArgumentException(
@@ -68,6 +72,7 @@ public class CredentialIssuerService {
                         new java.security.spec.PKCS8EncodedKeySpec(privDer));
                 ECPublicKey pub = (ECPublicKey) kf.generatePublic(
                         new java.security.spec.X509EncodedKeySpec(pubDer));
+                validateKeyPair(priv, pub);
                 this.privateKey = priv;
                 this.publicKey = pub;
                 this.ttlSeconds = configuredTtl;
@@ -98,9 +103,24 @@ public class CredentialIssuerService {
     private CredentialIssuerService(ECPrivateKey privateKey, ECPublicKey publicKey,
             long ttlSeconds, boolean stable) {
         if (ttlSeconds <= 0) throw new IllegalArgumentException("Credential TTL must be positive");
+        validateKeyPair(privateKey, publicKey);
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.ttlSeconds = ttlSeconds;
+    }
+
+    private static void validateKeyPair(ECPrivateKey privateKey, ECPublicKey publicKey) {
+        var p256 = EcKeyUtils.publicFromXY(EcKeyUtils.xOf(publicKey), EcKeyUtils.yOf(publicKey)).getParams();
+        for (var params : List.of(privateKey.getParams(), publicKey.getParams())) {
+            if (!params.getCurve().equals(p256.getCurve()) || !params.getOrder().equals(p256.getOrder())
+                    || !params.getGenerator().equals(p256.getGenerator()) || params.getCofactor() != 1) {
+                throw new IllegalArgumentException("Issuer keys must use P-256");
+            }
+        }
+        byte[] probe = "miezmerker-issuer-key-check".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        if (!EcKeyUtils.verifyRaw(publicKey, probe, EcKeyUtils.signRaw(privateKey, probe))) {
+            throw new IllegalArgumentException("Issuer private and public keys do not match");
+        }
     }
 
     public ECPublicKey getPublicKey() {

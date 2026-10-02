@@ -100,7 +100,7 @@ public class DeviceController {
         }
         var user = users.findById(principal.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        var existing = devices.findByFingerprint(fingerprint).orElse(null);
+        var existing = devices.findLockedByFingerprint(fingerprint).orElse(null);
         if (existing != null) {
             if (!existing.getUser().getId().equals(principal.getId())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "device already registered");
@@ -138,7 +138,7 @@ public class DeviceController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        AppDevice device = devices.findById(deviceId)
+        AppDevice device = devices.findLockedById(deviceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (!device.getUser().getId().equals(principal.getId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -166,7 +166,7 @@ public class DeviceController {
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid organization id");
         }
-        AppDevice device = devices.findById(deviceId)
+        AppDevice device = devices.findLockedById(deviceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (!device.getUser().getId().equals(principal.getId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
