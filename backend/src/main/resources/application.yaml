@@ -7,8 +7,13 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
   flyway:
     enabled: true
+  session:
+    timeout: 12h
 server:
   port: ${PORT:8080}
   servlet:
@@ -16,7 +21,21 @@ server:
       cookie:
         http-only: true
         same-site: lax
+        secure: ${COOKIE_SECURE:false}
+        name: JSESSIONID
 springdoc:
   api-docs:
     path: /api/v1/openapi
-  paths-to-match: /api/v1/health,/api/v1/version
+  paths-to-match: /api/v1/**
+miezmerker:
+  credential:
+    ttl-hours: ${CREDENTIAL_TTL_HOURS:168}
+  issuer:
+    private-key-pkcs8-b64: ${ISSUER_PRIVATE_PKCS8_B64:}
+    public-key-spki-b64: ${ISSUER_PUBLIC_SPKI_B64:}
+  bootstrap:
+    admin-email: ${BOOTSTRAP_ADMIN_EMAIL:}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+    org-slug: ${BOOTSTRAP_ORG_SLUG:versuch}
+    org-name: ${BOOTSTRAP_ORG_NAME:Versuchsorganisation}
+    org-contact: ${BOOTSTRAP_ORG_CONTACT:}

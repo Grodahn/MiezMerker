@@ -116,12 +116,10 @@ Revocation cannot propagate instantly while a Node is offline; bounded validity,
 clock trust and refresh/revocation behavior must be specified in #17. Do not claim
 these placeholder interfaces enforce authorization today.
 
-Business endpoints must resolve active membership server-side before reading or
-writing data, including lists, object IDs, uploads, derived results and admin
-operations. Never trust a request's Organization alone. Today only health/version
-and OpenAPI are public; all other requests are denied. CSRF stays enabled; login,
-membership enforcement, cookie Secure policy behind HTTPS and domain repositories
-will be implemented before exposing business endpoints.
+Business endpoints resolve active membership server-side before reading or writing
+data, including lists, object IDs, uploads, derived results and admin operations. Never
+trust a request's Organization alone. Login/session, membership enforcement, CSRF and
+cookie Secure policy behind HTTPS are implemented (#16, ADR-0014).
 
 ## HTTP and persistence contracts
 
@@ -149,8 +147,10 @@ production. Production proxy/hosting configuration belongs to deployment work.
 
 ## Decisions and deliberately unfinished features
 
-See `docs/adr/` for decisions. Detailed RFID, crash-safe Node storage, GATT codecs,
-collector transfers, admin features, derivation, auth, keys and claim/reset belong
-to #5–#19. This foundation establishes ownership, contracts and build boundaries
-without pretending to implement those features. Host ESP32 composition builds;
-a flashable ESP-IDF image requires actual board adapters and is outside #2.
+See `docs/adr/` for decisions. Implemented: tenancy/session auth (#16, ADR-0014),
+offline credentials with per-AppDevice keys (#17, ADR-0012), node identity/claim
+(#18, ADR-0013). Detailed RFID, crash-safe Node storage, GATT codecs, collector
+transfers, admin features, derivation, invite-onboarding (#19), real backend upload and
+visit engine belong to #5–#19. This foundation plus #16–#18 establishes ownership,
+contracts, auth and claim boundaries. Host ESP32 composition builds; a flashable ESP-IDF
+image requires actual board adapters and is outside #2.

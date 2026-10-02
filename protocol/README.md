@@ -36,8 +36,13 @@ core codecs can share the same fixtures without relying on frontend code.
 - BLE authorization must work without network access using per-AppDevice identity
   and independently issued, bounded credentials. Backend session cookies are not
   Node credentials. No employee-wide organization secret.
+- Offline credentials use JWS compact/ES256 (ADR-0012) with per-AppDevice key binding
+  and challenge/response proof-of-possession. Interop vectors:
+  `fixtures/offline-credential-v1.json`.
+- Node identity is a random UUIDv4 + P-256 device key pair, never MAC/DB/site ids.
+  Claim requires ACTIVE ADMIN + physical claim mode (signed advertisement, ADR-0013).
 - Ownership/claim/reset lifecycle must avoid reusing event identities after reset.
 - Versioned golden byte fixtures will live here alongside the eventual codec, not
   in backend OpenAPI. No invented provisional wire format is shipped.
 
-See ADRs 0002, 0003, 0008 and 0009 for deferred decisions and their owning tickets.
+See ADRs 0002, 0003, 0008, 0009, 0012 and 0013 for decisions and their owning tickets.
