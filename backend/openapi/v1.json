@@ -1,6 +1,180 @@
 {
   "components": {
     "schemas": {
+      "ClaimNodeRequest": {
+        "properties": {
+          "claimSignature": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{86}$",
+            "type": "string"
+          },
+          "firmwareVersion": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publicKeyX": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "publicKeyY": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "timestampMillis": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claimSignature",
+          "nodeId",
+          "organizationId",
+          "publicKeyX",
+          "publicKeyY",
+          "timestampMillis"
+        ],
+        "type": "object"
+      },
+      "ClaimReceiptView": {
+        "properties": {
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "receipt": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreateMemberRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 0,
+            "type": "string"
+          },
+          "password": {
+            "description": "Initial password: at least 12 characters, at most 72 UTF-8 bytes",
+            "maxLength": 72,
+            "minLength": 12,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "ADMIN",
+              "MEMBER"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "type": "object"
+      },
+      "CreateOrganizationRequest": {
+        "properties": {
+          "displayName": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "publicContact": {
+            "maxLength": 500,
+            "minLength": 0,
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "CredentialView": {
+        "properties": {
+          "credential": {
+            "type": "string"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CsrfView": {
+        "properties": {
+          "headerName": {
+            "type": "string"
+          },
+          "parameterName": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "HealthResponse": {
         "properties": {
           "status": {
@@ -10,6 +184,244 @@
         "required": [
           "status"
         ],
+        "type": "object"
+      },
+      "IssueCredentialRequest": {
+        "properties": {
+          "organizationId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "type": "object"
+      },
+      "IssuerView": {
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "credentialTtlSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "jwk": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "keyId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "MemberView": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "membershipId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MembershipView": {
+        "properties": {
+          "membershipId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "organizationSlug": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "NodeOwnerView": {
+        "properties": {
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "organizationSlug": {
+            "type": "string"
+          },
+          "publicContact": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "NodeView": {
+        "properties": {
+          "claimedAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "firmwareVersion": {
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "publicKeyX": {
+            "type": "string"
+          },
+          "publicKeyY": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrganizationView": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publicContact": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegisterDeviceRequest": {
+        "properties": {
+          "label": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          },
+          "publicKeyX": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "publicKeyY": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publicKeyX",
+          "publicKeyY"
+        ],
+        "type": "object"
+      },
+      "SessionView": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipView"
+            },
+            "type": "array"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateMemberRequest": {
+        "properties": {
+          "role": {
+            "enum": [
+              "ADMIN",
+              "MEMBER"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "VersionResponse": {
@@ -35,6 +447,241 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/csrf": {
+      "get": {
+        "operationId": "getCsrf",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Expose the CSRF token for SPA login flows",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Email/password login, establishes a server-side session",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Invalidate the current server-side session",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "getSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Current session with user and memberships",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/credentials/issuer": {
+      "get": {
+        "operationId": "getCredentialIssuer",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuerView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Backend trust anchor for offline node verification (public key only)",
+        "tags": [
+          "issuer-controller"
+        ]
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "listDevices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List my AppDevices",
+        "tags": [
+          "device-controller"
+        ]
+      },
+      "post": {
+        "operationId": "registerDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Register the current user's AppDevice public key (P-256)",
+        "tags": [
+          "device-controller"
+        ]
+      }
+    },
+    "/api/v1/devices/{deviceId}/credentials": {
+      "post": {
+        "operationId": "issueOfflineCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Issue a signed, time-limited, organization-bound offline credential for my AppDevice (blocked when membership/device is not ACTIVE)",
+        "tags": [
+          "device-controller"
+        ]
+      }
+    },
+    "/api/v1/devices/{deviceId}/revoke": {
+      "post": {
+        "operationId": "revokeDevice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Revoke my AppDevice; it receives no further credentials",
+        "tags": [
+          "device-controller"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "getHealth",
@@ -53,6 +700,347 @@
         "summary": "Application liveness (database initialized at startup)",
         "tags": [
           "system-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes": {
+      "get": {
+        "operationId": "listNodes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NodeView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List nodes of an organization (requires ACTIVE membership)",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/claim": {
+      "post": {
+        "operationId": "claimNode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimNodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimReceiptView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + claim mode)",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/{nodeId}": {
+      "get": {
+        "operationId": "getNode",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Node details; only members of the owning organization (foreign orgs use the public /owner endpoint)",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/{nodeId}/owner": {
+      "get": {
+        "operationId": "getNodeOwner",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeOwnerView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Public owner hint for a claimed node; no observations/chip data",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations": {
+      "get": {
+        "operationId": "listMyOrganizations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizationView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Active organizations of the authenticated user's ACTIVE memberships",
+        "tags": [
+          "organization-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createOrganization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Create an organization; caller becomes ACTIVE ADMIN (test-phase provisioning)",
+        "tags": [
+          "organization-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}": {
+      "get": {
+        "operationId": "getOrganization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Organization details; requires ACTIVE membership (tenant isolation)",
+        "tags": [
+          "organization-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/members": {
+      "get": {
+        "operationId": "listMembers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN lists members of their own organization",
+        "tags": [
+          "member-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN creates a user and/or ACTIVE membership (test-phase bootstrap, no mail)",
+        "tags": [
+          "member-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/members/{membershipId}": {
+      "patch": {
+        "operationId": "updateMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "membershipId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN changes role or activates/disables a membership",
+        "tags": [
+          "member-controller"
         ]
       }
     },

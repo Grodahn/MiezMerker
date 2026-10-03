@@ -116,5 +116,4 @@ struct BleTransport {
     virtual ~BleTransport() = default;
     virtual bool send(std::span<const std::byte> message) = 0;
 };
-
 }  // namespace miezmerker

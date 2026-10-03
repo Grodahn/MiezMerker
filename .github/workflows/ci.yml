@@ -60,6 +60,8 @@ jobs:
       - working-directory: app
         run: npm run build
       - name: Start packaged backend
+        env:
+          COOKIE_SECURE: 'false'
         run: |
           java -jar backend/target/backend-0.1.0-SNAPSHOT.jar > backend.log 2>&1 &
           for attempt in $(seq 1 60); do
