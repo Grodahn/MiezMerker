@@ -11,16 +11,6 @@ namespace miezmerker::sim {
 
 namespace {
 
-std::string format_node_id(const NodeId& id) { return id.to_string(); }
-std::string format_incarnation(const IncarnationId& id) { return id.to_string(); }
-std::string format_clock_status(ClockStatus s) {
-    switch (s) {
-        case ClockStatus::SYNCED: return "SYNCED";
-        case ClockStatus::RTC_ONLY: return "RTC_ONLY";
-        case ClockStatus::UNKNOWN: return "UNKNOWN";
-    }
-    return "UNKNOWN";
-}
 std::string format_record_result(RecordResult r) {
     switch (r) {
         case RecordResult::RECORDED: return "RECORDED";
@@ -31,14 +21,6 @@ std::string format_record_result(RecordResult r) {
         case RecordResult::IO_ERROR: return "IO_ERROR";
     }
     return "IO_ERROR";
-}
-std::string format_store_status(StoreStatus s) {
-    switch (s) {
-        case StoreStatus::OK: return "OK";
-        case StoreStatus::NEARLY_FULL: return "NEARLY_FULL";
-        case StoreStatus::FULL: return "FULL";
-    }
-    return "OK";
 }
 
 }  // namespace
