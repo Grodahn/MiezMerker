@@ -1,0 +1,28 @@
+# Factory reset creates new node identity and new sequence lifetime
+name: factory-reset
+version: 1
+description: Factory reset generates new node_id, new incarnation, resets sequence to 1.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+assert observations 2
+assert next_sequence 3
+factory_reset
+assert observations 0
+assert next_sequence 1
+assert node_id changed
+assert incarnation changed
+read CHIP-003
+assert observations 1
+assert next_sequence 2
+assert observation 0 sequence 1
+assert observation 0 chip_id CHIP-003
+reboot
+assert node_id unchanged
+assert next_sequence 2
+assert observations 1
+read CHIP-004
+assert observations 2
+assert next_sequence 3

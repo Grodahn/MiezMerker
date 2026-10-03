@@ -1,0 +1,24 @@
+# Ack watermark operations
+name: ack-watermark
+version: 1
+description: Ack watermark set persists across reboot; injected and out-of-range acks fail without moving the cursor.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+read CHIP-003
+assert ack_watermark 0
+expect_ack 2 true
+assert last_ack true
+assert ack_watermark 2
+fail_watermark_next
+expect_ack 3 false
+assert last_ack false
+assert ack_watermark 2
+expect_ack 3 true
+assert ack_watermark 3
+reboot
+assert ack_watermark 3
+expect_ack 99 false
+assert ack_watermark 3

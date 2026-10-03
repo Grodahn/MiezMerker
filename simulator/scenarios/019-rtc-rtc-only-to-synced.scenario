@@ -1,0 +1,16 @@
+# RTC correction from RTC_ONLY to SYNCED
+name: rtc-rtc-only-to-synced
+version: 1
+description: RTC correction from RTC_ONLY to SYNCED affects future reads only.
+
+boot
+rtc RTC_ONLY 1700000000000
+read CHIP-001
+assert observation 0 clock_status RTC_ONLY
+assert observation 0 epoch_ms 1700000000000
+rtc_correct_ms 1700000500000
+read CHIP-002
+assert observation 1 clock_status SYNCED
+assert observation 1 epoch_ms 1700000500000
+assert observation 0 clock_status RTC_ONLY
+assert observation 0 epoch_ms 1700000000000

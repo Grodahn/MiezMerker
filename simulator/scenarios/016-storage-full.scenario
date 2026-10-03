@@ -1,0 +1,24 @@
+# Storage full
+name: storage-full
+version: 1
+capacity: 4
+description: Store reaches FULL; further reads rejected with REJECTED_FULL; no silent deletion.
+
+boot
+rtc SYNCED 1700000000000
+read C1
+read C2
+read C3
+read C4
+assert store_status FULL
+assert observations 4
+assert next_sequence 5
+read C5
+assert last_result REJECTED_FULL
+assert observations 4
+reboot
+assert observations 4
+assert store_status FULL
+read C6
+assert last_result REJECTED_FULL
+assert observations 4

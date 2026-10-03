@@ -1,0 +1,18 @@
+# Factory reset with power loss (journal resume)
+name: factory-reset-power-loss
+version: 1
+description: Power loss during factory reset; reboot resumes and completes reset.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+crash_identity_store 1
+factory_reset
+reboot
+assert node_id changed
+assert incarnation changed
+assert observations 0
+assert next_sequence 1
+read CHIP-002
+assert observations 1
+assert next_sequence 2

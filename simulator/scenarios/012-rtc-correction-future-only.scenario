@@ -1,0 +1,16 @@
+# RTC correction affects future observations only
+name: rtc-correction-future-only
+version: 1
+description: RTC correction (SYNCED -> SYNCED with new time) affects only future reads.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+assert observation 0 epoch_ms 1700000000000
+assert observation 0 clock_status SYNCED
+rtc_correct_ms 1700000500000
+read CHIP-002
+assert observation 1 epoch_ms 1700000500000
+assert observation 1 clock_status SYNCED
+assert observation 0 epoch_ms 1700000000000
+assert observation 0 clock_status SYNCED

@@ -1,0 +1,13 @@
+# Identity store failure
+name: identity-store-failure
+version: 1
+description: Identity store failure during sequence reservation returns IO_ERROR.
+
+boot
+read CHIP-001
+fail_identity_store 1
+read CHIP-002
+assert last_result IO_ERROR
+reboot
+assert observations 1
+assert next_sequence 2

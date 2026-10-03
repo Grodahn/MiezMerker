@@ -1,0 +1,12 @@
+# Identity load failure
+name: identity-load-failure
+version: 1
+description: Identity load failure (IO_ERROR) leaves core not ready.
+
+boot
+read CHIP-001
+reboot
+fail_load_next
+reboot
+assert not_ready
+assert observations 1

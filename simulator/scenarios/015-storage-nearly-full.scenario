@@ -1,0 +1,19 @@
+# Storage nearly full
+name: storage-nearly-full
+version: 1
+capacity: 10
+description: Store reaches NEARLY_FULL at 90% capacity; next read still succeeds.
+
+boot
+rtc SYNCED 1700000000000
+repeat 9
+  read CHIP
+  advance_ms 3000
+end
+assert store_status NEARLY_FULL
+assert observations 9
+assert next_sequence 10
+read CHIP
+assert store_status FULL
+assert observations 10
+assert next_sequence 11

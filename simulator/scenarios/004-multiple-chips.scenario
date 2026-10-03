@@ -1,0 +1,17 @@
+# Multiple chip IDs
+name: multiple-chips
+version: 1
+description: Reads of different chip IDs are all recorded independently.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-A
+read CHIP-B
+read CHIP-C
+assert observations 3
+assert observation 0 chip_id CHIP-A
+assert observation 1 chip_id CHIP-B
+assert observation 2 chip_id CHIP-C
+assert next_sequence 4
+assert sequences_unique
+assert sequences_monotonic

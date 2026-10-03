@@ -1,0 +1,15 @@
+# Many reads of the same chip ID (past debounce window)
+name: many-reads-same-chip
+version: 1
+description: Many reads of the same chip, each past the debounce window, all recorded.
+
+boot
+rtc SYNCED 1700000000000
+repeat 100
+  advance_ms 3000
+  read CHIP-001
+end
+assert observations 100
+assert next_sequence 101
+assert sequences_unique
+assert sequences_monotonic

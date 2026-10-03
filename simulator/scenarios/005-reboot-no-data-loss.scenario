@@ -1,0 +1,18 @@
+# Reboot without data loss
+name: reboot-no-data-loss
+version: 1
+description: Observations persist across reboot.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+reboot
+assert observations 2
+assert next_sequence 3
+assert boot_counter 2
+assert node_id unchanged
+assert observation 0 sequence 1
+assert observation 1 sequence 2
+assert observation 0 chip_id CHIP-001
+assert observation 1 chip_id CHIP-002

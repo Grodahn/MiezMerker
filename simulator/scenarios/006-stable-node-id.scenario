@@ -1,0 +1,17 @@
+# Stable node_id across normal reboot
+name: stable-node-id
+version: 1
+description: node_id remains unchanged across normal reboot; boot_counter increments.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+reboot
+assert node_id unchanged
+assert boot_counter 2
+reboot
+assert node_id unchanged
+assert boot_counter 3
+reboot
+assert node_id unchanged
+assert boot_counter 4

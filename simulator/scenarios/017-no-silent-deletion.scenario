@@ -1,0 +1,28 @@
+# No silent deletion of unacknowledged data
+name: no-silent-deletion
+version: 1
+capacity: 10
+description: Unacknowledged data never silently deleted across reboots and full store.
+
+boot
+rtc SYNCED 1700000000000
+repeat 5
+  read CHIP
+  advance_ms 3000
+end
+assert observations 5
+assert ack_watermark 0
+reboot
+assert observations 5
+assert ack_watermark 0
+# fill to full
+repeat 5
+  read CHIP
+  advance_ms 3000
+end
+assert store_status FULL
+assert observations 10
+# no silent deletion after reboot
+reboot
+assert observations 10
+assert ack_watermark 0
