@@ -1,0 +1,26 @@
+# Technical deduplication behavior
+name: technical-dedup
+version: 1
+description: Reads within debounce window are DEBOUNCED; reads after window are RECORDED. Cache lost on reboot.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+assert last_result RECORDED
+read CHIP-001
+assert last_result DEBOUNCED
+advance_ms 1000
+read CHIP-001
+assert last_result DEBOUNCED
+advance_ms 1000
+read CHIP-001
+assert last_result RECORDED
+assert observations 2
+read CHIP-002
+assert last_result RECORDED
+assert observations 3
+# Debounce cache is volatile - lost on reboot
+reboot
+read CHIP-001
+assert last_result RECORDED
+assert observations 4

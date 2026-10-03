@@ -1,0 +1,20 @@
+# Power loss around sequence allocation
+name: power-loss-sequence
+version: 1
+description: Power loss after sequence reservation but before append; gap created, no duplicate.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+crash_identity_store 1
+read CHIP-002
+reboot
+assert observations 1
+assert next_sequence 3
+assert observation 0 sequence 1
+read CHIP-002
+assert observations 2
+assert next_sequence 4
+assert observation 1 sequence 3
+assert sequences_unique
+assert sequences_monotonic

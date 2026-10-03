@@ -1,0 +1,12 @@
+# Invalid chip ID rejection
+name: invalid-chip-id
+version: 1
+description: Empty or overlong chip IDs are rejected with REJECTED_INVALID.
+
+boot
+rtc SYNCED 1700000000000
+read ""
+assert last_result REJECTED_INVALID
+read CHIP-001
+assert last_result RECORDED
+assert observations 1

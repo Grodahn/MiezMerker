@@ -1,0 +1,21 @@
+# Monotonic sequence across reboot
+name: monotonic-sequence
+version: 1
+description: Sequence counter continues monotonically across reboot.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+assert next_sequence 3
+reboot
+assert next_sequence 3
+read CHIP-003
+assert next_sequence 4
+read CHIP-004
+assert next_sequence 5
+reboot
+assert next_sequence 5
+read CHIP-005
+assert next_sequence 6
+assert sequences_monotonic

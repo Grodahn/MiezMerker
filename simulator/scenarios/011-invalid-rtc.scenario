@@ -1,0 +1,17 @@
+# Invalid/unknown RTC
+name: invalid-rtc
+version: 1
+description: Reads with UNKNOWN RTC get null epoch and UNKNOWN status; sequence still monotonic.
+
+boot
+rtc UNKNOWN
+read CHIP-001
+assert last_result RECORDED
+assert observation 0 clock_status UNKNOWN
+assert observation 0 epoch_ms null
+assert observation 0 sequence 1
+read CHIP-002
+assert observation 1 sequence 2
+assert observation 1 clock_status UNKNOWN
+assert observation 1 epoch_ms null
+assert sequences_monotonic

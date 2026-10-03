@@ -1,0 +1,13 @@
+# Observation append failure
+name: append-failure
+version: 1
+description: Observation append failure returns IO_ERROR; sequence gap created.
+
+boot
+read CHIP-001
+fail_append 1
+read CHIP-002
+assert last_result IO_ERROR
+reboot
+assert observations 1
+assert next_sequence 3

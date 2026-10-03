@@ -28,7 +28,7 @@ Features aus #6–#19 sind noch nicht implementiert.
 | `/backend` | Java/Spring Boot, Security, JPA, PostgreSQL, Flyway und HTTP OpenAPI |
 | `/firmware-core` | Portabler C++20-Core und Hardware-Ports |
 | `/firmware-esp32` | Plattform-Komposition; spätere ESP-IDF-Adapter |
-| `/simulator` | Nutzt denselben Core mit simulierten Ports |
+| `/simulator` | Deterministischer Firmware-Core-Simulator und Szenario-Engine (`simulator/README.md`) |
 | `/protocol` | BLE-Vertragsgrenze; getrennt vom HTTP-Vertrag |
 | `/docs` | Domänenmodell, Trust Boundaries, ADRs, Abnahme |
 | `/hardware` | Platz für Schaltplan, BOM, Verdrahtung und Messungen |

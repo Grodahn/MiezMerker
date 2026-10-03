@@ -1,0 +1,18 @@
+# Already persisted observations remain unchanged after RTC correction
+name: rtc-correction-persisted-unchanged
+version: 1
+description: RTC correction from UNKNOWN to SYNCED does not rewrite past observations.
+
+boot
+rtc UNKNOWN
+read CHIP-001
+assert observation 0 clock_status UNKNOWN
+assert observation 0 epoch_ms null
+rtc_correct_ms 1700000000000
+read CHIP-002
+assert observation 1 clock_status SYNCED
+assert observation 1 epoch_ms 1700000000000
+# Past observation unchanged
+assert observation 0 clock_status UNKNOWN
+assert observation 0 epoch_ms null
+assert sequences_monotonic

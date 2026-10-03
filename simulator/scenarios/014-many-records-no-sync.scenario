@@ -1,0 +1,18 @@
+# Several thousand records without sync
+name: many-records-no-sync
+version: 1
+capacity: 10000
+description: Several thousand records without sync; sequences monotonic, no ack, store OK.
+
+boot
+rtc SYNCED 1700000000000
+repeat 5000
+  advance_ms 3000
+  read CHIP-001
+end
+assert observations 5000
+assert next_sequence 5001
+assert sequences_unique
+assert sequences_monotonic
+assert ack_watermark 0
+assert store_status OK
