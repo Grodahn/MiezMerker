@@ -138,6 +138,9 @@ by `/protocol` and firmware ADRs, not by OpenAPI.
 
 PostgreSQL is the production/dev database, Flyway owns schema evolution and JPA
 uses `ddl-auto: validate`. The first migration only reserves a schema namespace.
+Domain tables and Flyway history live in `public`; the connection pool pins every
+connection to that schema. The reserved `miezmerker` namespace must not alter
+PostgreSQL's lookup path when the database user has the same name.
 Tests use H2 by default for a portable smoke check and the same tests run against
 PostgreSQL in CI. No business entities, raw ingestion or visit engine are built
 in #2. Same-origin reverse proxy deployment is preferred; Vite proxies `/api` to

@@ -3,6 +3,10 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/miezmerker}
     username: ${DB_USER:miezmerker}
     password: ${DB_PASSWORD:miezmerker}
+    hikari:
+      # V1 reserves a schema named after the PostgreSQL user. Pin every new
+      # connection so that creating it cannot change migration/query lookup.
+      connection-init-sql: SET search_path TO public
   jpa:
     open-in-view: false
     hibernate:

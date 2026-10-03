@@ -3,6 +3,8 @@ package org.miezmerker.backend;
 import org.junit.jupiter.api.Test;
 import org.miezmerker.backend.bootstrap.BootstrapRunner;
 import org.miezmerker.backend.repo.AppUserRepository;
+import org.miezmerker.backend.repo.AppDeviceRepository;
+import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,11 +20,15 @@ class BootstrapTest {
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;
     @Autowired MembershipRepository memberships;
+    @Autowired AppDeviceRepository devices;
+    @Autowired NodeRepository nodes;
     @Autowired PasswordEncoder passwords;
     @Autowired jakarta.validation.Validator validator;
 
     @Test
     void bootstrapCreatesFirstOrgAndAdminOnce() {
+        devices.deleteAll();
+        nodes.deleteAll();
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
@@ -45,6 +51,8 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsPasswordsOverBcryptsByteLimitBeforeWriting() {
+        devices.deleteAll();
+        nodes.deleteAll();
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
@@ -68,6 +76,8 @@ class BootstrapTest {
 
     @Test
     void bootstrapRequiresNoSecretsInRepoAndStrongPassword() {
+        devices.deleteAll();
+        nodes.deleteAll();
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
@@ -79,6 +89,8 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsAnEmailThatCannotBeUsedByTheLoginApi() {
+        devices.deleteAll();
+        nodes.deleteAll();
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
@@ -91,6 +103,8 @@ class BootstrapTest {
 
     @Test
     void invalidBootstrapMetadataIsRejectedBeforeWritingAnyEntities() {
+        devices.deleteAll();
+        nodes.deleteAll();
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
@@ -110,6 +124,8 @@ class BootstrapTest {
 
     @Test
     void bootstrapCannotAttachTheFirstAdminToADisabledOrganization() {
+        devices.deleteAll();
+        nodes.deleteAll();
         memberships.deleteAll();
         users.deleteAll();
         organizations.deleteAll();
