@@ -116,12 +116,10 @@ Revocation cannot propagate instantly while a Node is offline; bounded validity,
 clock trust and refresh/revocation behavior must be specified in #17. Do not claim
 these placeholder interfaces enforce authorization today.
 
-Business endpoints must resolve active membership server-side before reading or
-writing data, including lists, object IDs, uploads, derived results and admin
-operations. Never trust a request's Organization alone. Today only health/version
-and OpenAPI are public; all other requests are denied. CSRF stays enabled; login,
-membership enforcement, cookie Secure policy behind HTTPS and domain repositories
-will be implemented before exposing business endpoints.
+Business endpoints resolve active membership server-side before reading or writing
+data, including lists, object IDs, uploads, derived results and admin operations. Never
+trust a request's Organization alone. Login/session, membership enforcement, CSRF and
+cookie Secure policy behind HTTPS are implemented (#16, ADR-0014).
 
 ## HTTP and persistence contracts
 
@@ -140,6 +138,9 @@ by `/protocol` and firmware ADRs, not by OpenAPI.
 
 PostgreSQL is the production/dev database, Flyway owns schema evolution and JPA
 uses `ddl-auto: validate`. The first migration only reserves a schema namespace.
+Domain tables and Flyway history live in `public`; the connection pool pins every
+connection to that schema. The reserved `miezmerker` namespace must not alter
+PostgreSQL's lookup path when the database user has the same name.
 Tests use H2 by default for a portable smoke check and the same tests run against
 PostgreSQL in CI. No business entities, raw ingestion or visit engine are built
 in #2. Same-origin reverse proxy deployment is preferred; Vite proxies `/api` to
@@ -149,13 +150,11 @@ production. Production proxy/hosting configuration belongs to deployment work.
 
 ## Decisions and deliberately unfinished features
 
-See `docs/adr/` for decisions. Issue #5 implements the hardware-independent
-capture pipeline (RawObservations with RTC/sequence/persistent store) in
-`firmware-core`; see `firmware-core/README.md` and ADR 0012 for its lifecycle,
-sequence, clock, debounce, storage-full and crash guarantees, which #6 and #7
-build on. Detailed RFID drivers, crash-safe ESP32-C3 flash adapters, GATT
-codecs, collector transfers, admin features, derivation, auth, keys and
-claim/reset belong to #6–#19. This foundation establishes ownership, contracts
-and build boundaries without pretending to implement those features. Host ESP32
-composition builds; a flashable ESP-IDF image requires actual board adapters
-and is outside #2/#5.
+See `docs/adr/` for decisions. Implemented: tenancy/session auth (#16, ADR-0014),
+offline credentials with per-AppDevice keys (#17, ADR-0012), node identity/claim
+(#18, ADR-0013), and portable raw observation capture with durable sequence/RTC
+(#5, ADR-0012-firmware-core-observations). Detailed RFID, ESP32 flash adapters, GATT codecs, collector
+transfers, admin features, derivation, invite-onboarding (#19), real backend upload and
+visit engine belong to #5–#19. This foundation plus #16–#18 establishes ownership,
+contracts, auth and claim boundaries. Host ESP32 composition builds; a flashable ESP-IDF
+image requires actual board adapters and is outside #2.

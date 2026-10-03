@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { render, screen, cleanup } from '@testing-library/react';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
+vi.mock('./api/client', () => ({ api: { GET: vi.fn().mockResolvedValue({ response: { status: 401 }, error: {} }) } }));
 import { App } from './App';
 afterEach(cleanup);
 test('collector initializes without any backend request', async () => {

@@ -31,10 +31,18 @@ class FoundationTest {
         assertEquals(200, health.statusCode());
         assertEquals("UP", mapper.readTree(health.body()).get("status").asText());
         assertEquals("v1", mapper.readTree(get("/api/v1/version").body()).get("apiVersion").asText());
-        assertEquals(403, get("/api/v1/organizations").statusCode());
-        var post = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/health"))
-                .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
-        assertEquals(403, post.statusCode()); // CSRF remains enabled.
+        // Business endpoints require authentication (401), never leak tenant data.
+        assertEquals(401, get("/api/v1/organizations").statusCode());
+        // State-changing requests without a CSRF token are never processed as login:
+        // the response is 401/403 (never 200) and no session is established.
+        var post = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/auth/login"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"email\":\"x@example.org\",\"password\":\"123456789012\"}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertTrue(post.statusCode() == 401 || post.statusCode() == 403,
+                "expected CSRF/auth rejection, got " + post.statusCode());
+        assertEquals(401, get("/api/v1/auth/session").statusCode());
     }
 
     @Test void exportActualBackendOpenApi() throws Exception {

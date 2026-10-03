@@ -1,0 +1,14 @@
+name: Offline credential interoperability
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  node-verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cmake -S firmware-esp32/tests -B build/offline-auth -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/offline-auth --parallel
+      - run: ctest --test-dir build/offline-auth --output-on-failure
