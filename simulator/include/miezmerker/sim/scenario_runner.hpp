@@ -53,6 +53,7 @@ private:
     std::optional<IncarnationId> last_incarnation_;
     std::optional<IncarnationId> previous_incarnation_; // incarnation before last factory_reset
     std::optional<RecordResult> last_result_;
+    std::optional<bool> last_ack_result_;
     bool crash_armed_{false};                 // whether a crash fault is armed for next operation
     bool crash_expected_{false};              // whether the current operation expects a crash
     std::size_t events_executed_{0};
@@ -81,6 +82,10 @@ private:
     bool execute_read(const std::string& chip_id);
     bool execute_read_absent();
     bool execute_expect_read(const std::vector<std::string>& args);
+    bool execute_ack(const std::string& arg);
+    bool execute_expect_ack(const std::vector<std::string>& args);
+    bool execute_storage_available();
+    bool execute_storage_unavailable();
     bool execute_fail_load_next();
     bool execute_fail_identity_store(const std::string& arg);
     bool execute_crash_identity_store(const std::string& arg);

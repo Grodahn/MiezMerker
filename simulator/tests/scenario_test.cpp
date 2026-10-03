@@ -600,17 +600,171 @@ crash_identity_store 1
     std::cout << "PASS test_runner_fault_never_triggered\n";
 }
 
+void test_parse_hex_seed() {
+    const char* text = R"(
+name: hex-seed
+version: 1
+seed: 0x2A
+capacity: 0x64
+
+boot
+)";
+    miezmerker::sim::Scenario sc;
+    auto err = miezmerker::sim::parse_scenario(text, sc);
+    CHECK(err.ok());
+    CHECK(sc.seed == 42);
+    CHECK(sc.capacity == 100);
+
+    miezmerker::sim::ScenarioRunner runner(sc);
+    CHECK(runner.run() == 0);
+    std::cout << "PASS test_parse_hex_seed\n";
+}
+
+void test_parse_rtc_invalid_arity() {
+    miezmerker::sim::Scenario sc;
+    auto err = miezmerker::sim::parse_scenario("name: x\nversion: 1\nrtc_invalid\n", sc);
+    CHECK(err.ok());
+    err = miezmerker::sim::parse_scenario("name: x\nversion: 1\nrtc_invalid extra\n", sc);
+    CHECK(!err.ok());
+    CHECK(err.message.find("takes 0 arguments") != std::string::npos);
+    std::cout << "PASS test_parse_rtc_invalid_arity\n";
+}
+
+void test_runner_rtc_invalid_event() {
+    const char* text = R"(
+name: rtc-invalid-event
+version: 1
+
+boot
+rtc_invalid
+read CHIP-001
+assert observation 0 clock_status UNKNOWN
+assert observation 0 epoch_ms null
+)";
+    miezmerker::sim::Scenario sc;
+    CHECK(miezmerker::sim::parse_scenario(text, sc).ok());
+    miezmerker::sim::ScenarioRunner runner(sc);
+    CHECK(runner.run() == 0);
+    std::cout << "PASS test_runner_rtc_invalid_event\n";
+}
+
+void test_runner_ack_watermark() {
+    const char* text = R"(
+name: ack-watermark-unit
+version: 1
+
+boot
+read A
+read B
+read C
+assert ack_watermark 0
+expect_ack 2 true
+assert ack_watermark 2
+fail_watermark_next
+expect_ack 3 false
+assert ack_watermark 2
+expect_ack 3 true
+assert ack_watermark 3
+reboot
+assert ack_watermark 3
+expect_ack 99 false
+assert ack_watermark 3
+)";
+    miezmerker::sim::Scenario sc;
+    CHECK(miezmerker::sim::parse_scenario(text, sc).ok());
+    miezmerker::sim::ScenarioRunner runner(sc);
+    CHECK(runner.run() == 0);
+    std::cout << "PASS test_runner_ack_watermark\n";
+}
+
+void test_runner_fail_never_triggered() {
+    const char* text = R"(
+name: fail-never-triggered
+version: 1
+
+boot
+fail_append 1
+# no read to consume it
+)";
+    miezmerker::sim::Scenario sc;
+    CHECK(miezmerker::sim::parse_scenario(text, sc).ok());
+    miezmerker::sim::ScenarioRunner runner(sc);
+    CHECK(runner.run() == 1); // fail faults must also be reported
+    std::cout << "PASS test_runner_fail_never_triggered\n";
+}
+
+void test_runner_clear_faults() {
+    const char* text = R"(
+name: clear-faults-unit
+version: 1
+
+boot
+read A
+read B
+fail_clear_next
+factory_reset
+assert not_ready
+assert observations 2
+factory_reset
+assert ready
+assert observations 0
+read C
+crash_clear_next
+factory_reset
+reboot
+assert observations 0
+assert next_sequence 1
+)";
+    miezmerker::sim::Scenario sc;
+    CHECK(miezmerker::sim::parse_scenario(text, sc).ok());
+    miezmerker::sim::ScenarioRunner runner(sc);
+    CHECK(runner.run() == 0);
+    std::cout << "PASS test_runner_clear_faults\n";
+}
+
+void test_runner_misc_events() {
+    const char* text = R"(
+name: misc-events-unit
+version: 1
+
+boot
+rtc_invalid
+set_ms 5000
+read A
+assert observation 0 monotonic_ms 5000
+read_absent
+assert observations 1
+expect_read B RECORDED
+assert observations 2
+storage_unavailable
+reboot
+assert not_ready
+storage_available
+reboot
+assert ready
+assert observations 2
+)";
+    miezmerker::sim::Scenario sc;
+    CHECK(miezmerker::sim::parse_scenario(text, sc).ok());
+    miezmerker::sim::ScenarioRunner runner(sc);
+    CHECK(runner.run() == 0);
+    std::cout << "PASS test_runner_misc_events\n";
+}
+
 } // namespace
 
 int main() {
     test_parse_valid();
     test_parse_repeat();
     test_parse_errors();
+    test_parse_hex_seed();
+    test_parse_rtc_invalid_arity();
     test_runner_simple();
     test_runner_reboot();
     test_runner_factory_reset();
     test_runner_dedup();
     test_runner_invalid_rtc();
+    test_runner_rtc_invalid_event();
     test_runner_rtc_correction();
     test_runner_power_loss_obs();
     test_runner_power_loss_seq();
@@ -623,7 +777,11 @@ int main() {
     test_runner_fail_identity_store();
     test_runner_fail_append();
     test_runner_invalid_chip();
+    test_runner_ack_watermark();
+    test_runner_clear_faults();
+    test_runner_misc_events();
     test_runner_fault_never_triggered();
+    test_runner_fail_never_triggered();
 
     std::cout << "All scenario tests passed (" << checks << " checks)\n";
     return 0;

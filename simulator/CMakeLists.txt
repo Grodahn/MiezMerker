@@ -40,7 +40,7 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME simulator-scenarios COMMAND scenario-test)
 
-  file(GLOB SCENARIO_FILES "${CMAKE_CURRENT_SOURCE_DIR}/scenarios/*.scenario")
+  file(GLOB SCENARIO_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scenarios/*.scenario")
   foreach(file ${SCENARIO_FILES})
     get_filename_component(name ${file} NAME_WE)
     add_test(NAME scenario-${name} COMMAND scenario-runner ${file})

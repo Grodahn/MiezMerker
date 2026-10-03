@@ -117,10 +117,15 @@ void ScenarioRunner::check_crash_expected(const std::string& /*op_name*/) {
 bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
     ++events_executed_;
 
-    // Events that mutate core state (may trigger faults)
+    // Events that touch durable state (may trigger faults).
+    // Counters reset so fail/crash_at(N) means "Nth attempt within the next
+    // consuming operation". Faults persist across unrelated mutating ops
+    // until the consuming operation triggers them; they are cleared on
+    // trigger or on PowerLoss resume, not after every mutating event.
     bool is_mutating = (event.type == "boot" || event.type == "reboot" ||
                         event.type == "factory_reset" || event.type == "read" ||
-                        event.type == "expect_read");
+                        event.type == "expect_read" || event.type == "ack" ||
+                        event.type == "expect_ack");
 
     if (is_mutating) {
         reset_fault_counters();
@@ -139,6 +144,10 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
         if (event.type == "read") return execute_read(event.args[0]);
         if (event.type == "read_absent") return execute_read_absent();
         if (event.type == "expect_read") return execute_expect_read(event.args);
+        if (event.type == "ack") return execute_ack(event.args[0]);
+        if (event.type == "expect_ack") return execute_expect_ack(event.args);
+        if (event.type == "storage_available") return execute_storage_available();
+        if (event.type == "storage_unavailable") return execute_storage_unavailable();
         if (event.type == "fail_load_next") return execute_fail_load_next();
         if (event.type == "fail_identity_store") return execute_fail_identity_store(event.args[0]);
         if (event.type == "crash_identity_store") return execute_crash_identity_store(event.args[0]);
@@ -274,6 +283,49 @@ bool ScenarioRunner::execute_expect_read(const std::vector<std::string>& args) {
     return true;
 }
 
+bool ScenarioRunner::execute_ack(const std::string& arg) {
+    if (!core_) {
+        fail("ack", "booted core", "null", "core not initialized");
+        return false;
+    }
+    std::uint64_t sequence;
+    if (!miezmerker::sim::parse_uint64(arg, sequence)) {
+        fail("ack", "valid uint64", arg, "parse sequence");
+        return false;
+    }
+    last_ack_result_ = core_->set_ack_watermark(sequence);
+    return true;
+}
+
+bool ScenarioRunner::execute_expect_ack(const std::vector<std::string>& args) {
+    if (!execute_ack(args[0])) return false;
+    const std::string& expected = args[1];
+    bool expected_bool;
+    if (expected == "true" || expected == "ok") expected_bool = true;
+    else if (expected == "false" || expected == "fail") expected_bool = false;
+    else {
+        fail("expect_ack", "true|false|ok|fail", expected, "parse expected");
+        return false;
+    }
+    bool actual = last_ack_result_.value_or(false);
+    if (actual != expected_bool) {
+        fail("expect_ack", expected_bool ? "true" : "false", actual ? "true" : "false",
+             "ack result");
+        return false;
+    }
+    return true;
+}
+
+bool ScenarioRunner::execute_storage_available() {
+    storage_.set_available(true);
+    return true;
+}
+
+bool ScenarioRunner::execute_storage_unavailable() {
+    storage_.set_available(false);
+    return true;
+}
+
 bool ScenarioRunner::execute_fail_load_next() {
     identity_.fail_next_load();
     return true;
@@ -368,6 +420,15 @@ bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
         if (args.size() != 2) { fail("assert last_result", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
         std::string actual = last_result_ ? format_record_result(*last_result_) : "nullopt";
         return expect_eq(actual, args[1], "last_result");
+    }
+    if (what == "last_ack") {
+        if (args.size() != 2) { fail("assert last_ack", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
+        if (!last_ack_result_) { fail("assert last_ack", args[1], "nullopt", "no prior ack"); return false; }
+        bool expected;
+        if (args[1] == "true" || args[1] == "ok") expected = true;
+        else if (args[1] == "false" || args[1] == "fail") expected = false;
+        else { fail("assert last_ack", "true|false|ok|fail", args[1], "parse expected"); return false; }
+        return expect_eq(*last_ack_result_, expected, "last_ack");
     }
     if (what == "ack_watermark") {
         if (args.size() != 2) { fail("assert ack_watermark", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
@@ -562,17 +623,24 @@ int ScenarioRunner::run() {
         if (!execute_event(event)) {
             return 1;
         }
-        // Disarm faults after each mutating event
+        // No auto-disarm here: faults persist until the consuming operation
+        // triggers them (Sim stores clear one-shot flags on trigger) or a
+        // PowerLoss resume disarms. This prevents silently dropping e.g.
+        // fail_append armed before an unrelated reboot.
+        // Only clear a stale crash expectation when the op did not crash;
+        // a still-armed crash will re-arm on the next mutating op.
         if (event.type == "boot" || event.type == "reboot" ||
             event.type == "factory_reset" || event.type == "read" ||
-            event.type == "expect_read") {
-            disarm_all_faults();
+            event.type == "expect_read" || event.type == "ack" ||
+            event.type == "expect_ack") {
             crash_expected_ = false;
         }
     }
-    // Check for unconsumed crash faults
-    if (crash_armed_ || identity_.has_crash_armed() || observations_.has_crash_armed()) {
-        std::cerr << "FAIL scenario '" << scenario_.name << "': armed crash fault never triggered\n";
+    // Check for unconsumed faults (both crash and fail). An armed fault that
+    // never reaches its consuming operation is a scenario bug.
+    if (crash_armed_ || identity_.has_crash_armed() || observations_.has_crash_armed() ||
+        identity_.has_fail_armed() || observations_.has_fail_armed()) {
+        std::cerr << "FAIL scenario '" << scenario_.name << "': armed fault never triggered\n";
         return 1;
     }
     std::cout << "PASS scenario '" << scenario_.name << "' (" << events_executed_ << " events)\n";

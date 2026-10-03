@@ -75,6 +75,8 @@ static bool is_known_event_type(std::string_view type) {
         "advance_ms", "set_ms",
         "rtc", "rtc_invalid", "rtc_correct_ms",
         "read", "read_absent", "expect_read",
+        "ack", "expect_ack",
+        "storage_available", "storage_unavailable",
         "fail_load_next",
         "fail_identity_store", "crash_identity_store",
         "fail_append", "crash_append",
@@ -91,19 +93,19 @@ static bool validate_event_arity(std::string_view type, std::size_t argc, std::s
     if (type == "boot" || type == "reboot" || type == "factory_reset" ||
         type == "read_absent" || type == "fail_load_next" ||
         type == "fail_clear_next" || type == "crash_clear_next" ||
-        type == "fail_watermark_next" || type == "end") {
+        type == "fail_watermark_next" || type == "storage_available" ||
+        type == "storage_unavailable" || type == "rtc_invalid" || type == "end") {
         if (argc != 0) { err = std::string(type) + " takes 0 arguments"; return false; }
     } else if (type == "advance_ms" || type == "set_ms" ||
-               type == "rtc_invalid" || type == "rtc_correct_ms" ||
+               type == "rtc_correct_ms" ||
                type == "read" || type == "fail_identity_store" ||
                type == "crash_identity_store" || type == "fail_append" ||
-               type == "crash_append" || type == "fail_store_at" ||
-               type == "crash_store_at" || type == "repeat") {
+               type == "crash_append" || type == "ack" || type == "repeat") {
         if (argc != 1) { err = std::string(type) + " takes 1 argument"; return false; }
     } else if (type == "rtc") {
         if (argc < 1 || argc > 2) { err = "rtc takes 1 or 2 arguments"; return false; }
-    } else if (type == "expect_read") {
-        if (argc != 2) { err = "expect_read takes 2 arguments"; return false; }
+    } else if (type == "expect_read" || type == "expect_ack") {
+        if (argc != 2) { err = std::string(type) + " takes 2 arguments"; return false; }
     } else if (type == "assert") {
         if (argc < 1) { err = "assert takes at least 1 argument"; return false; }
     } else {

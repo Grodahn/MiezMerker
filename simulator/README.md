@@ -27,9 +27,9 @@ Scenarios are simple, human-readable, versioned text files (`.scenario`). The fo
 name: scenario-name          # required
 version: 1                   # required (format version)
 description: optional text
-capacity: 4096               # optional, observation store capacity
-debounce_ms: 2000            # optional, debounce interval
-seed: 0xA5A5A5A5A5A5A5A5     # optional, random seed
+capacity: 4096               # optional, observation store capacity (decimal or 0x hex)
+debounce_ms: 2000            # optional, debounce interval in ms (decimal or 0x hex)
+seed: 42                     # optional, random seed (decimal or 0x hex, e.g. 0xA5A5A5A5A5A5A5A5)
 
 boot                         # events follow
 rtc SYNCED 1700000000000
@@ -44,14 +44,18 @@ assert observations 1
 | `boot` | — | Create Core, call `initialize()` |
 | `reboot` | — | Destroy Core, create new, call `initialize()` |
 | `factory_reset` | — | Destroy Core, create new, call `factory_reset()` |
-| `advance_ms` | `<ms>` | Advance monotonic clock |
-| `set_ms` | `<ms>` | Set monotonic clock to value |
+| `advance_ms` | `<ms>` | Advance monotonic clock (decimal or 0x hex) |
+| `set_ms` | `<ms>` | Set monotonic clock to value (decimal or 0x hex) |
 | `rtc` | `<STATUS> [epoch]` | Set RTC: `SYNCED epoch`, `RTC_ONLY epoch`, or `UNKNOWN` |
 | `rtc_invalid` | — | Set RTC to `UNKNOWN` |
 | `rtc_correct_ms` | `<epoch>` | Correct RTC to `SYNCED` with epoch |
 | `read` | `<chip_id>` | Queue chip and poll reader once |
 | `read_absent` | — | Poll reader with no tag |
 | `expect_read` | `<chip> <RESULT>` | Read and assert result |
+| `ack` | `<seq>` | Call `set_ack_watermark(seq)`, record true/false in `last_ack` |
+| `expect_ack` | `<seq> <true\|false>` | Ack and assert result (`ok`/`fail` aliases) |
+| `storage_available` | — | Set `Storage::open()` to true |
+| `storage_unavailable` | — | Set `Storage::open()` to false |
 | `fail_load_next` | — | Next identity load fails |
 | `fail_identity_store` | `<n>` | Nth identity store fails |
 | `crash_identity_store` | `<n>` | Nth identity store commits, then power loss |
@@ -72,6 +76,7 @@ assert next_sequence <n>
 assert boot_counter <n>
 assert store_status <OK|NEARLY_FULL|FULL>
 assert last_result <RECORDED|DEBOUNCED|REJECTED_FULL|REJECTED_INVALID|NOT_READY|IO_ERROR>
+assert last_ack <true|false>
 assert ack_watermark <n>
 assert ready
 assert not_ready
@@ -132,9 +137,9 @@ The simulator supports deterministic fault injection at meaningful persistence b
 | `fail_watermark_next` | `set_ack_watermark` |
 
 - `fail_*` — operation returns error, nothing committed.
-- `crash_*` — operation commits, then `PowerLoss` thrown (simulating power loss after durable write).
-- Faults arm until the next mutating operation (`boot`, `reboot`, `factory_reset`, `read`, `expect_read`) consumes them.
-- An armed crash fault that is never consumed fails the scenario at the end.
+- `crash_*` — operation commits, then `PowerLoss` thrown (simulating power loss after durable write). `crash_clear_next` clears the log before throwing; `clear()` is idempotent so the pending factory reset resumes.
+- Faults arm until the consuming operation triggers them (`boot`/`reboot` for loads, `read`/`expect_read` for appends/stores, `factory_reset` for journal/clear, `ack`/`expect_ack` for watermarks). Faults persist across unrelated mutating ops; they are cleared on trigger or on PowerLoss resume.
+- An armed fault (fail or crash) that never reaches its consuming operation fails the scenario at the end.
 
 Reboot semantics: volatile Core state (debounce cache, boot_counter increment) is lost; durable media (`SimObservationStore`, `SimDeviceIdentity`, `SimRtc`, `SimStorage`) survive. Power loss throws `PowerLoss` from the store; the runner destroys the Core and continues with the next event (typically `reboot`).
 
@@ -167,7 +172,9 @@ Additional scenarios for fault injection validation:
 - `021-identity-store-failure.scenario` — Identity store failure
 - `022-append-failure.scenario` — Append IO_ERROR
 - `023-invalid-chip-id.scenario` — Empty/overlong chip rejection
-- `024-ack-watermark.scenario` — Ack watermark persistence
+- `024-ack-watermark.scenario` — Ack watermark set/persist/fail paths
+- `025-event-coverage.scenario` — `rtc_invalid`, `set_ms`, `read_absent`, `expect_read`, storage gate
+- `026-clear-faults.scenario` — `fail_clear_next`/`crash_clear_next` resume paths
 
 ## Adding a New Scenario
 

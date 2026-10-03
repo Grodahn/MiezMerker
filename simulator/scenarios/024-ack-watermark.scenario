@@ -1,18 +1,24 @@
 # Ack watermark operations
 name: ack-watermark
 version: 1
-description: Ack watermark persists across reboot and cannot exceed last durable observation.
+description: Ack watermark set persists across reboot; injected and out-of-range acks fail without moving the cursor.
 
 boot
+rtc SYNCED 1700000000000
 read CHIP-001
 read CHIP-002
 read CHIP-003
 assert ack_watermark 0
-# Cannot ack beyond last observation
-assert ready
+expect_ack 2 true
+assert last_ack true
+assert ack_watermark 2
 fail_watermark_next
-# set_ack_watermark should fail due to fail_watermark_next
-# Note: set_ack_watermark is not directly exposed in scenario, so we can't test it here
-# This is a placeholder for future extension
+expect_ack 3 false
+assert last_ack false
+assert ack_watermark 2
+expect_ack 3 true
+assert ack_watermark 3
 reboot
-assert ack_watermark 0
+assert ack_watermark 3
+expect_ack 99 false
+assert ack_watermark 3

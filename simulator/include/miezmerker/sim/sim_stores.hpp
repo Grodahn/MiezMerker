@@ -102,6 +102,10 @@ public:
         }
         if (crash_next_clear_) {
             crash_next_clear_ = false;
+            // Commit then lose power: clear is durable before the crash,
+            // modelling a power loss immediately after the flash erase.
+            // clear() is idempotent so the pending factory reset resumes.
+            media_.clear();
             throw PowerLoss{};
         }
         return media_.clear();
@@ -128,6 +132,11 @@ public:
 
     bool has_crash_armed() const {
         return crash_append_at_ != 0 || crash_next_clear_;
+    }
+
+    bool has_fail_armed() const {
+        return fail_append_at_ != 0 || fail_next_append_ || fail_next_clear_ ||
+               fail_next_watermark_;
     }
 
     const InMemoryObservationStore& media() const { return media_; }
@@ -195,6 +204,10 @@ public:
     void fail_next_load() { fail_next_load_ = true; }
 
     bool has_crash_armed() const { return crash_store_at_ != 0; }
+
+    bool has_fail_armed() const {
+        return fail_store_at_ != 0 || fail_next_store_ || fail_next_load_;
+    }
 
     const InMemoryIdentityStore& media() const { return media_; }
 

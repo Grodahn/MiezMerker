@@ -1,0 +1,27 @@
+# Factory-reset clear faults: fail retries, crash commits then resumes
+name: clear-faults
+version: 1
+description: fail_clear_next leaves the log intact and retries; crash_clear_next clears then resumes on reboot.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+assert observations 2
+fail_clear_next
+factory_reset
+assert not_ready
+assert observations 2
+factory_reset
+assert ready
+assert observations 0
+assert next_sequence 1
+assert node_id changed
+read CHIP-A
+assert observations 1
+crash_clear_next
+factory_reset
+reboot
+assert observations 0
+assert next_sequence 1
+assert node_id changed

@@ -1,0 +1,28 @@
+# Event coverage for previously untested engine paths
+name: event-coverage
+version: 1
+description: Covers rtc_invalid, set_ms, read_absent, expect_read and the storage availability gate.
+
+boot
+rtc_invalid
+read CHIP-001
+assert last_result RECORDED
+assert observation 0 clock_status UNKNOWN
+assert observation 0 epoch_ms null
+set_ms 5000
+read CHIP-002
+assert observation 1 monotonic_ms 5000
+read_absent
+assert observations 2
+expect_read CHIP-003 RECORDED
+assert observations 3
+assert last_result RECORDED
+storage_unavailable
+reboot
+assert not_ready
+assert observations 3
+storage_available
+reboot
+assert ready
+assert observations 3
+assert node_id unchanged
