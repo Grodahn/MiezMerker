@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -191,6 +192,15 @@ bool get_nested_string(const cJSON* root, const char* parent, const char* name,
 
 }  // namespace
 
+std::vector<std::uint8_t> SimBleTransport::exchange(
+    const std::vector<std::uint8_t>& request, ble::TrustedEpochSeconds now,
+    std::optional<std::size_t> disconnect_after) {
+    auto response = router_.handle_frame(request, now);
+    interrupted_ = disconnect_after && *disconnect_after < response.size();
+    if (interrupted_) return {};
+    return response;
+}
+
 void SimOwnerStore::clear() {
     claimed = false;
     organization_id.clear();
@@ -216,19 +226,47 @@ void SimClaimCrypto::set_issuer(const std::array<unsigned char, 65>& issuer_key)
     issuer_key_ = issuer_key;
 }
 
-bool SimClaimCrypto::generate_keypair(std::span<std::byte, 65>,
-                                      std::span<std::byte, 32>) {
-    // Host never generates device keys; provisioning is covered by
-    // firmware-core node_identity_test. Simulator imports fixture keys.
-    return false;
+bool SimClaimCrypto::generate_keypair(std::span<std::byte, 65> public_key,
+                                      std::span<std::byte, 32> private_key) {
+    // Deterministic test-only scalars for rotated identities; never board RNG.
+    mbedtls_ecp_group group;
+    mbedtls_ecp_group_init(&group);
+    mbedtls_ecp_point point;
+    mbedtls_ecp_point_init(&point);
+    mbedtls_mpi scalar;
+    mbedtls_mpi_init(&scalar);
+    auto rng = [](void*, unsigned char* out, std::size_t len) -> int {
+        std::fill(out, out + len, 0x2a);
+        return 0;
+    };
+    std::size_t written = 0;
+    bool ok = mbedtls_ecp_group_load(&group, MBEDTLS_ECP_DP_SECP256R1) == 0
+        && mbedtls_mpi_lset(&scalar, static_cast<mbedtls_mpi_sint>(++key_counter_ + 1)) == 0
+        && mbedtls_ecp_mul(&group, &point, &scalar, &group.G, rng, nullptr) == 0
+        && mbedtls_ecp_point_write_binary(&group, &point, MBEDTLS_ECP_PF_UNCOMPRESSED,
+             &written, reinterpret_cast<unsigned char*>(public_key.data()), 65) == 0
+        && written == 65
+        && mbedtls_mpi_write_binary(&scalar,
+             reinterpret_cast<unsigned char*>(private_key.data()), 32) == 0;
+    mbedtls_mpi_free(&scalar);
+    mbedtls_ecp_point_free(&point);
+    mbedtls_ecp_group_free(&group);
+    return ok;
 }
 
-bool SimClaimCrypto::sign(std::span<const std::byte, 32>, std::span<const std::byte>,
-                          std::span<std::byte, 64>) {
-    // Host never signs claim advertisements; fixtures carry precomputed
-    // signatures. Node session proofs replay fixture signatures for the fixed
-    // nonce; dynamic signing stays a board/PWA concern (#4/#8).
-    return false;
+bool SimClaimCrypto::sign(std::span<const std::byte, 32> private_key,
+                          std::span<const std::byte> message,
+                          std::span<std::byte, 64> signature) {
+    const auto& fx = sim_fixtures();
+    // Imported keys are opaque fixture handles; only replay a signature for
+    // its exact canonical message. Dynamically rotated keys have no fixtures.
+    if (!fx.loaded || private_key[0] != std::byte{1}) return false;
+    std::string text(reinterpret_cast<const char*>(message.data()), message.size());
+    const auto* proof = text == fx.session_msg ? &fx.session_sig
+                       : text == fx.claim_msg ? &fx.claim_sig : nullptr;
+    if (!proof) return false;
+    for (std::size_t i = 0; i < 64; ++i) signature[i] = static_cast<std::byte>((*proof)[i]);
+    return true;
 }
 
 bool SimClaimCrypto::verify_claim(const std::string& receipt, VerifiedClaim& claim) {
@@ -269,6 +307,14 @@ bool SimClaimCrypto::verify_claim(const std::string& receipt, VerifiedClaim& cla
     if (iss != "miezmerker" || kind != "claim") return false;
     auto* ver = cJSON_GetObjectItemCaseSensitive(c, "ver");
     if (!cJSON_IsNumber(ver) || ver->valuedouble != 1) return false;
+    auto* iat = cJSON_GetObjectItemCaseSensitive(c, "iat");
+    auto* exp = cJSON_GetObjectItemCaseSensitive(c, "exp");
+    if (!cJSON_IsNumber(iat) || !cJSON_IsNumber(exp)
+        || !std::isfinite(iat->valuedouble) || !std::isfinite(exp->valuedouble)
+        || std::floor(iat->valuedouble) != iat->valuedouble
+        || std::floor(exp->valuedouble) != exp->valuedouble
+        || iat->valuedouble < 0 || exp->valuedouble <= iat->valuedouble
+        || now_ < iat->valuedouble || now_ >= exp->valuedouble) return false;
     if (!uuid_valid(sub) || !uuid_valid(org) || org.empty()) return false;
     Bytes xb, yb, fp;
     if (!b64u_decode(ndx, xb) || xb.size() != 32) return false;
@@ -309,7 +355,6 @@ bool SimClaimCrypto::verify_claim(const std::string& receipt, VerifiedClaim& cla
 
 void SimCollector::clear() {
     records_.clear();
-    base_watermark_ = 0;
 }
 
 std::size_t SimCollector::persist(const std::vector<RawObservation>& records) {
@@ -327,27 +372,16 @@ bool SimCollector::persist_one(const RawObservation& record) {
     return inserted;
 }
 
-bool SimCollector::has(Sequence seq) const {
-    for (const auto& [k, _] : records_) {
-        if (k.second == seq) return true;
-    }
-    return false;
-}
-
 bool SimCollector::has(const NodeId& node, Sequence seq) const {
     return records_.find({node.to_string(), seq}) != records_.end();
 }
 
-std::vector<std::uint64_t> SimCollector::sequences() const {
-    std::vector<std::uint64_t> out;
-    out.reserve(records_.size());
-    for (const auto& [k, _] : records_) out.push_back(k.second);
-    std::sort(out.begin(), out.end());
-    return out;
-}
-
-std::uint64_t SimCollector::watermark(std::uint64_t base) const {
-    return ble::contiguous_watermark(base, sequences());
+std::uint64_t SimCollector::watermark(const NodeId& node, std::uint64_t base) const {
+    std::vector<std::uint64_t> sequences;
+    const auto id = node.to_string();
+    for (const auto& [key, _] : records_)
+        if (key.first == id) sequences.push_back(key.second);
+    return ble::contiguous_watermark(base, sequences);
 }
 
 bool SimCollector::verify_node_proof(const std::array<unsigned char, 65>& node_key,

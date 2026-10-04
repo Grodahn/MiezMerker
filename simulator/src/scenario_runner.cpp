@@ -82,20 +82,16 @@ struct ScenarioRunner::BleSession {
         bool set_corrected_epoch_ms(std::uint64_t ms) override { rtc.correct(ms); return true; }
     };
     struct Signer : ble::NodeSigner {
-        const SimFixtures* fixtures{nullptr};
-        const SimNodeKeys* node_keys{nullptr};
+        NodeIdentityManager* identity{nullptr};
         bool force_fail{false};
         bool sign_session(const std::array<std::uint8_t, 32>& challenge,
                           std::array<std::uint8_t, 64>& signature) override {
-            if (force_fail || !fixtures || !node_keys || !node_keys->provisioned) return false;
-            // Replay the precomputed fixture signature for the fixed PWA nonce
-            // when the node identity matches the fixture node. Any other nonce
-            // (or non-fixture node) fails closed like a node without its key.
-            for (std::size_t i = 0; i < 32; ++i) {
-                if (challenge[i] != fixtures->session_nonce[i]) return false;
-            }
-            if (node_keys->node_id != fixtures->node_main_id) return false;
-            for (std::size_t i = 0; i < 64; ++i) signature[i] = fixtures->session_sig[i];
+            if (force_fail || !identity) return false;
+            std::array<std::byte, 32> nonce;
+            std::array<std::byte, 64> proof;
+            for (std::size_t i = 0; i < 32; ++i) nonce[i] = static_cast<std::byte>(challenge[i]);
+            if (!identity->sign_session_challenge(nonce, proof)) return false;
+            for (std::size_t i = 0; i < 64; ++i) signature[i] = static_cast<std::uint8_t>(proof[i]);
             return true;
         }
     };
@@ -104,11 +100,13 @@ struct ScenarioRunner::BleSession {
     Signer signer;
     std::unique_ptr<ble::SyncServer> server;
     std::unique_ptr<ble_gatt::GattRouter> router;
+    std::unique_ptr<SimBleTransport> transport;
     ble_gatt::OwnerMetadata owner_meta;
     bool claim_mode{false};
     BleSession(Core& core, SimRtc& r) : rtc(r) {
         server = std::make_unique<ble::SyncServer>(core, auth, rtc, signer);
         router = std::make_unique<ble_gatt::GattRouter>(*server, owner_meta);
+        transport = std::make_unique<SimBleTransport>(*router);
     }
 };
 
@@ -174,6 +172,7 @@ void ScenarioRunner::destroy_core() {
     last_batch_.reset();
     last_status_.reset();
     core_.reset();
+    node_manager_.reset();
 }
 
 bool ScenarioRunner::rebuild_ble_session() {
@@ -181,26 +180,50 @@ bool ScenarioRunner::rebuild_ble_session() {
     ble_connected_ = false;
     has_challenge_ = false;
     if (!core_ || !core_->ready()) return true;
-    const auto& fx = sim_fixtures();
     ble_ = std::make_unique<BleSession>(*core_, rtc_);
-    ble_->signer.fixtures = &fx;
-    ble_->signer.node_keys = &node_keys_;
+    ble_->signer.identity = node_manager_.get();
     ble_->owner_meta.organization_id = owner_.organization_id;
     ble_->owner_meta.organization_slug = owner_.organization_slug;
     ble_->owner_meta.organization_name = owner_.organization_name;
     ble_->owner_meta.public_contact = owner_.public_contact;
-    ble_->claim_mode = claim_mode_.active;
-    if (ble_->router) ble_->router->set_claim_mode(claim_mode_.active);
+    ble_->claim_mode = claim_mode_.enabled;
+    if (ble_->router) ble_->router->set_claim_mode(claim_mode_.enabled);
     // Authorizer session is (re)created on phone_connect with the current
     // owner org + pinned issuer. Until then the session stays disconnected.
     return true;
 }
 
+DeviceIdentityStore& ScenarioRunner::device_identity() {
+    if (!identity_.has_node_identity()) return identity_;
+    node_manager_ = std::make_unique<NodeIdentityManager>(identity_, claim_mode_, random_,
+                                                         claim_crypto_, identity_clock_);
+    // Core loads through the manager, preserving one-shot load failures and
+    // resuming pending reset metadata before signing or claiming is allowed.
+    return *node_manager_;
+}
+
+void ScenarioRunner::refresh_owner() {
+    if (!node_manager_) return;
+    const auto& node = node_manager_->identity();
+    const auto& fx = sim_fixtures();
+    owner_.claimed = node_manager_->claimed();
+    owner_.organization_id = node.organization_id;
+    owner_.organization_name = node.organization_name;
+    owner_.public_contact = node.public_contact;
+    owner_.organization_slug = node.organization_id == fx.org_a_id ? fx.org_a_slug
+        : node.organization_id == fx.org_b_id ? fx.org_b_slug
+        : node.organization_id == fx.vector_org_id ? "vector-org" : "";
+    node_keys_.provisioned = true;
+    for (std::size_t i = 0; i < 65; ++i)
+        node_keys_.public_key[i] = static_cast<unsigned char>(node.public_key[i]);
+    node_keys_.node_id = core_->node_id().to_string();
+}
+
 bool ScenarioRunner::boot_core() {
     destroy_core();
     // Physical claim mode is volatile like a button: cleared on every boot.
-    claim_mode_.active = false;
-    core_ = std::make_unique<Core>(clock_, storage_, observations_, identity_, random_,
+    claim_mode_.enabled = false;
+    core_ = std::make_unique<Core>(clock_, storage_, observations_, device_identity(), random_,
                                    CoreConfig{debounce_ms_});
     if (!core_->initialize()) {
         // initialize() can fail (e.g., storage unavailable, identity load error)
@@ -209,6 +232,7 @@ bool ScenarioRunner::boot_core() {
     }
     last_node_id_ = core_->node_id();
     last_incarnation_ = core_->incarnation();
+    refresh_owner();
     if (core_->claim_state() == ClaimState::CLAIMED) {
         sync_ = std::make_unique<SyncFixture>(*core_, rtc_);
     }
@@ -227,7 +251,7 @@ bool ScenarioRunner::factory_reset_core() {
     previous_incarnation_ = last_incarnation_;
 
     destroy_core();
-    core_ = std::make_unique<Core>(clock_, storage_, observations_, identity_, random_,
+    core_ = std::make_unique<Core>(clock_, storage_, observations_, device_identity(), random_,
                                    CoreConfig{debounce_ms_});
     if (!core_->factory_reset()) {
         // factory_reset can fail; assertions can check ready() state.
@@ -235,13 +259,15 @@ bool ScenarioRunner::factory_reset_core() {
     }
     last_node_id_ = core_->node_id();
     last_incarnation_ = core_->incarnation();
-    // Factory reset clears node-side ownership/key material so the previous
+    // Factory reset clears ownership and rotates node-side key material so the previous
     // organization cannot leak into the new identity (production NodeIdentity
     // rotation). Collector (phone-side) intentionally survives: old batches
     // stay keyed by the old node_id and never satisfy the new watermark.
     owner_.clear();
     node_keys_.clear();
-    claim_mode_.active = false;
+    claim_mode_.enabled = false;
+    refresh_owner();
+    rebuild_ble_session();
     return true;
 }
 
@@ -737,17 +763,21 @@ bool ScenarioRunner::execute_phone_connect(const std::vector<std::string>& args)
         std::make_unique<OfflineAuthSession>(owner_.organization_id, issuer);
     ble_->server->disconnect();
     ble_->router->disconnect();
-    ble_->router->set_claim_mode(claim_mode_.active);
+    ble_->router->set_claim_mode(claim_mode_.enabled);
     ble_->owner_meta.organization_id = owner_.organization_id;
     ble_->owner_meta.organization_slug = owner_.organization_slug;
     ble_->owner_meta.organization_name = owner_.organization_name;
     ble_->owner_meta.public_contact = owner_.public_contact;
-    std::array<std::uint8_t, 32> challenge{};
-    if (!ble_->auth.begin(challenge)) {
-        fail("phone_connect", "challenge generated", "begin failed", "ble");
+    auto request = ble::encode_frame(
+        ble::Frame{ble::kProtocolVersion, ble::Opcode::ChallengeRequest, {}});
+    auto response = ble::decode_frame(ble_->transport->exchange(request, trusted_now_s_));
+    auto challenge = response && response->opcode == ble::Opcode::ChallengeResponse
+        ? ble::decode_challenge_response(response->payload) : std::nullopt;
+    if (!challenge) {
+        fail("phone_connect", "ChallengeResponse", "invalid", "ble");
         return false;
     }
-    for (std::size_t i = 0; i < 32; ++i) last_challenge_[i] = challenge[i];
+    last_challenge_ = *challenge;
     has_challenge_ = true;
     ble_connected_ = true;
     last_auth_.reset();
@@ -786,7 +816,7 @@ bool ScenarioRunner::execute_hello(const std::vector<std::string>& args) {
     }
     auto payload = ble::encode_hello_request(client_ver, ble::kCapAllV1);
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::HelloRequest, payload});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame) {
         fail("hello", "decodable frame", "invalid", "codec");
@@ -813,7 +843,7 @@ bool ScenarioRunner::execute_owner() {
         return false;
     }
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::OwnerRequest, {}});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame || frame->opcode != ble::Opcode::OwnerResponse) {
         last_owner_error_ = static_cast<std::uint64_t>(ble::SyncError::InvalidFrame);
@@ -854,7 +884,6 @@ bool ScenarioRunner::execute_provide_credential(const std::vector<std::string>& 
     const std::string& kind = args[0];
     std::string credential;
     std::array<unsigned char, 64> proof{};
-    bool have_proof = true;
     if (kind == "member") {
         credential = fx.member_jwt;
         proof = fx.member_proof;
@@ -876,8 +905,7 @@ bool ScenarioRunner::execute_provide_credential(const std::vector<std::string>& 
         proof = fx.member_proof;
     } else if (kind == "wrongkey") {
         credential = fx.member_jwt;
-        proof = fx.member_proof;
-        proof[0] ^= 0x01;
+        proof = fx.admin_proof;
     } else if (kind == "replay") {
         credential = fx.member_jwt;
         proof = fx.member_proof;  // binds fixed challenge; fails on alt
@@ -886,12 +914,11 @@ bool ScenarioRunner::execute_provide_credential(const std::vector<std::string>& 
              kind, "parse kind");
         return false;
     }
-    (void)have_proof;
     std::array<std::uint8_t, 64> raw_proof{};
     for (std::size_t i = 0; i < 64; ++i) raw_proof[i] = proof[i];
     auto payload = ble::encode_auth_request(ble::AuthRequest{credential, raw_proof});
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::AuthRequest, payload});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame || frame->opcode != ble::Opcode::AuthResponse) {
         fail("provide_credential", "AuthResponse", "invalid", "codec");
@@ -907,9 +934,9 @@ bool ScenarioRunner::execute_provide_credential(const std::vector<std::string>& 
 }
 
 bool ScenarioRunner::execute_claim_mode(const std::string& mode) {
-    claim_mode_.active = (mode == "enter");
-    if (ble_ && ble_->router) ble_->router->set_claim_mode(claim_mode_.active);
-    if (ble_) ble_->claim_mode = claim_mode_.active;
+    claim_mode_.enabled = (mode == "enter");
+    if (ble_ && ble_->router) ble_->router->set_claim_mode(claim_mode_.enabled);
+    if (ble_) ble_->claim_mode = claim_mode_.enabled;
     return true;
 }
 
@@ -948,114 +975,38 @@ bool ScenarioRunner::execute_claim_as(const std::vector<std::string>& args) {
         else {
             fail("claim_as", "fixture node imported", node_id, "node binding");
             last_claim_ = false;
-            return true;
+            return false;
         }
     } else {  // foreign: same node, other org (takeover attempt)
         if (node_id == fx.node_main_id) receipt = fx.receipt_b;
         else {
             fail("claim_as", "fixture node imported", node_id, "node binding");
             last_claim_ = false;
-            return true;
+            return false;
         }
     }
     if (receipt.empty()) {
         last_claim_ = false;
         return true;
     }
-    // Real receipt verification (host JWT/ES256 verifier for the missing
-    // ESP32 adapter; same strict JWS rules as OfflineAuthSession).
-    VerifiedClaim claim;
-    bool verified = claim_crypto_.verify_claim(receipt, claim);
-    if (!verified) {
-        // Try the vector trust anchor as second pinned key (both test-only).
-        SimClaimCrypto vector_crypto(fx.vector_issuer_key);
-        verified = vector_crypto.verify_claim(receipt, claim);
+    if (!node_manager_) {
+        fail("claim_as", "production NodeIdentityManager", "missing", "identity");
+        return false;
     }
-    if (!verified) {
+    claim_crypto_.set_now(trusted_now_s_);
+    // The production manager becomes unready after an ambiguous failed save.
+    // A retry must reload durable state before applying the receipt again.
+    if (!node_manager_->initialize()) {
         last_claim_ = false;
         return true;
     }
-    // Node binding like NodeIdentityManager::apply_claim (never trust a
-    // receipt for another node/key).
-    std::array<std::byte, 16> receipt_node = claim.node_id;
-    std::string receipt_node_str;
-    {
-        NodeId nid;
-        for (std::size_t i = 0; i < 16; ++i) nid.bytes[i] = static_cast<std::uint8_t>(receipt_node[i]);
-        receipt_node_str = nid.to_string();
+    last_claim_ = node_manager_->apply_claim(receipt);
+    if (*last_claim_) {
+        // Reload capture metadata and public ownership from the same atomic
+        // record. No scenario-specific claiming rules or separate owner commit.
+        return reboot_core();
     }
-    if (receipt_node_str != node_id) {
-        last_claim_ = false;
-        return true;
-    }
-    if (node_keys_.provisioned) {
-        for (std::size_t i = 0; i < 65; ++i) {
-            if (static_cast<unsigned char>(claim.public_key[i]) != node_keys_.public_key[i]) {
-                last_claim_ = false;
-                return true;
-            }
-        }
-    }
-    if (claim.organization_id.empty()) {
-        last_claim_ = false;
-        return true;
-    }
-    // Already-claimed gate: same-org redelivery is idempotent, other-org is
-    // rejected (no takeover without factory reset).
-    if (core_->claim_state() == ClaimState::CLAIMED) {
-        last_claim_ = (claim.organization_id == owner_.organization_id);
-        return true;
-    }
-    // Physical claim-mode gate (real port #4; fake here).
-    if (!claim_mode_.active) {
-        last_claim_ = false;
-        return true;
-    }
-    // Atomic commit: identity CLAIMED + owner metadata. A faulted identity
-    // store leaves UNCLAIMED with no half-claimed state; retry is deterministic.
-    IdentityRecord id;
-    if (identity_.load(id) != IdentityLoadResult::OK) {
-        last_claim_ = false;
-        return true;
-    }
-    id.claim_state = ClaimState::CLAIMED;
-    if (!identity_.store(id)) {
-        last_claim_ = false;
-        return true;
-    }
-    owner_.claimed = true;
-    owner_.organization_id = claim.organization_id;
-    // Slug/name/contact from fixtures by org (canonical shared metadata).
-    if (claim.organization_id == fx.org_a_id) {
-        owner_.organization_slug = fx.org_a_slug;
-        owner_.organization_name = fx.org_a_name;
-        owner_.public_contact = fx.org_a_contact;
-        owner_.issuer_key = fx.issuer_key;
-        owner_.has_issuer = true;
-    } else if (claim.organization_id == fx.org_b_id) {
-        owner_.organization_slug = fx.org_b_slug;
-        owner_.organization_name = fx.org_b_name;
-        owner_.public_contact = fx.org_b_contact;
-        owner_.issuer_key = fx.issuer_key;
-        owner_.has_issuer = true;
-    } else if (claim.organization_id == fx.vector_org_id) {
-        owner_.organization_slug = "vector-org";
-        owner_.organization_name = "Vector Org";
-        owner_.public_contact = "help@vector.example";
-        owner_.issuer_key = fx.vector_issuer_key;
-        owner_.has_issuer = true;
-    } else {
-        owner_.organization_slug.clear();
-        owner_.organization_name = claim.organization_name;
-        owner_.public_contact = claim.public_contact;
-    }
-    last_claim_ = true;
-    // Reload Core so claim_state + sequence stay consistent (like legacy
-    // sync_claim); BLE session rebuilds with the new owner.
-    if (!reboot_core()) {
-        last_claim_ = false;
-        return true;
-    }
+
     return true;
 }
 
@@ -1114,7 +1065,16 @@ bool ScenarioRunner::execute_import_fixture_node(const std::vector<std::string>&
         fail("import_fixture_node", "valid record", node_id_str, "record");
         return false;
     }
-    if (!identity_.store(rec)) {
+    NodeIdentity node;
+    for (std::size_t i = 0; i < 16; ++i)
+        node.node_id[i] = static_cast<std::byte>(parsed->bytes[i]);
+    for (std::size_t i = 0; i < 65; ++i)
+        node.public_key[i] = static_cast<std::byte>(pub[i]);
+    // Opaque fixture key handle: signing replays canonical fixture signatures.
+    // It is not the scalar for the fixture public key.
+    node.private_key[0] = std::byte{1};
+    node.observations = rec;
+    if (!identity_.save(node)) {
         fail("import_fixture_node", "identity stored", "store failed", "store");
         return false;
     }
@@ -1126,8 +1086,7 @@ bool ScenarioRunner::execute_import_fixture_node(const std::vector<std::string>&
     owner_.clear();
     owner_.issuer_key = issuer;
     owner_.has_issuer = true;
-    claim_mode_.active = false;
-    collector_.clear();
+    claim_mode_.enabled = false;
     if (!reboot_core()) {
         fail("import_fixture_node", "rebooted", "reboot failed", "reboot");
         return false;
@@ -1170,7 +1129,7 @@ bool ScenarioRunner::execute_send_ack(const std::vector<std::string>& args) {
     }
     std::uint64_t watermark;
     if (args.empty()) {
-        watermark = collector_.watermark(core_->ack_watermark());
+        watermark = collector_.watermark(core_->node_id(), core_->ack_watermark());
     } else if (args.size() == 1) {
         if (!parse_uint64(args[0], watermark)) {
             fail("send_ack", "valid watermark", args[0], "parse");
@@ -1182,7 +1141,7 @@ bool ScenarioRunner::execute_send_ack(const std::vector<std::string>& args) {
     }
     auto payload = ble::encode_ack_request(watermark);
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::AckRequest, payload});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame) {
         fail("send_ack", "decodable frame", "invalid", "codec");
@@ -1221,7 +1180,7 @@ bool ScenarioRunner::execute_ble_status() {
         return false;
     }
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::StatusRequest, {}});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame) {
         fail("ble_status", "decodable frame", "invalid", "codec");
@@ -1271,11 +1230,25 @@ bool ScenarioRunner::execute_ble_batch(const std::vector<std::string>& args) {
     }
     last_batch_request_from_ = from_seq;
     last_batch_request_max_ = max_records;
+    std::optional<std::size_t> disconnect_after;
+    if (args.size() == 3) {
+        std::size_t offset;
+        if (!parse_size_t(args[2], offset)) {
+            fail("ble_batch", "disconnect byte offset", args[2], "parse");
+            return false;
+        }
+        disconnect_after = offset;
+    }
     auto payload = ble::encode_batch_request(ble::BatchRequest{from_seq, max_records});
     // encode_batch_request returns empty for from==0/max==0 (codec rejects);
     // send the raw empty payload so the router returns a real INVALID_FRAME.
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::BatchRequest, payload});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_, disconnect_after);
+    if (ble_->transport->interrupted()) {
+        last_batch_.reset();
+        last_batch_error_.reset();
+        return execute_phone_disconnect();
+    }
     auto frame = ble::decode_frame(rsp);
     if (!frame) {
         fail("ble_batch", "decodable frame", "invalid", "codec");
@@ -1317,7 +1290,7 @@ bool ScenarioRunner::execute_ble_compact() {
         return false;
     }
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::CompactRequest, {}});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame) {
         fail("ble_compact", "decodable frame", "invalid", "codec");
@@ -1352,7 +1325,7 @@ bool ScenarioRunner::execute_ble_time(const std::vector<std::string>& args) {
     }
     auto payload = ble::encode_time_request(epoch);
     auto req = ble::encode_frame(ble::Frame{ble::kProtocolVersion, ble::Opcode::TimeRequest, payload});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame) {
         fail("ble_time", "decodable frame", "invalid", "codec");
@@ -1386,7 +1359,7 @@ bool ScenarioRunner::execute_node_proof(const std::vector<std::string>& args) {
     auto payload = ble::encode_node_proof_request(fx.session_nonce);
     auto req = ble::encode_frame(
         ble::Frame{ble::kProtocolVersion, ble::Opcode::NodeProofRequest, payload});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     ble_->signer.force_fail = false;
     auto frame = ble::decode_frame(rsp);
     if (!frame) {
@@ -1429,7 +1402,7 @@ bool ScenarioRunner::execute_ble_version(const std::vector<std::string>& args) {
     auto payload = ble::encode_hello_request(1, ble::kCapAllV1);
     auto req = ble::encode_frame(
         ble::Frame{static_cast<std::uint8_t>(v), ble::Opcode::HelloRequest, payload});
-    auto rsp = ble_->router->handle_frame(req, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(req, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame || frame->opcode != ble::Opcode::Error) {
         fail("ble_version", "Error frame", "unexpected", "version gating");
@@ -1447,7 +1420,7 @@ bool ScenarioRunner::execute_ble_malformed() {
         return false;
     }
     std::vector<std::uint8_t> truncated{0x01, 0x0D};
-    auto rsp = ble_->router->handle_frame(truncated, trusted_now_s_);
+    auto rsp = ble_->transport->exchange(truncated, trusted_now_s_);
     auto frame = ble::decode_frame(rsp);
     if (!frame || frame->opcode != ble::Opcode::Error) {
         fail("ble_malformed", "Error frame", "unexpected", "framing");
@@ -1461,8 +1434,9 @@ bool ScenarioRunner::execute_ble_malformed() {
 
 bool ScenarioRunner::execute_now(const std::string& arg) {
     std::uint64_t v;
-    if (!parse_uint64(arg, v)) {
-        fail("now", "valid epoch seconds", arg, "parse");
+    if (!parse_uint64(arg, v) ||
+        v > static_cast<std::uint64_t>(std::numeric_limits<ble::TrustedEpochSeconds>::max())) {
+        fail("now", "epoch seconds in signed 64-bit range", arg, "parse");
         return false;
     }
     trusted_now_s_ = static_cast<ble::TrustedEpochSeconds>(v);
@@ -1717,18 +1691,18 @@ bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
         if (args.size() != 2) { fail("assert collector_watermark", "1 argument", std::to_string(args.size()-1), "arg count"); return false; }
         std::uint64_t expected; if (!parse_uint64(args[1], expected)) { fail("assert collector_watermark", "uint", args[1], "parse"); return false; }
         std::uint64_t base = core_ ? core_->ack_watermark() : 0;
-        return expect_eq(collector_.watermark(base), expected, "collector_watermark");
+        return expect_eq(collector_.watermark(core_->node_id(), base), expected, "collector_watermark");
     }
     if (what == "collector_has" || what == "collector_missing") {
         if (args.size() != 2) { fail("assert collector_has", "1 argument", std::to_string(args.size()-1), "arg count"); return false; }
         std::uint64_t seq; if (!parse_uint64(args[1], seq)) { fail("assert collector_has", "uint", args[1], "parse"); return false; }
-        bool has = collector_.has(seq);
+        bool has = collector_.has(core_->node_id(), seq);
         bool expected = (what == "collector_has");
         return expect_eq(has, expected, what + " " + args[1]);
     }
     if (what == "claim_mode") {
         if (args.size() != 2) { fail("assert claim_mode", "1 argument", std::to_string(args.size()-1), "arg count"); return false; }
-        std::string actual = claim_mode_.active ? "on" : "off";
+        std::string actual = claim_mode_.enabled ? "on" : "off";
         return expect_eq(actual, args[1], "claim_mode");
     }
     if (what == "ble_error" || what == "last_hello_error" || what == "last_batch_error" ||
@@ -1850,9 +1824,9 @@ std::string ScenarioRunner::context_state() const {
         ss << " ble=" << (ble_connected_ ? "connected" : "disconnected");
         bool authed = ble_ && ble_->auth.can_sync(trusted_now_s_);
         ss << "/" << (authed ? "authorized" : "unauthorized");
-        ss << " claim_mode=" << (claim_mode_.active ? "on" : "off");
+        ss << " claim_mode=" << (claim_mode_.enabled ? "on" : "off");
         ss << " collector=" << collector_.size()
-           << " coll_wm=" << collector_.watermark(core_->ack_watermark())
+           << " coll_wm=" << collector_.watermark(core_->node_id(), core_->ack_watermark())
            << " trusted_now=" << trusted_now_s_;
         if (ack_dropped_) ss << " ack_dropped=1";
     } else {

@@ -804,6 +804,37 @@ assert observations 2
     std::cout << "PASS test_runner_misc_events\n";
 }
 
+void test_runner_rejects_invalid_ble_setup() {
+    // A printed setup failure must also make the scenario fail in CI.
+    for (const auto& setup : {std::string("boot\nclaim_as admin\n"),
+                             std::string("boot\nclaim_as foreign\n"),
+                             std::string("boot\nimport_fixture_node vector\nclaim_as foreign\n")}) {
+        miezmerker::sim::Scenario sc;
+        CHECK(miezmerker::sim::parse_scenario(
+            "name: invalid-claim-setup\nversion: 1\n\n" + setup, sc).ok());
+        miezmerker::sim::ScenarioRunner runner(sc);
+        CHECK(runner.run() == 1);
+    }
+    std::cout << "PASS test_runner_rejects_invalid_ble_setup\n";
+}
+
+void test_runner_rejects_wrapped_time() {
+    for (const auto& epoch : {std::string("9223372036854775808"),
+                             std::string("18446744073709551615")}) {
+        miezmerker::sim::Scenario sc;
+        CHECK(miezmerker::sim::parse_scenario(
+            "name: wrapped-time\nversion: 1\n\nboot\nnow " + epoch + "\n", sc).ok());
+        miezmerker::sim::ScenarioRunner runner(sc);
+        CHECK(runner.run() == 1);
+    }
+    miezmerker::sim::Scenario boundary;
+    CHECK(miezmerker::sim::parse_scenario(
+        "name: maximum-time\nversion: 1\n\nboot\nnow 9223372036854775807\n", boundary).ok());
+    miezmerker::sim::ScenarioRunner runner(boundary);
+    CHECK(runner.run() == 0);
+    std::cout << "PASS test_runner_rejects_wrapped_time\n";
+}
+
 } // namespace
 
 int main() {
@@ -833,6 +864,8 @@ int main() {
     test_runner_ack_watermark();
     test_runner_clear_faults();
     test_runner_misc_events();
+    test_runner_rejects_invalid_ble_setup();
+    test_runner_rejects_wrapped_time();
     test_parse_ble_events();
     test_runner_fault_never_triggered();
     test_runner_fail_never_triggered();

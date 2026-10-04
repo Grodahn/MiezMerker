@@ -57,6 +57,10 @@ private:
     SimNodeKeys node_keys_;
     SimCollector collector_;
     SimClaimCrypto claim_crypto_;
+    struct IdentityClock : ClaimClock {
+        std::uint64_t epoch_ms() const override { return 1790899200000ULL; }
+    } identity_clock_;
+    std::unique_ptr<NodeIdentityManager> node_manager_;
     ble::TrustedEpochSeconds trusted_now_s_{1790899300};
     // Volatile BLE/session results for assertions.
     bool ble_connected_{false};
@@ -163,6 +167,8 @@ private:
     bool execute_sync_start();
     bool execute_sync_complete();
     bool rebuild_ble_session();
+    DeviceIdentityStore& device_identity();
+    void refresh_owner();
     bool execute_assert(const std::vector<std::string>& args);
 
     // Assertion helpers
