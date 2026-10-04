@@ -3,6 +3,7 @@
 // Scenario runner: executes a parsed scenario against the simulator fakes
 // and reports deterministic pass/fail with detailed diagnostics (issue #22).
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -13,6 +14,7 @@
 #include "miezmerker/core.hpp"
 #include "miezmerker/ble_sync.hpp"
 #include "miezmerker/sim/scenario.hpp"
+#include "miezmerker/sim/sim_ble.hpp"
 #include "miezmerker/sim/sim_clock.hpp"
 #include "miezmerker/sim/sim_rfid.hpp"
 #include "miezmerker/sim/sim_stores.hpp"
@@ -44,8 +46,36 @@ private:
     std::unique_ptr<Core> core_;
     struct SyncFixture;
     std::unique_ptr<SyncFixture> sync_;
+    // BLE/security session (volatile per connection, real production path).
+    struct BleSession;
+    std::unique_ptr<BleSession> ble_;
     std::optional<ble::SyncServer::BatchResult> last_batch_;
     std::optional<ble::StatusResponse> last_status_;
+    // Durable BLE/security state (survives reboot; cleared on factory_reset).
+    SimOwnerStore owner_;
+    SimClaimMode claim_mode_;
+    SimNodeKeys node_keys_;
+    SimCollector collector_;
+    SimClaimCrypto claim_crypto_;
+    ble::TrustedEpochSeconds trusted_now_s_{1790899300};
+    // Volatile BLE/session results for assertions.
+    bool ble_connected_{false};
+    std::array<std::uint8_t, 32> last_challenge_{};
+    bool has_challenge_{false};
+    std::optional<bool> last_auth_;
+    std::optional<bool> last_claim_;
+    std::optional<bool> last_node_proof_;
+    std::optional<std::uint64_t> last_hello_error_;
+    std::optional<std::uint64_t> last_batch_error_;
+    std::optional<std::uint64_t> last_ack_error_;
+    std::optional<std::uint64_t> last_status_error_;
+    std::optional<std::uint64_t> last_compact_error_;
+    std::optional<std::uint64_t> last_owner_error_;
+    std::optional<std::uint64_t> last_frame_error_;
+    std::optional<std::string> last_owner_org_;
+    std::optional<std::string> last_owner_claim_;
+    std::optional<bool> last_time_;
+    bool ack_dropped_{false};
 
     // Per-scenario configuration
     std::size_t capacity_;
@@ -108,6 +138,31 @@ private:
     bool execute_sync_compact();
     bool execute_sync_status();
     bool execute_sync_claim();
+    // BLE/security events (issue #7, real production path).
+    bool execute_phone_connect(const std::vector<std::string>& args);
+    bool execute_phone_disconnect();
+    bool execute_reconnect(const std::vector<std::string>& args);
+    bool execute_hello(const std::vector<std::string>& args);
+    bool execute_owner();
+    bool execute_provide_credential(const std::vector<std::string>& args);
+    bool execute_claim_mode(const std::string& mode);
+    bool execute_claim_as(const std::vector<std::string>& args);
+    bool execute_import_fixture_node(const std::vector<std::string>& args);
+    bool execute_collector_persist(const std::vector<std::string>& args);
+    bool execute_send_ack(const std::vector<std::string>& args);
+    bool execute_drop_ack();
+    bool execute_ble_status();
+    bool execute_ble_batch(const std::vector<std::string>& args);
+    bool execute_ble_ack(const std::vector<std::string>& args);
+    bool execute_ble_compact();
+    bool execute_ble_time(const std::vector<std::string>& args);
+    bool execute_node_proof(const std::vector<std::string>& args);
+    bool execute_ble_version(const std::vector<std::string>& args);
+    bool execute_ble_malformed();
+    bool execute_now(const std::string& arg);
+    bool execute_sync_start();
+    bool execute_sync_complete();
+    bool rebuild_ble_session();
     bool execute_assert(const std::vector<std::string>& args);
 
     // Assertion helpers

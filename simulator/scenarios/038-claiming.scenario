@@ -1,0 +1,41 @@
+# Claiming lifecycle (issue #7, real NodeCrypto/JWT verification).
+# UNCLAIMED -> CLAIMED by valid ACTIVE ADMIN; MEMBER cannot claim; claim
+# outside physical claim mode fails; interrupted claim retries
+# deterministically; already CLAIMED rejects another organization.
+name: ble-claiming
+version: 1
+description: Claim gates via real receipt verification, claim-mode and org binding.
+
+boot
+import_fixture_node sim-main
+assert claim_state UNCLAIMED
+assert owner_org empty
+# MEMBER cannot obtain a backend receipt (issuance gate mirrors backend).
+claim_as member
+assert last_claim fail
+assert claim_state UNCLAIMED
+assert owner_org empty
+# ADMIN outside physical claim mode fails (real ClaimMode gate).
+claim_as admin
+assert last_claim fail
+assert claim_state UNCLAIMED
+# Interrupted claim can retry deterministically (faulted identity store).
+claim_mode_enter
+fail_identity_store 1
+claim_as admin
+assert last_claim fail
+assert claim_state UNCLAIMED
+assert owner_org empty
+# Retry with the same receipt succeeds (no half-claimed state).
+claim_as admin
+assert last_claim ok
+assert claim_state CLAIMED
+# Same-org redelivery is idempotent.
+claim_mode_enter
+claim_as admin
+assert last_claim ok
+assert claim_state CLAIMED
+# Already CLAIMED rejects another organization (no takeover without reset).
+claim_as foreign
+assert last_claim fail
+assert claim_state CLAIMED

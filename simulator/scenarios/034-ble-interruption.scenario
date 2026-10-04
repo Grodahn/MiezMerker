@@ -1,0 +1,51 @@
+# BLE interruption and retry (issue #7).
+# Disconnect before transfer and mid-batch; reconnect resumes at ack+1
+# through the real SyncServer/GattRouter with no data loss.
+name: ble-interruption
+version: 1
+description: Disconnect before and mid-batch with deterministic reconnect and no loss.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+claim_as admin
+assert last_claim ok
+rtc SYNCED 1790899200000
+read CHIP-1
+read CHIP-2
+read CHIP-3
+read CHIP-4
+assert observations 4
+# Disconnect before any transfer: nothing acked, node retains all.
+phone_connect
+provide_credential member
+assert last_auth ok
+phone_disconnect
+assert ble_disconnected
+reconnect
+provide_credential member
+assert last_auth ok
+ble_batch 1 2
+assert batch_count 2
+# Disconnect mid-batch after the first page: first page not yet persisted.
+phone_disconnect
+reconnect
+provide_credential member
+assert last_auth ok
+# Resume at ack+1 (nothing acked yet, so from 1 again) with no loss.
+ble_batch 1 2
+assert batch_count 2
+collector_persist
+assert collector_persisted 2
+ble_batch 3 2
+assert batch_count 2
+collector_persist
+assert collector_persisted 4
+assert collector_watermark 4
+send_ack
+assert last_ack ok
+assert ack_watermark 4
+ble_compact
+assert observations 0
+sync_complete
+phone_disconnect
