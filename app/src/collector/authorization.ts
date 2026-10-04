@@ -85,5 +85,3 @@ export async function resolveCredential(
     'Kein gültiges Offline-Credential vorhanden (abgelaufen oder noch nie geladen). ' +
     'Node-Sync kann nicht starten — bitte einmal mit Internet anmelden und Credential erneuern, dann erneut versuchen.');
 }
-
-

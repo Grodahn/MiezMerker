@@ -79,5 +79,5 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
     }, { claimModeConfirmed: true })).rejects.toThrow('Internet');
   });
 
-  
+
 });
