@@ -648,6 +648,59 @@ assert observation 0 epoch_ms null
     std::cout << "PASS test_runner_rtc_invalid_event\n";
 }
 
+void test_parse_ble_events() {
+    miezmerker::sim::Scenario sc;
+    const char* text = R"(
+name: ble-parse
+version: 1
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+claim_as admin
+phone_connect
+phone_connect alt
+hello
+hello 1
+owner
+provide_credential member
+claim_mode_exit
+reconnect
+ble_status
+ble_batch 1 16
+ble_ack 1
+ble_compact
+ble_time 1790900000000
+node_proof fixed
+ble_version 2
+ble_malformed
+now 1790899300
+collector_persist
+collector_persist 1 2
+send_ack
+send_ack 1
+drop_ack
+phone_disconnect
+sync_start
+sync_complete
+assert ble_connected
+assert ble_authorized
+assert last_auth ok
+assert last_claim ok
+assert claim_state CLAIMED
+assert owner_org empty
+assert collector_persisted 0
+assert collector_watermark 0
+assert collector_has 1
+)";
+    auto err = miezmerker::sim::parse_scenario(text, sc);
+    CHECK(err.ok());
+    CHECK(sc.events.size() == 38);
+    CHECK(sc.events[1].type == "import_fixture_node");
+    CHECK(sc.events[4].type == "phone_connect");
+    std::cout << "PASS test_parse_ble_events\n";
+}
+
 void test_runner_ack_watermark() {
     const char* text = R"(
 name: ack-watermark-unit
@@ -780,6 +833,7 @@ int main() {
     test_runner_ack_watermark();
     test_runner_clear_faults();
     test_runner_misc_events();
+    test_parse_ble_events();
     test_runner_fault_never_triggered();
     test_runner_fail_never_triggered();
 

@@ -77,6 +77,10 @@ export interface NodeMeta {
   lastWatermark: string | null;
   lastSyncAt: number | null;
   pendingCount: number | null;
+  // Backend-pinned node public key (#18). Captured at claim/sync time and
+  // reused offline so Node proof verification works without Internet.
+  publicKeyX: string | null;
+  publicKeyY: string | null;
 }
 
 // Best-effort persistent browser storage. Correctness never depends on it:

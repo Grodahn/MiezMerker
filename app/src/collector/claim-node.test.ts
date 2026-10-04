@@ -71,4 +71,6 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
       nodeId: 'n', publicKeyX: 'x', publicKeyY: 'y', claimSignature: 's', timestampMillis: 1,
     }, { claimModeConfirmed: true })).rejects.toThrow('Internet');
   });
+
+  
 });

@@ -21,6 +21,7 @@ export function CollectorShell(props: {
 } = {}) {
   const [storage, setStorage] = useState('Lokaler Speicher wird geöffnet …');
   const [authVersion, setAuthVersion] = useState(0);
+  const [connectivityVersion, setConnectivityVersion] = useState(0);
   const [credential, setCredential] = useState('Offline-Credential wird geprüft …');
   const [view, setView] = useState<CollectorViewState>(initialCollectorView);
   const [running, setRunning] = useState(false);
@@ -43,6 +44,16 @@ export function CollectorShell(props: {
   }, []);
 
   useEffect(() => subscribeAuth(() => setAuthVersion(v => v + 1)), []);
+
+  useEffect(() => {
+    const onChange = () => setConnectivityVersion(v => v + 1);
+    window.addEventListener('online', onChange);
+    window.addEventListener('offline', onChange);
+    return () => {
+      window.removeEventListener('online', onChange);
+      window.removeEventListener('offline', onChange);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -69,8 +80,7 @@ export function CollectorShell(props: {
       }
     })();
     return () => { active = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authVersion, typeof navigator === 'undefined' ? 'online' : navigator.onLine]);
+  }, [authVersion, connectivityVersion]);
 
   useEffect(() => {
     let active = true;
@@ -106,6 +116,19 @@ export function CollectorShell(props: {
       setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
     }).finally(() => setRunning(false));
   }, [running, createTransport, props]);
+
+  const connectKnownDevice = useCallback((device: unknown) => {
+    if (running) return;
+    setRunning(true);
+    setClaimMessage('');
+    void runFieldSync({
+      onUpdate: setView,
+      createTransport: async () => new WebBluetoothTransport(device as never),
+      trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
+    }).catch((e: unknown) => {
+      setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
+    }).finally(() => setRunning(false));
+  }, [running, props]);
 
   const retryUpload = useCallback(() => {
     const state = getAuthState();
@@ -163,7 +186,9 @@ export function CollectorShell(props: {
     {!navigator.onLine && <p>Offline-Modus: Node-Sync funktioniert ohne Internet. Backend-Upload wartet auf Verbindung.</p>}
 
     {knownDevices.length > 0 && <div><p>Bekannte Nodes (Browser-freigegeben, optional):</p><ul>
-      {knownDevices.map(d => <li key={d.id}>{d.name}</li>)}
+      {knownDevices.map(d => <li key={d.id}>{d.name}
+        <button type="button" disabled={running} onClick={() => connectKnownDevice(d.device)}>Verbinden</button>
+      </li>)}
     </ul><p>Explizite Auswahl bleibt jederzeit möglich.</p></div>}
 
     <button type="button" disabled={running || capability !== 'supported'} onClick={startSync}>

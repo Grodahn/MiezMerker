@@ -7,7 +7,7 @@
 // and the backend enforces ACTIVE ADMIN again server-side.
 
 import { api } from '../api/client';
-import { getAuthState } from '../platform/auth';
+import { fetchCsrfToken, getAuthState } from '../platform/auth';
 
 export type ClaimFailureKind =
   | 'forbidden-role'
@@ -58,8 +58,10 @@ export function assertAdminMayClaim(organizationId: string): void {
   }
 }
 
-function csrfHeaders(): Record<string, string> {
-  const token = getAuthState().csrfToken;
+async function csrfHeaders(): Promise<Record<string, string>> {
+  // After a page reload the session is restored but the CSRF token is not
+  // cached yet; fetch a fresh one so the claim POST is not rejected with 403.
+  const token = getAuthState().csrfToken ?? await fetchCsrfToken();
   return token ? { 'X-XSRF-TOKEN': token } : {};
 }
 
@@ -89,7 +91,7 @@ export async function claimNode(
       timestampMillis: input.timestampMillis,
       claimSignature: input.claimSignature,
     },
-    headers: csrfHeaders(),
+    headers: await csrfHeaders(),
   });
   if (error || !data) {
     const status = (response as Response | undefined)?.status;

@@ -90,4 +90,15 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
     expect(post).toHaveBeenCalledTimes(3);
     expect(result.state).toBe('complete');
   });
+
+  test('4xx rejection fails fast without retry (membership/device disabled)', async () => {
+    await store.putObservations([rec(1)], 'org-a');
+    post.mockResolvedValue({ error: { status: 403 }, response: { status: 403 } });
+    const uploader = new BackendUploader(store, { maxRetries: 3, retryDelayMs: 0 });
+    const result = await uploader.upload('org-a');
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(result.state).toBe('failed');
+    expect(result.message).toContain('403');
+    expect(result.message).toContain('Vor-Ort-Sync bleibt');
+  });
 });

@@ -69,6 +69,7 @@ export class BackendUploader {
     let duplicates = 0;
     let conflicts = 0;
     let failed = 0;
+    let lastMessage = '';
     for (let offset = 0; offset < pending.length; offset += batchSize) {
       const batch = pending.slice(offset, offset + batchSize);
       const outcome = await this.uploadBatch(organizationId, batch.map(r => ({
@@ -80,11 +81,15 @@ export class BackendUploader {
       duplicates += outcome.duplicates;
       conflicts += outcome.conflicts;
       failed += outcome.failed;
+      if (outcome.message) lastMessage = outcome.message;
     }
     const outstanding = failed + conflicts;
     if (outstanding > 0 && uploaded + duplicates === 0) {
       return { state: 'failed', uploaded, duplicates, conflicts, failed,
-        message: `Backend-Upload fehlgeschlagen (${outstanding} Records ausstehend). Vor-Ort-Sync bleibt gültig.` };
+        message: lastMessage || `Backend-Upload fehlgeschlagen (${outstanding} Records ausstehend). Vor-Ort-Sync bleibt gültig.` };
+    }
+    if (outstanding > 0 && lastMessage) {
+      return { state: 'failed', uploaded, duplicates, conflicts, failed, message: lastMessage };
     }
     if (outstanding > 0) {
       return { state: 'failed', uploaded, duplicates, conflicts, failed,
@@ -100,13 +105,13 @@ export class BackendUploader {
       nodeId: string; incarnation: string; sequence: string; chipId: string;
       clockStatus: number; epochMs: string | null; monotonicMs: string; bootCounter: number;
     }>,
-  ): Promise<{ uploaded: number; duplicates: number; conflicts: number; failed: number }> {
+  ): Promise<{ uploaded: number; duplicates: number; conflicts: number; failed: number; message?: string }> {
     const maxRetries = this.options.maxRetries ?? 3;
     const retryDelay = this.options.retryDelayMs ?? 800;
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const { data, error } = await api.POST('/api/v1/observations/ingest', {
+        const { data, error, response } = await api.POST('/api/v1/observations/ingest', {
           body: {
             organizationId,
             observations: batch.map(r => ({
@@ -121,7 +126,21 @@ export class BackendUploader {
             })),
           },
         });
-        if (error || !data) throw new Error('Backend-Upload abgelehnt.');
+        if (error || !data) {
+          const status = (response as Response | undefined)?.status;
+          // 4xx (except 429) is a definitive rejection — retrying cannot help
+          // (e.g. membership/device disabled, tenant conflict). Fail fast.
+          if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
+            const message = `Backend-Upload abgelehnt (HTTP ${status}). Vor-Ort-Sync bleibt gültig.`;
+            for (const item of batch) {
+              await this.store.markUploadResult(
+                { nodeId: item.nodeId, incarnation: item.incarnation, sequence: item.sequence },
+                false, message);
+            }
+            return { uploaded: 0, duplicates: 0, conflicts: 0, failed: batch.length, message };
+          }
+          throw new Error(`Backend-Upload abgelehnt (HTTP ${status ?? '?'}).`);
+        }
         let uploaded = 0;
         let duplicates = 0;
         let conflicts = 0;
@@ -160,7 +179,7 @@ export class BackendUploader {
     // Network/backend failure: leave every record in the outbox for retry.
     // Records stay pending (not parked as failed) so the next online retry
     // picks them up; the error is returned, not persisted per record.
-    void lastError;
+    const detail = `${lastError instanceof Error ? lastError.message : 'Backend nicht erreichbar.'} Vor-Ort-Sync bleibt gültig.`;
     try {
       await this.store.markPending(batch.map(item => ({
         nodeId: item.nodeId, incarnation: item.incarnation, sequence: item.sequence,
@@ -168,6 +187,6 @@ export class BackendUploader {
     } catch {
       // Best effort; records were already pending.
     }
-    return { uploaded: 0, duplicates: 0, conflicts: 0, failed: batch.length };
+    return { uploaded: 0, duplicates: 0, conflicts: 0, failed: batch.length, message: detail };
   }
 }

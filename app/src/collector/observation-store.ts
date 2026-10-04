@@ -163,12 +163,15 @@ export class CollectorObservationStore implements DurableObservationStore {
     ok: boolean,
     error: string | null,
   ): Promise<void> {
-    const existing = await this.db.observations.get([sequence.nodeId, sequence.incarnation, sequence.sequence]);
-    await this.db.observations.update([sequence.nodeId, sequence.incarnation, sequence.sequence], {
-      uploadState: ok ? 'uploaded' : 'failed',
-      uploadedAt: ok ? Date.now() : existing?.uploadedAt ?? null,
-      lastUploadError: error,
-      uploadAttempts: (existing?.uploadAttempts ?? 0) + 1,
+    const key: [string, string, string] = [sequence.nodeId, sequence.incarnation, sequence.sequence];
+    await this.db.transaction('rw', this.db.observations, async () => {
+      const existing = await this.db.observations.get(key);
+      await this.db.observations.update(key, {
+        uploadState: ok ? 'uploaded' : 'failed',
+        uploadedAt: ok ? Date.now() : existing?.uploadedAt ?? null,
+        lastUploadError: error,
+        uploadAttempts: (existing?.uploadAttempts ?? 0) + 1,
+      });
     });
   }
 

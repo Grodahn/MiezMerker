@@ -1,0 +1,49 @@
+# Normal authorized synchronization (issue #7).
+# MEMBER of owning org transfers observations; collector persists durably
+# before ACK; node releases only ACKed observations via explicit compact.
+name: ble-normal-sync
+version: 1
+description: Authorized MEMBER sync with durable collector persistence and high-watermark ACK.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+claim_as admin
+assert last_claim ok
+assert claim_state CLAIMED
+rtc SYNCED 1790899200000
+read CHIP-A
+read CHIP-B
+read CHIP-C
+assert observations 3
+assert next_sequence 4
+phone_connect
+provide_credential member
+assert last_auth ok
+sync_start
+ble_status
+assert sync_pending 3
+ble_batch 1 16
+assert batch_count 3
+collector_persist
+assert collector_persisted 3
+assert collector_watermark 3
+# ACK only the first two: node keeps the unacked third.
+send_ack 2
+assert last_ack ok
+assert ack_watermark 2
+ble_compact
+assert last_compact ok
+assert observations 1
+assert observation 0 sequence 3
+# Duplicate transfer of the same batch is idempotent on the collector.
+ble_batch 1 16
+collector_persist
+assert collector_persisted 3
+# Finish the last record, then the node is fully drained.
+send_ack 3
+assert last_ack ok
+ble_compact
+assert observations 0
+sync_complete
+phone_disconnect

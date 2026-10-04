@@ -15,7 +15,7 @@
 import { getAuthState } from '../platform/auth';
 import { OfflineIdentity, OfflineIdentityDatabase } from '../platform/offline-identity';
 import { WebCryptoDeviceKeys } from '../platform/device-keys';
-import { loadTrustedNodeIdentity } from '../platform/node-identity';
+import { loadTrustedNodeIdentity, NodeIdentityError } from '../platform/node-identity';
 import type { NodeTransport } from '../platform/node-transport';
 import { SyncEngine, SyncFailedError } from './sync-engine';
 import type { OwnerInfo } from './ble-codec';
@@ -23,6 +23,7 @@ import { CollectorObservationStore } from './observation-store';
 import { CollectorDatabase, requestPersistentStorage } from '../platform/offline-store';
 import { BackendUploader, type BackendSyncState } from './backend-upload';
 import { resolveCredential, CredentialError } from './authorization';
+import { PublicProbeTransport } from './public-probe';
 
 export type NodeSyncState =
   | 'idle'
@@ -149,27 +150,10 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     }
 
     // Trusted node identity comes from the backend-pinned record, never from
-    // the BLE peer. Offline we fall back to the last locally seen node key
-    // metadata; without it the node proof cannot run and sync stops.
+    // the BLE peer. Offline we fall back to the locally stored node key
+    // captured during a previous sync/claim; without it the node proof cannot
+    // run and sync stops with a clear message.
     emit({ nodeState: 'connecting', nodeMessage: 'Verbinde mit Node …' });
-    let nodeIdHint: string | null = null;
-    try {
-      // The transport selection does not yet reveal the node id; the engine
-      // validates it against the pinned identity after Hello. For the common
-      // online case resolve the pinned key via backend node list is out of
-      // scope here: the caller passes a transport already bound to a device,
-      // and the identity lookup happens after public info when needed.
-      void nodeIdHint;
-    } catch {
-      // Fall through to engine-level validation.
-    }
-
-    // The engine needs the pinned identity before Hello validation. When
-    // online, resolve it lazily: try the most recently synced node for this
-    // organization first, else require online backend lookup by the caller.
-    // For the MVP the caller (UI/tests) supplies identity via transport binding;
-    // here we attempt a best-effort lookup once public info is known by
-    // retrying with the discovered node id below.
     const deviceKeys = await deviceKeysForUser(auth.user.userId);
     const engineResult = await runEngineWithDiscovery(
       transport, observations, deviceKeys, credential, organizationId, trustedNowS,
@@ -213,6 +197,8 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
         lastWatermark: engineResult.watermark,
         lastSyncAt: Date.now(),
         pendingCount: stats.pending,
+        publicKeyX: engineResult.publicKeyX ?? null,
+        publicKeyY: engineResult.publicKeyY ?? null,
       });
     } catch {
       // Metadata is best-effort; durable observations + ACK already hold.
@@ -283,12 +269,14 @@ interface EngineOutcome {
   incarnation: string;
   received: number;
   watermark: string;
+  publicKeyX?: string;
+  publicKeyY?: string;
 }
 
-// Discovers the node id via a public-only probe when the pinned identity is
-// unknown, then runs the full authenticated engine. Protected data is never
-// requested before authorization.
-async function runEngineWithDiscovery(
+// Discovers the node id via a public-only probe, resolves the backend-pinned
+// node key (offline: locally stored key), then runs the full authenticated
+// engine. Protected data is never requested before authorization.
+export async function runEngineWithDiscovery(
   transport: NodeTransport,
   observations: CollectorObservationStore,
   deviceKeys: WebCryptoDeviceKeys,
@@ -298,30 +286,6 @@ async function runEngineWithDiscovery(
   onProgress: (phase: string, received: number) => void,
   onOwner: (owner: OwnerInfo | null) => void,
 ): Promise<EngineOutcome> {
-  // First attempt uses a permissive identity; the engine validates the real
-  // node id after Hello and fails closed on mismatch. To obtain the pinned
-  // key we probe public info via a lightweight engine pass is overkill:
-  // instead, run the engine once with a placeholder and, on identity failure,
-  // surface a clear message. The production UI binds transports to known nodes
-  // (previously authorized reuse), so the placeholder path is exceptional.
-  //
-  // Simpler correct MVP: require the pinned identity. When online, discover it
-  // by reading public info through a minimal probe transport wrapper is
-  // complex; instead load all candidate backend nodes is out of scope. We run
-  // the engine with a discovery step: connect, read HelloPublic manually via
-  // the transport is not possible through the frame interface without auth.
-  //
-  // Pragmatic approach: attempt engine with an identity that accepts any node
-  // id for the public phase by catching the identity mismatch, extracting the
-  // node id is not exposed. So instead we require callers to provide identity;
-  // this helper loads it from the backend when exactly one claimed node key
-  // can be resolved is also out of scope.
-  //
-  // For the MVP we resolve the pinned identity by trying backend lookup after
-  // a public probe implemented as a short-lived engine with a wildcard is not
-  // supported. Therefore: run with a two-step strategy where the first failure
-  // carrying public info still yields owner for foreign/UNCLAIMED display.
-  const { PublicProbeTransport } = await import('./public-probe');
   const probe = new PublicProbeTransport(transport);
   const hello = await probe.readPublicHello();
   onOwner(hello.owner);
@@ -329,22 +293,32 @@ async function runEngineWithDiscovery(
     return { ok: false, message: 'unclaimed', owner: hello.owner, unclaimed: true, foreign: false,
       nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
   }
-  let pinned;
+  let pinned: { nodeId: string; publicKeyX: string; publicKeyY: string };
   try {
     pinned = await loadTrustedNodeIdentity(hello.nodeId);
-  } catch {
-    // Offline without pinned key: fall back to last local node metadata is
-    // handled by the caller; here we fail closed with a clear message.
-    return { ok: false, message: 'Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', owner: hello.owner,
-      unclaimed: false, foreign: false, nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+  } catch (e) {
+    if (e instanceof NodeIdentityError && e.kind === 'forbidden') {
+      // Foreign claimed node: backend tenant gate refuses the key lookup.
+      // Show only the public owner hint; never probe protected data.
+      return { ok: false, message: 'foreign', owner: hello.owner, unclaimed: false, foreign: true,
+        nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+    }
+    // Offline / backend unreachable: fall back to the locally stored
+    // backend-pinned key captured during a previous sync or claim (#18).
+    const meta = await observations.nodeMeta(hello.nodeId);
+    if (meta?.publicKeyX && meta?.publicKeyY) {
+      pinned = { nodeId: hello.nodeId, publicKeyX: meta.publicKeyX, publicKeyY: meta.publicKeyY };
+    } else {
+      return { ok: false, message: 'Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', owner: hello.owner,
+        unclaimed: false, foreign: false, nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+    }
   }
   const engine = new SyncEngine(transport, observations, deviceKeys, pinned, { maxBatchRecords: 16 });
-  // Progress polling: the engine exposes currentPhase synchronously.
   const timerHost: { setInterval: typeof setInterval; clearInterval: typeof clearInterval } =
     (typeof window !== 'undefined' ? window : globalThis) as never;
   const progressTimer = timerHost.setInterval(() => {
     try {
-      onProgress(engine.currentPhase, 0);
+      onProgress(engine.currentPhase, engine.currentReceived);
       if (engine.currentOwner) onOwner(engine.currentOwner);
     } catch {
       // Polling must not break the sync.
@@ -358,7 +332,8 @@ async function runEngineWithDiscovery(
       onProgress('complete', result.recordsReceived);
       return { ok: true, message: 'Fertig.', owner, unclaimed: false, foreign: false,
         nodeId: hello.nodeId, incarnation: hello.incarnation,
-        received: result.recordsReceived, watermark: result.watermark.toString() };
+        received: result.recordsReceived, watermark: result.watermark.toString(),
+        publicKeyX: pinned.publicKeyX, publicKeyY: pinned.publicKeyY };
     }
     const activeOrg = getAuthState().activeOrganizationId;
     const errorText = result.error ?? 'Sync fehlgeschlagen.';

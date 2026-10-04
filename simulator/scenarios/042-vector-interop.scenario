@@ -1,0 +1,19 @@
+# Interop golden vector (issue #7, shared canonical fixtures).
+# The committed Java/backend vector credential verifies through the real
+# OfflineAuthSession; the same bytes are reused by PWA (#8) and backend tests.
+name: ble-vector-interop
+version: 1
+description: Golden offline-credential vector through the production verifier.
+
+boot
+import_fixture_node vector
+claim_mode_enter
+claim_as admin
+assert last_claim ok
+assert claim_state CLAIMED
+phone_connect
+provide_credential vector
+assert last_auth ok
+assert ble_authorized
+owner
+phone_disconnect

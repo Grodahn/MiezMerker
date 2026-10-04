@@ -194,6 +194,7 @@ export class SyncEngine {
   private session: SyncSession | null = null;
   private owner: OwnerInfo | null = null;
   private status: StatusResponse | null = null;
+  private received = 0;
 
   constructor(
     private transport: NodeTransport,
@@ -205,6 +206,7 @@ export class SyncEngine {
 
   get currentPhase(): SyncPhase { return this.phase; }
   get currentOwner(): OwnerInfo | null { return this.owner; }
+  get currentReceived(): number { return this.received; }
 
   async sync(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
     const maxRetries = this.options.maxRetries ?? 3;
@@ -411,6 +413,7 @@ export class SyncEngine {
               e instanceof Error ? e.message : 'Lokale Speicherung fehlgeschlagen.', this.owner, e);
           }
           totalReceived += batch.records.length;
+          this.received = totalReceived;
         }
 
         if (!batch.more) break;

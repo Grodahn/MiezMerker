@@ -227,8 +227,12 @@ export class WebBluetoothTransport implements NodeTransport {
     const bt = bluetooth();
     if (!bt) throw new BluetoothTransportError('unsupported', bluetoothSupportMessage('unsupported'));
     try {
+      // Remove any listener from a previous connection before adding a fresh
+      // one so reconnects do not stack duplicate disconnect handlers.
+      if (this.disconnectHandler) {
+        this.device.removeEventListener?.('gattserverdisconnected', this.disconnectHandler);
+      }
       this.device.addEventListener?.('gattserverdisconnected', this.handleDisconnect);
-      // Reuse the same handler identity across reconnects.
       this.disconnectHandler = this.handleDisconnect;
       this.server = await this.device.gatt.connect();
       const service = await this.server.getPrimaryService(BLE_SERVICE_UUID);

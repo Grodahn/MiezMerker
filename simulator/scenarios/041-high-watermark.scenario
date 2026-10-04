@@ -1,0 +1,73 @@
+# High-watermark ACK behavior with the real #6 logic (issue #7).
+# Collector durably persists 100/101/103 but not 102: ACK 101 succeeds and
+# ACK 103 is not generated (collector watermark stays at 101 via the real
+# contiguous_watermark). After 102 is present the watermark advances through
+# 103. A node-side sequence gap separately rejects an explicit ACK jump.
+name: ble-high-watermark
+version: 1
+description: Contiguous high-watermark gating on both collector and node.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+claim_as admin
+assert last_claim ok
+rtc SYNCED 1790899200000
+repeat 103
+  read CHIP-HW
+  advance_ms 3000
+end
+assert observations 103
+assert next_sequence 104
+phone_connect
+provide_credential member
+assert last_auth ok
+# Page the full log; persist everything except sequence 102 (transfer gap
+# while the node durably holds 102). Collector ends with 1..101,103.
+ble_batch 1 16
+collector_persist
+ble_batch 17 16
+collector_persist
+ble_batch 33 16
+collector_persist
+ble_batch 49 16
+collector_persist
+ble_batch 65 16
+collector_persist
+ble_batch 81 16
+collector_persist
+ble_batch 97 16
+assert batch_count 7
+collector_persist 97 98 99 100 101 103
+assert collector_persisted 102
+assert collector_has 100
+assert collector_has 101
+assert collector_missing 102
+assert collector_has 103
+# Real contiguous_watermark blocks at the gap: 101, not 103.
+assert collector_watermark 101
+send_ack
+assert last_ack ok
+assert ack_watermark 101
+# After 102 is durably present the watermark may advance through 103.
+collector_persist 102
+assert collector_persisted 103
+assert collector_watermark 103
+send_ack
+assert last_ack ok
+assert ack_watermark 103
+# Node-side gap: a reserved-but-never-appended sequence blocks an ACK jump
+# through the real SyncServer gap check.
+fail_append 1
+read CHIP-GAP
+assert last_result IO_ERROR
+read CHIP-AFTER-GAP
+assert last_result RECORDED
+ble_batch 104 16
+assert batch_count 1
+ble_ack 105
+assert last_ack fail
+assert ack_watermark 103
+ble_ack 103
+assert last_ack ok
+phone_disconnect

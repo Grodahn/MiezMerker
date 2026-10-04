@@ -100,6 +100,7 @@ describe('CollectorObservationStore durable local storage', () => {
       nodeId: NODE, incarnation: INC, claimState: 1, organizationId: 'org-a',
       organizationSlug: 'org', organizationName: 'Org', publicContact: '',
       firmwareVersion: '1.0.0', lastWatermark: '2', lastSyncAt: 123, pendingCount: 0,
+      publicKeyX: 'x'.repeat(43), publicKeyY: 'y'.repeat(43),
     });
     expect((await store.nodeMeta(NODE))?.lastWatermark).toBe('2');
   });
