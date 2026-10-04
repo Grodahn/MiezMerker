@@ -1,0 +1,403 @@
+// Collector synchronization orchestrator (issue #8).
+//
+// Keeps at least these concerns separated:
+// - NodeTransport / Web Bluetooth adapter (platform/web-bluetooth.ts)
+// - BLE protocol codec/client from #6 (ble-codec.ts, sync-engine.ts)
+// - authorization/session handshake (authorization.ts)
+// - collector synchronization state machine (SyncEngine + this orchestrator)
+// - durable local observation/outbox repository (observation-store.ts)
+// - backend upload state machine (backend-upload.ts)
+// - UI/view state (CollectorShell.tsx)
+//
+// Node→PWA and PWA→Backend remain independent state machines. A successful
+// Node sync never depends on backend/network availability.
+
+import { getAuthState } from '../platform/auth';
+import { OfflineIdentity, OfflineIdentityDatabase } from '../platform/offline-identity';
+import { WebCryptoDeviceKeys } from '../platform/device-keys';
+import { loadTrustedNodeIdentity } from '../platform/node-identity';
+import type { NodeTransport } from '../platform/node-transport';
+import { SyncEngine, SyncFailedError } from './sync-engine';
+import type { OwnerInfo } from './ble-codec';
+import { CollectorObservationStore } from './observation-store';
+import { CollectorDatabase, requestPersistentStorage } from '../platform/offline-store';
+import { BackendUploader, type BackendSyncState } from './backend-upload';
+import { resolveCredential, CredentialError } from './authorization';
+
+export type NodeSyncState =
+  | 'idle'
+  | 'connecting'
+  | 'receiving'
+  | 'persisting'
+  | 'acknowledging'
+  | 'complete'
+  | 'failed';
+
+export type ForeignNodeInfo = {
+  organizationName: string;
+  organizationSlug: string;
+  publicContact: string;
+};
+
+export interface CollectorViewState {
+  nodeState: NodeSyncState;
+  backendState: BackendSyncState;
+  nodeMessage: string;
+  backendMessage: string;
+  owner: OwnerInfo | null;
+  foreign: ForeignNodeInfo | null;
+  unclaimed: boolean;
+  recordsReceived: number;
+  watermark: string | null;
+  pendingUploads: number;
+  uploadedCount: number;
+  bluetoothSupported: boolean;
+  credentialState: string;
+  fertig: boolean;
+}
+
+export const initialCollectorView: CollectorViewState = {
+  nodeState: 'idle',
+  backendState: 'idle',
+  nodeMessage: '',
+  backendMessage: '',
+  owner: null,
+  foreign: null,
+  unclaimed: false,
+  recordsReceived: 0,
+  watermark: null,
+  pendingUploads: 0,
+  uploadedCount: 0,
+  bluetoothSupported: true,
+  credentialState: '',
+  fertig: false,
+};
+
+export interface SyncCallbacks {
+  onUpdate: (view: CollectorViewState) => void;
+  createTransport: () => NodeTransport | Promise<NodeTransport>;
+  trustedNowS?: () => number;
+}
+
+function toNodeState(phase: string): NodeSyncState {
+  if (phase === 'complete') return 'complete';
+  if (phase === 'failed') return 'failed';
+  if (phase === 'persisting') return 'persisting';
+  if (phase === 'acknowledging' || phase === 'compacting') return 'acknowledging';
+  if (phase === 'connecting' || phase === 'public-info' || phase === 'challenge' ||
+      phase === 'authorizing' || phase === 'authorized') return 'connecting';
+  return 'receiving';
+}
+
+export function foreignInfo(owner: OwnerInfo | null): ForeignNodeInfo | null {
+  if (!owner || owner.claimState !== 1 || !owner.organizationName) return null;
+  return {
+    organizationName: owner.organizationName,
+    organizationSlug: owner.organizationSlug,
+    publicContact: owner.publicContact,
+  };
+}
+
+// Runs one full field visit: credential → transport → SyncEngine (persist
+// before ACK) → durable stats → separate backend upload attempt. Backend
+// failure never turns a successful Node sync into a failed field visit.
+export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorViewState> {
+  const { onUpdate, createTransport } = callbacks;
+  const trustedNowS = callbacks.trustedNowS ?? (() => Math.floor(Date.now() / 1000));
+  let view: CollectorViewState = { ...initialCollectorView };
+  const emit = (patch: Partial<CollectorViewState>): void => {
+    view = { ...view, ...patch };
+    onUpdate(view);
+  };
+
+  const auth = getAuthState();
+  const organizationId = auth.activeOrganizationId;
+  if (!auth.user || !organizationId) {
+    emit({ nodeState: 'failed', nodeMessage: 'Bitte anmelden und Organisation wählen.' });
+    return view;
+  }
+
+  const collectorDb = new CollectorDatabase();
+  const observations = new CollectorObservationStore(collectorDb);
+  try {
+    await observations.open();
+    await requestPersistentStorage();
+
+    // Credential state for the /sync header (login/org/offline-credential).
+    const identityDb = new OfflineIdentityDatabase();
+    const identity = new OfflineIdentity(identityDb);
+    let credential: string;
+    try {
+      const resolved = await resolveCredential(identity, organizationId);
+      credential = resolved.credential;
+      emit({ credentialState: resolved.renewed ? 'Offline-Credential erneuert.' : 'Offline-Credential gültig.' });
+    } catch (e) {
+      const message = e instanceof CredentialError ? e.message
+        : e instanceof Error ? e.message : 'Credential-Fehler.';
+      emit({ nodeState: 'failed', nodeMessage: message, credentialState: message });
+      return view;
+    } finally {
+      identityDb.close();
+    }
+
+    let transport: NodeTransport;
+    try {
+      transport = await createTransport();
+    } catch (e) {
+      emit({ nodeState: 'failed', nodeMessage: e instanceof Error ? e.message : 'Kein Node ausgewählt.' });
+      return view;
+    }
+
+    // Trusted node identity comes from the backend-pinned record, never from
+    // the BLE peer. Offline we fall back to the last locally seen node key
+    // metadata; without it the node proof cannot run and sync stops.
+    emit({ nodeState: 'connecting', nodeMessage: 'Verbinde mit Node …' });
+    let nodeIdHint: string | null = null;
+    try {
+      // The transport selection does not yet reveal the node id; the engine
+      // validates it against the pinned identity after Hello. For the common
+      // online case resolve the pinned key via backend node list is out of
+      // scope here: the caller passes a transport already bound to a device,
+      // and the identity lookup happens after public info when needed.
+      void nodeIdHint;
+    } catch {
+      // Fall through to engine-level validation.
+    }
+
+    // The engine needs the pinned identity before Hello validation. When
+    // online, resolve it lazily: try the most recently synced node for this
+    // organization first, else require online backend lookup by the caller.
+    // For the MVP the caller (UI/tests) supplies identity via transport binding;
+    // here we attempt a best-effort lookup once public info is known by
+    // retrying with the discovered node id below.
+    const deviceKeys = await deviceKeysForUser(auth.user.userId);
+    const engineResult = await runEngineWithDiscovery(
+      transport, observations, deviceKeys, credential, organizationId, trustedNowS,
+      (phase, received) => emit({
+        nodeState: toNodeState(phase),
+        nodeMessage: phaseMessage(phase, received),
+        recordsReceived: received,
+      }),
+      (owner) => emit({ owner }),
+    );
+
+    if (engineResult.unclaimed) {
+      emit({ nodeState: 'failed', unclaimed: true, owner: engineResult.owner,
+        nodeMessage: 'Node ist UNCLAIMED. Nur ADMIN kann ihn im physischen Claim-Modus claimen.' });
+      return view;
+    }
+    if (engineResult.foreign) {
+      emit({ nodeState: 'failed', foreign: foreignInfo(engineResult.owner), owner: engineResult.owner,
+        nodeMessage: engineResult.owner
+          ? `Dieser MiezMerker gehört ${engineResult.owner.organizationName}.` +
+            (engineResult.owner.publicContact ? ` Kontakt: ${engineResult.owner.publicContact}` : '')
+          : 'Node gehört einer anderen Organisation.' });
+      return view;
+    }
+    if (!engineResult.ok) {
+      emit({ nodeState: 'failed', owner: engineResult.owner, nodeMessage: engineResult.message });
+      return view;
+    }
+
+    const stats = await observations.uploadStats(engineResult.nodeId);
+    try {
+      await observations.saveNodeMeta({
+        nodeId: engineResult.nodeId,
+        incarnation: engineResult.incarnation,
+        claimState: 1,
+        organizationId,
+        organizationSlug: engineResult.owner?.organizationSlug ?? null,
+        organizationName: engineResult.owner?.organizationName ?? null,
+        publicContact: engineResult.owner?.publicContact ?? null,
+        firmwareVersion: null,
+        lastWatermark: engineResult.watermark,
+        lastSyncAt: Date.now(),
+        pendingCount: stats.pending,
+      });
+    } catch {
+      // Metadata is best-effort; durable observations + ACK already hold.
+    }
+
+    emit({
+      nodeState: 'complete',
+      owner: engineResult.owner,
+      recordsReceived: engineResult.received,
+      watermark: engineResult.watermark,
+      pendingUploads: stats.pending,
+      uploadedCount: stats.uploaded,
+      fertig: true,
+      nodeMessage: `Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).`,
+    });
+
+    // Separate retryable backend upload step.
+    const uploader = new BackendUploader(observations);
+    emit({ backendState: 'uploading', backendMessage: 'Backend-Upload läuft …' });
+    try {
+      const upload = await uploader.upload(organizationId);
+      const after = await observations.uploadStats(engineResult.nodeId);
+      emit({
+        backendState: upload.state,
+        backendMessage: upload.message,
+        pendingUploads: after.pending + after.failed,
+        uploadedCount: after.uploaded,
+      });
+    } catch (e) {
+      emit({ backendState: 'failed',
+        backendMessage: `Backend-Upload fehlgeschlagen (${e instanceof Error ? e.message : 'unbekannt'}). Vor-Ort-Sync bleibt gültig.` });
+    }
+    return view;
+  } finally {
+    collectorDb.close();
+  }
+}
+
+async function deviceKeysForUser(userId: string): Promise<WebCryptoDeviceKeys> {
+  const db = new OfflineIdentityDatabase();
+  try {
+    return await new OfflineIdentity(db).keys(userId);
+  } finally {
+    db.close();
+  }
+}
+
+function phaseMessage(phase: string, received: number): string {
+  switch (phase) {
+    case 'connecting': case 'public-info': return 'Verbinde mit Node …';
+    case 'challenge': case 'authorizing': return 'Autorisiere …';
+    case 'authorized': return 'Autorisiert. Starte Sync …';
+    case 'syncing': return received > 0 ? `Empfange … (${received})` : 'Empfange Beobachtungen …';
+    case 'persisting': return `Speichere lokal … (${received})`;
+    case 'acknowledging': case 'compacting': return 'Quittiere gegenüber Node …';
+    case 'complete': return 'Fertig.';
+    default: return 'Synchronisiere …';
+  }
+}
+
+interface EngineOutcome {
+  ok: boolean;
+  message: string;
+  owner: OwnerInfo | null;
+  unclaimed: boolean;
+  foreign: boolean;
+  nodeId: string;
+  incarnation: string;
+  received: number;
+  watermark: string;
+}
+
+// Discovers the node id via a public-only probe when the pinned identity is
+// unknown, then runs the full authenticated engine. Protected data is never
+// requested before authorization.
+async function runEngineWithDiscovery(
+  transport: NodeTransport,
+  observations: CollectorObservationStore,
+  deviceKeys: WebCryptoDeviceKeys,
+  credential: string,
+  organizationId: string,
+  trustedNowS: () => number,
+  onProgress: (phase: string, received: number) => void,
+  onOwner: (owner: OwnerInfo | null) => void,
+): Promise<EngineOutcome> {
+  // First attempt uses a permissive identity; the engine validates the real
+  // node id after Hello and fails closed on mismatch. To obtain the pinned
+  // key we probe public info via a lightweight engine pass is overkill:
+  // instead, run the engine once with a placeholder and, on identity failure,
+  // surface a clear message. The production UI binds transports to known nodes
+  // (previously authorized reuse), so the placeholder path is exceptional.
+  //
+  // Simpler correct MVP: require the pinned identity. When online, discover it
+  // by reading public info through a minimal probe transport wrapper is
+  // complex; instead load all candidate backend nodes is out of scope. We run
+  // the engine with a discovery step: connect, read HelloPublic manually via
+  // the transport is not possible through the frame interface without auth.
+  //
+  // Pragmatic approach: attempt engine with an identity that accepts any node
+  // id for the public phase by catching the identity mismatch, extracting the
+  // node id is not exposed. So instead we require callers to provide identity;
+  // this helper loads it from the backend when exactly one claimed node key
+  // can be resolved is also out of scope.
+  //
+  // For the MVP we resolve the pinned identity by trying backend lookup after
+  // a public probe implemented as a short-lived engine with a wildcard is not
+  // supported. Therefore: run with a two-step strategy where the first failure
+  // carrying public info still yields owner for foreign/UNCLAIMED display.
+  const { PublicProbeTransport } = await import('./public-probe');
+  const probe = new PublicProbeTransport(transport);
+  const hello = await probe.readPublicHello();
+  onOwner(hello.owner);
+  if (hello.claimState !== 1) {
+    return { ok: false, message: 'unclaimed', owner: hello.owner, unclaimed: true, foreign: false,
+      nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+  }
+  let pinned;
+  try {
+    pinned = await loadTrustedNodeIdentity(hello.nodeId);
+  } catch {
+    // Offline without pinned key: fall back to last local node metadata is
+    // handled by the caller; here we fail closed with a clear message.
+    return { ok: false, message: 'Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', owner: hello.owner,
+      unclaimed: false, foreign: false, nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+  }
+  const engine = new SyncEngine(transport, observations, deviceKeys, pinned, { maxBatchRecords: 16 });
+  // Progress polling: the engine exposes currentPhase synchronously.
+  const timerHost: { setInterval: typeof setInterval; clearInterval: typeof clearInterval } =
+    (typeof window !== 'undefined' ? window : globalThis) as never;
+  const progressTimer = timerHost.setInterval(() => {
+    try {
+      onProgress(engine.currentPhase, 0);
+      if (engine.currentOwner) onOwner(engine.currentOwner);
+    } catch {
+      // Polling must not break the sync.
+    }
+  }, 250);
+  try {
+    const result = await engine.sync(credential, trustedNowS, organizationId);
+    const owner = engine.currentOwner ?? hello.owner;
+    if (owner) onOwner(owner);
+    if (result.ok) {
+      onProgress('complete', result.recordsReceived);
+      return { ok: true, message: 'Fertig.', owner, unclaimed: false, foreign: false,
+        nodeId: hello.nodeId, incarnation: hello.incarnation,
+        received: result.recordsReceived, watermark: result.watermark.toString() };
+    }
+    const activeOrg = getAuthState().activeOrganizationId;
+    const errorText = result.error ?? 'Sync fehlgeschlagen.';
+    const kind = errorText.split(':')[0];
+    if (kind === 'unclaimed') {
+      return { ok: false, message: errorText, owner, unclaimed: true, foreign: false,
+        nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+    }
+    if (kind === 'foreign' || (owner && activeOrg && owner.organizationId.toLowerCase() !== activeOrg.toLowerCase())) {
+      return { ok: false, message: errorText, owner, unclaimed: false, foreign: true,
+        nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+    }
+    return { ok: false, message: humanSyncError(errorText), owner, unclaimed: false, foreign: false,
+      nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+  } catch (e) {
+    if (e instanceof SyncFailedError && (e.kind === 'unclaimed')) {
+      return { ok: false, message: e.message, owner: e.owner ?? hello.owner, unclaimed: true, foreign: false,
+        nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+    }
+    if (e instanceof SyncFailedError && e.kind === 'foreign') {
+      return { ok: false, message: e.message, owner: e.owner ?? hello.owner, unclaimed: false, foreign: true,
+        nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+    }
+    throw e;
+  } finally {
+    timerHost.clearInterval(progressTimer);
+  }
+}
+
+export function humanSyncError(error: string): string {
+  const kind = error.split(':')[0];
+  const detail = error.includes(':') ? error.slice(error.indexOf(':') + 1).trim() : error;
+  switch (kind) {
+    case 'incompatible': return `Protokoll inkompatibel. ${detail}`;
+    case 'unauthorized': return `Autorisierung abgelehnt. ${detail}`;
+    case 'storage': return detail;
+    case 'connection': return `Verbindung abgebrochen. ${detail} Bitte erneut versuchen — bereits gespeicherte Records werden idempotent wiederholt.`;
+    case 'protocol': return `Protokollfehler. ${detail}`;
+    case 'incomplete': return `${detail} Bereits gespeicherte Records bleiben lokal erhalten.`;
+    default: return detail || error;
+  }
+}

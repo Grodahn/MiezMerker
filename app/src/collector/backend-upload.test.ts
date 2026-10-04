@@ -1,0 +1,93 @@
+// @vitest-environment node
+import 'fake-indexeddb/auto';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+
+const post = vi.hoisted(() => vi.fn());
+vi.mock('../api/client', () => ({ api: { POST: post } }));
+
+import { CollectorDatabase } from '../platform/offline-store';
+import { CollectorObservationStore } from './observation-store';
+import { BackendUploader } from './backend-upload';
+import type { BleRecord } from './ble-codec';
+
+const NODE = '44444444-4444-4444-8444-444444444444';
+const INC = '55555555-5555-4555-9555-555555555555';
+
+function rec(seq: number): BleRecord {
+  return {
+    nodeId: NODE, incarnation: INC, sequence: BigInt(seq), chipId: `chip-${seq}`,
+    clockStatus: 2, epochMs: 1790899200000n + BigInt(seq), monotonicMs: BigInt(seq), bootCounter: 1,
+  };
+}
+
+describe('BackendUploader (PWA→Backend independent state machine)', () => {
+  let db: CollectorDatabase;
+  let store: CollectorObservationStore;
+
+  beforeEach(async () => {
+    post.mockReset();
+    db = new CollectorDatabase(`upload-${Math.random().toString(36).slice(2)}`);
+    store = new CollectorObservationStore(db);
+    await store.open();
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+  });
+
+  test('later upload: pending records batch to #9 ingest with decimal strings', async () => {
+    await store.putObservations([rec(1), rec(2)], 'org-a');
+    post.mockResolvedValue({ data: { results: [{ status: 'CREATED' }, { status: 'DUPLICATE_IDENTICAL' }] } });
+    const result = await new BackendUploader(store, { batchSize: 200 }).upload('org-a');
+    expect(result.state).toBe('complete');
+    expect(result.uploaded).toBe(1);
+    expect(result.duplicates).toBe(1);
+    const body = post.mock.calls[0][1].body;
+    expect(body.organizationId).toBe('org-a');
+    expect(body.observations[0].sequence).toBe('1');
+    expect(body.observations[0].clockStatus).toBe('SYNCED');
+    expect((await store.uploadStats(NODE)).uploaded).toBe(2);
+  });
+
+  test('backend failure leaves records in outbox for retry (Node sync stays Fertig)', async () => {
+    await store.putObservations([rec(1)], 'org-a');
+    post.mockRejectedValue(new Error('Backend offline'));
+    const uploader = new BackendUploader(store, { maxRetries: 0, retryDelayMs: 0 });
+    const result = await uploader.upload('org-a');
+    expect(result.state).toBe('failed');
+    expect(result.message).toContain('Vor-Ort-Sync bleibt');
+    expect((await store.pendingUploads('org-a'))).toHaveLength(1);
+    // Retry succeeds later.
+    post.mockResolvedValue({ data: { results: [{ status: 'CREATED' }] } });
+    expect((await uploader.upload('org-a')).state).toBe('complete');
+  });
+
+  test('conflicting backend items do not block siblings', async () => {
+    await store.putObservations([rec(1), rec(2)], 'org-a');
+    post.mockResolvedValue({ data: { results: [
+      { status: 'CONFLICT', message: 'conflict' }, { status: 'CREATED' },
+    ] } });
+    const result = await new BackendUploader(store).upload('org-a');
+    expect(result.state).toBe('failed');
+    expect(result.conflicts).toBe(1);
+    expect((await store.uploadStats(NODE)).uploaded).toBe(1);
+    expect((await store.uploadStats(NODE)).failed).toBe(1);
+  });
+
+  test('offline mode leaves outbox untouched', async () => {
+    await store.putObservations([rec(1)], 'org-a');
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+    const result = await new BackendUploader(store).upload('org-a');
+    expect(result.state).toBe('waiting-for-network');
+    expect(post).not.toHaveBeenCalled();
+    expect((await store.pendingUploads('org-a'))).toHaveLength(1);
+  });
+
+  test('batching splits large outboxes', async () => {
+    const records = Array.from({ length: 5 }, (_, i) => rec(i + 1));
+    await store.putObservations(records, 'org-a');
+    post.mockImplementation(async (_p: unknown, opts: { body: { observations: unknown[] } }) => ({
+      data: { results: opts.body.observations.map(() => ({ status: 'CREATED' })) },
+    }));
+    const result = await new BackendUploader(store, { batchSize: 2 }).upload('org-a');
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(result.state).toBe('complete');
+  });
+});
