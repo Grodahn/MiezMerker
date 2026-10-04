@@ -14,6 +14,7 @@
 
 #include "miezmerker/memory_stores.hpp"
 #include "miezmerker/ports.hpp"
+#include "miezmerker/node_identity.hpp"
 
 namespace miezmerker::sim {
 
@@ -173,9 +174,25 @@ private:
 /// Simulated device identity store with fault injection.
 /// Wraps InMemoryIdentityStore (durable media) and adds scenario-level
 /// fault injection: fail next store, crash after Nth store, etc.
-class SimDeviceIdentity final : public DeviceIdentityStore {
+class SimDeviceIdentity final : public DeviceIdentityStore, public NodeIdentityStore {
 public:
     SimDeviceIdentity() = default;
+
+    bool has_node_identity() const { return node_.has_value(); }
+    NodeIdentityLoadResult load(NodeIdentity& out) override {
+        if (fail_next_load_) {
+            fail_next_load_ = false;
+            return NodeIdentityLoadResult::error;
+        }
+        if (!node_) return NodeIdentityLoadResult::missing;
+        out = *node_;
+        return NodeIdentityLoadResult::loaded;
+    }
+    bool save(const NodeIdentity& node) override {
+        if (!node.observations) return false;
+        return write(*node.observations, &node);
+    }
+    bool clear() override { node_.reset(); return media_.erase(); }
 
     // DeviceIdentityStore interface
     IdentityLoadResult load(IdentityRecord& out) override {
@@ -187,6 +204,11 @@ public:
     }
 
     bool store(const IdentityRecord& record) override {
+        return write(record, nullptr);
+    }
+
+private:
+    bool write(const IdentityRecord& record, const NodeIdentity* node) {
         ++store_count_;
         if (fail_store_at_ == store_count_) {
             fail_store_at_ = 0;
@@ -197,12 +219,15 @@ public:
             return false;
         }
         const bool result = media_.store(record);
+        if (result && node) node_ = *node;
         if (result && crash_store_at_ == store_count_) {
             crash_store_at_ = 0;
             throw PowerLoss{};
         }
         return result;
     }
+
+public:
 
     bool erase() override { return media_.erase(); }
 
@@ -231,6 +256,7 @@ public:
 
 private:
     InMemoryIdentityStore media_;
+    std::optional<NodeIdentity> node_;
     std::size_t store_count_{0};
     std::size_t fail_store_at_{0};
     std::size_t crash_store_at_{0};

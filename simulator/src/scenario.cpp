@@ -84,6 +84,29 @@ static bool is_known_event_type(std::string_view type) {
         "fail_watermark_next",
         "fail_prune_next", "crash_prune_next",
         "sync_batch", "sync_ack", "sync_compact", "sync_status", "sync_claim",
+        // BLE/security (issue #7, real production path).
+        "phone_connect", "ble_connect",
+        "phone_disconnect", "ble_disconnect", "disconnect",
+        "reconnect", "ble_reconnect",
+        "hello",
+        "owner",
+        "provide_credential", "auth", "credential",
+        "claim_mode_enter", "claim_mode_exit",
+        "claim_as", "claim",
+        "import_fixture_node", "fixture_node",
+        "collector_persist", "persist_collector_batch",
+        "send_ack", "collector_ack",
+        "drop_ack", "collector_drop_ack",
+        "ble_status",
+        "ble_batch", "request_batch",
+        "ble_ack",
+        "ble_compact",
+        "ble_time",
+        "node_proof",
+        "ble_version",
+        "ble_malformed",
+        "now",
+        "sync_start", "sync_complete",
         "assert",
         "repeat", "end"
     };
@@ -113,6 +136,33 @@ static bool validate_event_arity(std::string_view type, std::size_t argc, std::s
         if (argc != 2) { err = std::string(type) + " takes 2 arguments"; return false; }
     } else if (type == "sync_batch") {
         if (argc < 1 || argc > 2) { err = "sync_batch takes 1 or 2 arguments"; return false; }
+    } else if (type == "phone_connect" || type == "ble_connect" ||
+               type == "reconnect" || type == "ble_reconnect") {
+        if (argc > 1) { err = std::string(type) + " takes 0 or 1 arguments"; return false; }
+    } else if (type == "phone_disconnect" || type == "ble_disconnect" ||
+               type == "disconnect" || type == "owner" || type == "ble_status" ||
+               type == "ble_compact" || type == "ble_malformed" ||
+               type == "drop_ack" || type == "collector_drop_ack" ||
+               type == "sync_start" || type == "sync_complete") {
+        if (argc != 0) { err = std::string(type) + " takes 0 arguments"; return false; }
+    } else if (type == "hello") {
+        if (argc > 1) { err = "hello takes 0 or 1 arguments"; return false; }
+    } else if (type == "provide_credential" || type == "auth" || type == "credential" ||
+               type == "claim_as" || type == "claim" ||
+               type == "import_fixture_node" || type == "fixture_node" ||
+               type == "node_proof" || type == "ble_version" || type == "now" ||
+               type == "ble_time") {
+        if (argc != 1) { err = std::string(type) + " takes 1 argument"; return false; }
+    } else if (type == "claim_mode_enter" || type == "claim_mode_exit") {
+        if (argc != 0) { err = std::string(type) + " takes 0 arguments"; return false; }
+    } else if (type == "ble_batch" || type == "request_batch") {
+        if (argc < 1 || argc > 3) { err = std::string(type) + " takes 1-3 arguments"; return false; }
+    } else if (type == "send_ack" || type == "collector_ack") {
+        if (argc > 1) { err = std::string(type) + " takes 0 or 1 arguments"; return false; }
+    } else if (type == "ble_ack") {
+        if (argc != 1) { err = "ble_ack takes 1 argument"; return false; }
+    } else if (type == "collector_persist" || type == "persist_collector_batch") {
+        if (argc > 8) { err = std::string(type) + " takes 0-8 arguments"; return false; }
     } else if (type == "assert") {
         if (argc < 1) { err = "assert takes at least 1 argument"; return false; }
     } else {

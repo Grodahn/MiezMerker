@@ -1,0 +1,75 @@
+# Authorization and security (issue #7, real OfflineAuthSession).
+# Same-org MEMBER/ADMIN succeed; foreign org gets only public owner metadata;
+# expired/manipulated/wrong-key/replayed proofs fail; fake node proof fails.
+name: ble-authz
+version: 1
+description: Credential verification via real session with no leakage.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+claim_as admin
+assert last_claim ok
+phone_connect
+# Public subset before auth: hello + owner work, protected ops do not.
+hello
+assert last_hello_error 0
+owner
+assert last_owner_org 0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a
+ble_status
+assert last_status_error 2
+ble_batch 1 8
+assert last_batch_error 2
+# Valid same-org MEMBER succeeds.
+provide_credential member
+assert last_auth ok
+assert ble_authorized
+ble_status
+assert last_status_error 0
+phone_disconnect
+# Valid same-org ADMIN succeeds on a fresh challenge.
+phone_connect
+provide_credential admin
+assert last_auth ok
+assert ble_authorized
+node_proof fixed
+assert last_node_proof ok
+phone_disconnect
+# Foreign organization: denied protected data, public owner still readable.
+phone_connect
+owner
+assert last_owner_org 0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a
+provide_credential foreign
+assert last_auth fail
+assert ble_unauthorized
+ble_status
+assert last_status_error 2
+ble_batch 1 8
+assert last_batch_error 2
+phone_disconnect
+# Expired, manipulated and wrong-key proofs fail closed.
+phone_connect
+provide_credential expired
+assert last_auth fail
+phone_disconnect
+phone_connect
+provide_credential manipulated
+assert last_auth fail
+phone_disconnect
+# A valid proof made by the ADMIN AppDevice cannot authorize the MEMBER JWT.
+phone_connect
+provide_credential wrongkey
+assert last_auth fail
+phone_disconnect
+# Replayed challenge fails: proof binds the fixed challenge, not the alt one.
+phone_connect alt
+provide_credential replay
+assert last_auth fail
+phone_disconnect
+# Fake node without its device private key fails authenticity proof.
+phone_connect
+provide_credential member
+assert last_auth ok
+node_proof fake
+assert last_node_proof fail
+phone_disconnect

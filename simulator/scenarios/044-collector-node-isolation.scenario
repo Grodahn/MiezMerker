@@ -1,0 +1,42 @@
+name: collector-node-isolation
+version: 1
+description: Retained records from a previous identity cannot ACK a new node.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+claim_as admin
+rtc SYNCED 1790899200000
+read OLD-1
+read OLD-2
+phone_connect
+provide_credential member
+ble_batch 1 16
+collector_persist
+assert collector_persisted 2
+assert collector_watermark 2
+factory_reset
+assert collector_persisted 2
+assert collector_watermark 0
+assert collector_missing 1
+# Import another node without clearing the phone's durable outbox.
+import_fixture_node vector
+claim_mode_enter
+claim_as admin
+read NEW-1
+read NEW-2
+phone_connect
+provide_credential vector
+ble_batch 1 16
+collector_persist 2
+assert collector_persisted 3
+assert collector_watermark 0
+send_ack
+assert ack_watermark 0
+assert observations 2
+collector_persist 1
+assert collector_watermark 2
+send_ack
+assert ack_watermark 2
+ble_compact
+assert observations 0

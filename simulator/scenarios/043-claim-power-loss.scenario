@@ -1,0 +1,42 @@
+name: claim-power-loss
+version: 1
+description: Claim commit is atomic across power loss and retry uses the production manager.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+crash_identity_store 1
+claim_as admin
+reboot
+assert claim_state CLAIMED
+assert owner_org 0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a
+assert claim_mode off
+claim_as admin
+assert last_claim ok
+claim_as foreign
+assert last_claim fail
+phone_connect
+provide_credential member
+assert last_auth ok
+node_proof fixed
+assert last_node_proof ok
+
+# Loading through the manager must not consume and hide a media read failure.
+fail_load_next
+reboot
+assert not_ready
+reboot
+assert ready
+assert claim_state CLAIMED
+assert owner_org 0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a
+
+# Reset journal commits the new identity and keys before power loss.
+crash_identity_store 1
+factory_reset
+reboot
+assert node_id changed
+assert claim_state UNCLAIMED
+assert owner_org empty
+phone_connect
+provide_credential member
+assert last_auth fail

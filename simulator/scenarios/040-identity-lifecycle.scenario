@@ -1,0 +1,46 @@
+# Identity lifecycle across reboot and factory reset (issue #7).
+# Normal reboot retains node identity and ownership; factory reset creates a
+# new identity and previous organization ownership does not leak.
+name: ble-identity-lifecycle
+version: 1
+description: Reboot stability vs factory-reset rotation with no org leakage.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+claim_as admin
+assert last_claim ok
+assert claim_state CLAIMED
+rtc SYNCED 1790899200000
+read CHIP-A
+read CHIP-B
+assert observations 2
+# Normal reboot retains identity, sequence, data and ownership.
+reboot
+assert node_id unchanged
+assert incarnation unchanged
+assert observations 2
+assert next_sequence 3
+assert claim_state CLAIMED
+assert owner_org 0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a
+# Sync still works after reboot with the same org credential.
+phone_connect
+provide_credential member
+assert last_auth ok
+ble_batch 1 16
+assert batch_count 2
+phone_disconnect
+# Factory reset creates a new identity with a fresh sequence lifetime.
+factory_reset
+assert node_id changed
+assert incarnation changed
+assert observations 0
+assert next_sequence 1
+assert claim_state UNCLAIMED
+assert owner_org empty
+# New identity records under the new lifetime only.
+read CHIP-C
+assert observations 1
+assert observation 0 sequence 1
+assert sequences_unique
+assert sequences_monotonic
