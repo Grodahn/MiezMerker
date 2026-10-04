@@ -301,11 +301,14 @@ Additional scenarios for fault injection validation:
    ```
 
 Additional review regressions run through CTest automatically:
+
 - `043-claim-power-loss`: atomic claim and reset recovery, idempotent claim retry,
   usable same-org authorization and node proof after a committed claim crash.
 - `044-collector-node-isolation`: old-node sequences cannot fill a new-node gap
   or ACK records that the phone has not persisted for that node.
 - `045-claim-expiry`: signed claim receipts fail before issuance and at expiry.
+- Scenario runner unit tests reject unsupported claim fixture setups with a
+  failing exit status and reject `now` values beyond signed 64-bit epoch seconds.
 
 ## How a BLE Scenario Executes
 

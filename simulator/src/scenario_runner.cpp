@@ -975,14 +975,14 @@ bool ScenarioRunner::execute_claim_as(const std::vector<std::string>& args) {
         else {
             fail("claim_as", "fixture node imported", node_id, "node binding");
             last_claim_ = false;
-            return true;
+            return false;
         }
     } else {  // foreign: same node, other org (takeover attempt)
         if (node_id == fx.node_main_id) receipt = fx.receipt_b;
         else {
             fail("claim_as", "fixture node imported", node_id, "node binding");
             last_claim_ = false;
-            return true;
+            return false;
         }
     }
     if (receipt.empty()) {
@@ -1434,8 +1434,9 @@ bool ScenarioRunner::execute_ble_malformed() {
 
 bool ScenarioRunner::execute_now(const std::string& arg) {
     std::uint64_t v;
-    if (!parse_uint64(arg, v)) {
-        fail("now", "valid epoch seconds", arg, "parse");
+    if (!parse_uint64(arg, v) ||
+        v > static_cast<std::uint64_t>(std::numeric_limits<ble::TrustedEpochSeconds>::max())) {
+        fail("now", "epoch seconds in signed 64-bit range", arg, "parse");
         return false;
     }
     trusted_now_s_ = static_cast<ble::TrustedEpochSeconds>(v);
