@@ -139,12 +139,15 @@ public class FeedingSiteController {
             summary = "ADMIN updates a feeding site of their own organization")
     @Transactional
     public FeedingSiteView update(@PathVariable UUID organizationId, @PathVariable UUID siteId,
-            @RequestBody UpdateFeedingSiteRequest request,
+            @Valid @RequestBody UpdateFeedingSiteRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireAdmin(principal.getId(), organizationId);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
         FeedingSite site = sites.findByIdAndOrganizationId(siteId, organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (request.name() != null) {

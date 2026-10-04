@@ -134,12 +134,15 @@ public class CatController {
             summary = "ADMIN updates a cat of their own organization")
     @Transactional
     public CatView update(@PathVariable UUID organizationId, @PathVariable UUID catId,
-            @RequestBody UpdateCatRequest request,
+            @Valid @RequestBody UpdateCatRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireAdmin(principal.getId(), organizationId);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
         Cat cat = cats.findByIdAndOrganizationId(catId, organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (request.chipId() != null) {

@@ -98,10 +98,15 @@ public class RawObservation {
     /** True when two rows carry the same immutable raw payload (idempotent retry). */
     public boolean samePayload(String chipId, Long observedAtMs, String clockStatus,
             String incarnation, Long monotonicMs, Integer bootCounter) {
+        String normalizedIncarnation =
+                incarnation == null || incarnation.isBlank() ? null : incarnation.trim();
+        String storedIncarnation =
+                this.incarnation == null || this.incarnation.isBlank() ? null
+                        : this.incarnation.trim();
         return java.util.Objects.equals(this.chipId, normalizeChipId(chipId))
                 && java.util.Objects.equals(this.observedAtMs, observedAtMs)
                 && java.util.Objects.equals(this.clockStatus, normalizeClockStatus(clockStatus))
-                && java.util.Objects.equals(this.incarnation, incarnation)
+                && java.util.Objects.equals(storedIncarnation, normalizedIncarnation)
                 && java.util.Objects.equals(this.monotonicMs, monotonicMs)
                 && java.util.Objects.equals(this.bootCounter, bootCounter);
     }

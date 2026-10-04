@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.miezmerker.backend.domain.NodeDevice;
 import org.miezmerker.backend.domain.RawObservation;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
@@ -104,17 +105,23 @@ public class ObservationController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
+        if (request == null || request.organizationId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "organizationId is required");
+        }
         List<IngestObservationRequest> items =
                 request.observations() == null ? List.of() : request.observations();
         if (items.size() > MAX_BATCH) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
                     "batch exceeds " + MAX_BATCH + " observations");
         }
+        if (items.stream().anyMatch(item -> item == null)) {
+            // Never silently drop a null entry: the client must resend the batch.
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "observations must not contain null entries");
+        }
         List<ObservationIngestService.IngestItem> parsed = new ArrayList<>();
         for (IngestObservationRequest item : items) {
-            if (item == null) {
-                continue;
-            }
             parsed.add(new ObservationIngestService.IngestItem(item.nodeId(),
                     item.sequence() == null ? -1 : item.sequence(), item.chipId(),
                     item.observedAtMillis(), item.clockStatus(), blankToNull(item.incarnation()),
@@ -154,6 +161,7 @@ public class ObservationController {
         if (offset < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be >= 0");
         }
+        rejectForeignNodeFilter(nodeId, organizationId);
         String normalizedChip =
                 chipId == null || chipId.isBlank() ? null : chipId.trim().toUpperCase();
         String jpql = "select o from RawObservation o join fetch o.node n "
@@ -235,6 +243,7 @@ public class ObservationController {
         if (offset < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be >= 0");
         }
+        rejectForeignNodeFilter(nodeId, organizationId);
         var rows = entities.createQuery(
                 "select o from RawObservation o join fetch o.node n "
                         + "left join fetch o.feedingSite "
@@ -244,6 +253,23 @@ public class ObservationController {
                 .setParameter("node", nodeId).setFirstResult(offset).setMaxResults(limit)
                 .getResultList();
         return rows.stream().map(ObservationController::toView).toList();
+    }
+
+    /**
+     * A node filter naming a node claimed by another organization is rejected
+     * explicitly instead of returning an empty list: the caller asked for data
+     * outside their tenant, which must be visible as forbidden.
+     */
+    private void rejectForeignNodeFilter(UUID nodeId, UUID organizationId) {
+        if (nodeId == null) {
+            return;
+        }
+        var node = entities.find(NodeDevice.class, nodeId);
+        if (node != null && node.getOrganization() != null
+                && !node.getOrganization().getId().equals(organizationId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "node does not belong to this organization");
+        }
     }
 
     private static String blankToNull(String value) {

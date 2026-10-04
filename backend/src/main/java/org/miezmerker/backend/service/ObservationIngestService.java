@@ -81,7 +81,10 @@ public class ObservationIngestService {
         this.self = self;
     }
 
-    /** Orchestrator: membership is checked once; every item commits independently. */
+    /** Orchestrator: membership is checked once; every item commits independently
+     * in its own REQUIRES_NEW transaction. The outer transaction is required
+     * for lazy loading in the tenant gate/organization lookup and never writes
+     * itself; per-item independence comes from the REQUIRES_NEW inner. */
     @Transactional
     public BatchResult ingestBatch(UUID userId, UUID organizationId, List<IngestItem> items) {
         tenants.requireActive(userId, organizationId);
@@ -133,6 +136,8 @@ public class ObservationIngestService {
         }
         String chip = Cat.normalizeChipId(item.chipId());
         String clock = RawObservation.normalizeClockStatus(item.clockStatus());
+        String incarnation = item.incarnation() == null || item.incarnation().isBlank()
+                ? null : item.incarnation().trim();
 
         NodeDevice node = nodes.findByIdLocked(item.nodeId()).orElse(null);
         if (node == null) {
@@ -151,7 +156,7 @@ public class ObservationIngestService {
                 observations.findByNodeNodeIdAndSequence(item.nodeId(), item.sequence())
                         .orElse(null);
         if (existing != null) {
-            if (existing.samePayload(chip, item.observedAtMs(), clock, item.incarnation(),
+            if (existing.samePayload(chip, item.observedAtMs(), clock, incarnation,
                     item.monotonicMs(), item.bootCounter())) {
                 node.touchContact();
                 nodes.save(node);
@@ -171,7 +176,7 @@ public class ObservationIngestService {
         var org = organizations.findById(organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         RawObservation row = new RawObservation(org, node, item.sequence(), chip,
-                item.observedAtMs(), clock, item.incarnation(), item.monotonicMs(),
+                item.observedAtMs(), clock, incarnation, item.monotonicMs(),
                 item.bootCounter(), resolution.site(), resolution.deployment());
         observations.saveAndFlush(row);
         node.touchContact();
@@ -186,8 +191,10 @@ public class ObservationIngestService {
         if (existing == null) {
             return null;
         }
+        String incarnation = item.incarnation() == null || item.incarnation().isBlank()
+                ? null : item.incarnation().trim();
         if (existing.samePayload(Cat.normalizeChipId(item.chipId()), item.observedAtMs(),
-                RawObservation.normalizeClockStatus(item.clockStatus()), item.incarnation(),
+                RawObservation.normalizeClockStatus(item.clockStatus()), incarnation,
                 item.monotonicMs(), item.bootCounter())) {
             return new ItemResult(item.nodeId(), item.sequence(), "DUPLICATE_IDENTICAL",
                     "identical retry accepted idempotently");
@@ -257,9 +264,10 @@ public class ObservationIngestService {
         if (item.bootCounter() != null && item.bootCounter() < 0) {
             return "bootCounter must be >= 0";
         }
-        if (item.incarnation() != null && !item.incarnation().isBlank()) {
+        String incarnation = item.incarnation() == null ? null : item.incarnation().trim();
+        if (incarnation != null && !incarnation.isEmpty()) {
             try {
-                UUID.fromString(item.incarnation());
+                UUID.fromString(incarnation);
             } catch (IllegalArgumentException e) {
                 return "incarnation must be a UUID string";
             }

@@ -1,1 +1,2362 @@
-﻿{"openapi":"3.1.0","info":{"title":"MiezMerker HTTP API","version":"v1"},"servers":[{"url":"/"}],"paths":{"/api/v1/organizations":{"get":{"tags":["organization-controller"],"summary":"Active organizations of the authenticated user\u0027s ACTIVE memberships","operationId":"listMyOrganizations","responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/OrganizationView"}}}}}}},"post":{"tags":["organization-controller"],"summary":"Create an organization; caller becomes ACTIVE ADMIN (test-phase provisioning)","operationId":"createOrganization","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateOrganizationRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/OrganizationView"}}}}}}},"/api/v1/organizations/{organizationId}/members":{"get":{"tags":["member-controller"],"summary":"ADMIN lists members of their own organization","operationId":"listMembers","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/MemberView"}}}}}}},"post":{"tags":["member-controller"],"summary":"ADMIN creates a user and/or ACTIVE membership (test-phase bootstrap, no mail)","operationId":"createMember","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateMemberRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MemberView"}}}}}}},"/api/v1/organizations/{organizationId}/feeding-sites":{"get":{"tags":["feeding-site-controller"],"summary":"List feeding sites of an organization (requires ACTIVE membership)","operationId":"listFeedingSites","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/FeedingSiteView"}}}}}}},"post":{"tags":["feeding-site-controller"],"summary":"ADMIN creates a feeding site in their own organization","operationId":"createFeedingSite","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateFeedingSiteRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/FeedingSiteView"}}}}}}},"/api/v1/organizations/{organizationId}/deployments":{"get":{"tags":["deployment-controller"],"summary":"List deployments of an organization, optionally filtered by node","operationId":"listDeployments","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"nodeId","in":"query","required":false,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/DeploymentView"}}}}}}},"post":{"tags":["deployment-controller"],"summary":"ADMIN assigns a node to a feeding site for a validity range","operationId":"createDeployment","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateDeploymentRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/DeploymentView"}}}}}}},"/api/v1/organizations/{organizationId}/cats":{"get":{"tags":["cat-controller"],"summary":"List cats of an organization (requires ACTIVE membership)","operationId":"listCats","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/CatView"}}}}}}},"post":{"tags":["cat-controller"],"summary":"ADMIN creates a cat in their own organization","operationId":"createCat","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateCatRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CatView"}}}}}}},"/api/v1/observations/ingest":{"post":{"tags":["observation-controller"],"summary":"Idempotent batch ingest of raw observations (ACTIVE membership; per-item results)","operationId":"ingestObservations","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IngestBatchRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/IngestBatchResponse"}}}}}}},"/api/v1/nodes/claim":{"post":{"tags":["node-controller"],"summary":"Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + claim mode)","operationId":"claimNode","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ClaimNodeRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ClaimReceiptView"}}}}}}},"/api/v1/devices":{"get":{"tags":["device-controller"],"summary":"List my AppDevices","operationId":"listDevices","responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/DeviceView"}}}}}}},"post":{"tags":["device-controller"],"summary":"Register the current user\u0027s AppDevice public key (P-256)","operationId":"registerDevice","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RegisterDeviceRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/DeviceView"}}}}}}},"/api/v1/devices/{deviceId}/revoke":{"post":{"tags":["device-controller"],"summary":"Revoke my AppDevice; it receives no further credentials","operationId":"revokeDevice","parameters":[{"name":"deviceId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/DeviceView"}}}}}}},"/api/v1/devices/{deviceId}/credentials":{"post":{"tags":["device-controller"],"summary":"Issue a signed, time-limited, organization-bound offline credential for my AppDevice (blocked when membership/device is not ACTIVE)","operationId":"issueOfflineCredential","parameters":[{"name":"deviceId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueCredentialRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CredentialView"}}}}}}},"/api/v1/auth/logout":{"post":{"tags":["auth-controller"],"summary":"Invalidate the current server-side session","operationId":"logout","responses":{"200":{"description":"OK"}}}},"/api/v1/auth/login":{"post":{"tags":["auth-controller"],"summary":"Email/password login, establishes a server-side session","operationId":"login","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LoginRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionView"}}}}}}},"/api/v1/organizations/{organizationId}/members/{membershipId}":{"patch":{"tags":["member-controller"],"summary":"ADMIN changes role or activates/disables a membership","operationId":"updateMember","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"membershipId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UpdateMemberRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MemberView"}}}}}}},"/api/v1/organizations/{organizationId}/feeding-sites/{siteId}":{"get":{"tags":["feeding-site-controller"],"summary":"Feeding site details; never readable across organizations","operationId":"getFeedingSite","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"siteId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/FeedingSiteView"}}}}}},"delete":{"tags":["feeding-site-controller"],"summary":"ADMIN deletes a feeding site (blocked while deployments reference it)","operationId":"deleteFeedingSite","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"siteId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK"}}},"patch":{"tags":["feeding-site-controller"],"summary":"ADMIN updates a feeding site of their own organization","operationId":"updateFeedingSite","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"siteId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UpdateFeedingSiteRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/FeedingSiteView"}}}}}}},"/api/v1/organizations/{organizationId}/deployments/{deploymentId}":{"get":{"tags":["deployment-controller"],"summary":"Deployment details; never readable across organizations","operationId":"getDeployment","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"deploymentId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/DeploymentView"}}}}}},"delete":{"tags":["deployment-controller"],"summary":"ADMIN deletes a deployment (stored observation attributions are kept)","operationId":"deleteDeployment","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"deploymentId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK"}}},"patch":{"tags":["deployment-controller"],"summary":"ADMIN closes or reopens a deployment by setting validUntil","operationId":"closeDeployment","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"deploymentId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CloseDeploymentRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/DeploymentView"}}}}}}},"/api/v1/organizations/{organizationId}/cats/{catId}":{"get":{"tags":["cat-controller"],"summary":"Cat details; never readable across organizations","operationId":"getCat","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"catId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CatView"}}}}}},"delete":{"tags":["cat-controller"],"summary":"ADMIN deletes a cat of their own organization","operationId":"deleteCat","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"catId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK"}}},"patch":{"tags":["cat-controller"],"summary":"ADMIN updates a cat of their own organization","operationId":"updateCat","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"catId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UpdateCatRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CatView"}}}}}}},"/api/v1/nodes/{nodeId}":{"get":{"tags":["node-controller"],"summary":"Node details; only members of the owning organization (foreign orgs use the public /owner endpoint)","operationId":"getNode","parameters":[{"name":"nodeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/NodeView"}}}}}},"patch":{"tags":["node-controller"],"summary":"ADMIN updates node metadata (firmware/protocol version, status note)","operationId":"updateNode","parameters":[{"name":"nodeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UpdateNodeRequest"}}},"required":true},"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/NodeView"}}}}}}},"/api/v1/version":{"get":{"tags":["system-controller"],"summary":"Build and HTTP API version","operationId":"getVersion","responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/VersionResponse"}}}}}}},"/api/v1/organizations/{organizationId}":{"get":{"tags":["organization-controller"],"summary":"Organization details; requires ACTIVE membership (tenant isolation)","operationId":"getOrganization","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/OrganizationView"}}}}}}},"/api/v1/organizations/{organizationId}/nodes/{nodeId}/observations":{"get":{"tags":["observation-controller"],"summary":"List one node\u0027s observations within an explicit organization context","operationId":"listNodeObservations","parameters":[{"name":"organizationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"nodeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","format":"int32","default":100}},{"name":"offset","in":"query","required":false,"schema":{"type":"integer","format":"int32","default":0}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/RawObservationView"}}}}}}}},"/api/v1/observations":{"get":{"tags":["observation-controller"],"summary":"List raw observations with organization, node, site, chip and time filters","operationId":"listObservations","parameters":[{"name":"organizationId","in":"query","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"nodeId","in":"query","required":false,"schema":{"type":"string","format":"uuid"}},{"name":"feedingSiteId","in":"query","required":false,"schema":{"type":"string","format":"uuid"}},{"name":"chipId","in":"query","required":false,"schema":{"type":"string"}},{"name":"fromMillis","in":"query","required":false,"schema":{"type":"integer","format":"int64"}},{"name":"toMillis","in":"query","required":false,"schema":{"type":"integer","format":"int64"}},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","format":"int32","default":100}},{"name":"offset","in":"query","required":false,"schema":{"type":"integer","format":"int32","default":0}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/RawObservationView"}}}}}}}},"/api/v1/observations/{observationId}":{"get":{"tags":["observation-controller"],"summary":"Raw observation details; never readable across organizations","operationId":"getObservation","parameters":[{"name":"observationId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RawObservationView"}}}}}}},"/api/v1/nodes":{"get":{"tags":["node-controller"],"summary":"List nodes of an organization (requires ACTIVE membership)","operationId":"listNodes","parameters":[{"name":"organizationId","in":"query","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/NodeView"}}}}}}}},"/api/v1/nodes/{nodeId}/owner":{"get":{"tags":["node-controller"],"summary":"Public owner hint for a claimed node; no observations/chip data","operationId":"getNodeOwner","parameters":[{"name":"nodeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/NodeOwnerView"}}}}}}},"/api/v1/health":{"get":{"tags":["system-controller"],"summary":"Application liveness (database initialized at startup)","operationId":"getHealth","responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HealthResponse"}}}}}}},"/api/v1/credentials/issuer":{"get":{"tags":["issuer-controller"],"summary":"Backend trust anchor for offline node verification (public key only)","operationId":"getCredentialIssuer","responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssuerView"}}}}}}},"/api/v1/auth/session":{"get":{"tags":["auth-controller"],"summary":"Current session with user and memberships","operationId":"getSession","responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionView"}}}}}}},"/api/v1/auth/csrf":{"get":{"tags":["auth-controller"],"summary":"Expose the CSRF token for SPA login flows","operationId":"getCsrf","responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CsrfView"}}}}}}}},"components":{"schemas":{"CreateOrganizationRequest":{"type":"object","properties":{"slug":{"type":"string","maxLength":64,"minLength":0},"displayName":{"type":"string","maxLength":255,"minLength":0},"publicContact":{"type":"string","maxLength":500,"minLength":0}},"required":["displayName","slug"]},"OrganizationView":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"slug":{"type":"string"},"displayName":{"type":"string"},"publicContact":{"type":"string"},"status":{"type":"string"}}},"CreateMemberRequest":{"type":"object","properties":{"email":{"type":"string","format":"email","maxLength":320,"minLength":0},"password":{"type":"string","description":"Initial password: at least 12 characters, at most 72 UTF-8 bytes","maxLength":72,"minLength":12},"role":{"type":"string","enum":["ADMIN","MEMBER"]}},"required":["email","role"]},"MemberView":{"type":"object","properties":{"membershipId":{"type":"string","format":"uuid"},"userId":{"type":"string","format":"uuid"},"email":{"type":"string"},"role":{"type":"string"},"status":{"type":"string"}}},"CreateFeedingSiteRequest":{"type":"object","properties":{"name":{"type":"string","maxLength":255,"minLength":0},"description":{"type":"string","maxLength":2000,"minLength":0},"locationLat":{"type":"number","format":"double"},"locationLng":{"type":"number","format":"double"},"locationLabel":{"type":"string","maxLength":255,"minLength":0}},"required":["name"]},"FeedingSiteView":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"organizationId":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"locationLat":{"type":"number","format":"double"},"locationLng":{"type":"number","format":"double"},"locationLabel":{"type":"string"},"createdAt":{"type":"string"},"updatedAt":{"type":"string"}}},"CreateDeploymentRequest":{"type":"object","properties":{"nodeId":{"type":"string","format":"uuid"},"feedingSiteId":{"type":"string","format":"uuid"},"validFrom":{"type":"string","format":"date-time"},"validUntil":{"type":"string","format":"date-time"}},"required":["feedingSiteId","nodeId","validFrom"]},"DeploymentView":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"organizationId":{"type":"string"},"nodeId":{"type":"string"},"feedingSiteId":{"type":"string"},"validFrom":{"type":"string"},"validUntil":{"type":"string"},"createdAt":{"type":"string"}}},"CreateCatRequest":{"type":"object","properties":{"chipId":{"type":"string","maxLength":64,"minLength":0},"name":{"type":"string","maxLength":255,"minLength":0},"status":{"type":"string","maxLength":64,"minLength":0},"notes":{"type":"string","maxLength":2000,"minLength":0}},"required":["chipId"]},"CatView":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"organizationId":{"type":"string"},"chipId":{"type":"string"},"name":{"type":"string"},"status":{"type":"string"},"notes":{"type":"string"},"createdAt":{"type":"string"},"updatedAt":{"type":"string"}}},"IngestBatchRequest":{"type":"object","properties":{"organizationId":{"type":"string","format":"uuid"},"observations":{"type":"array","items":{"$ref":"#/components/schemas/IngestObservationRequest"}}},"required":["organizationId"]},"IngestObservationRequest":{"type":"object","properties":{"nodeId":{"type":"string","format":"uuid"},"sequence":{"type":"integer","format":"int64"},"chipId":{"type":"string"},"observedAtMillis":{"type":"integer","format":"int64"},"clockStatus":{"type":"string"},"incarnation":{"type":"string"},"monotonicMs":{"type":"integer","format":"int64"},"bootCounter":{"type":"integer","format":"int32"}},"required":["nodeId","sequence"]},"IngestBatchResponse":{"type":"object","properties":{"inserted":{"type":"integer","format":"int32"},"duplicates":{"type":"integer","format":"int32"},"conflicts":{"type":"integer","format":"int32"},"rejected":{"type":"integer","format":"int32"},"results":{"type":"array","items":{"$ref":"#/components/schemas/IngestItemResult"}}}},"IngestItemResult":{"type":"object","properties":{"nodeId":{"type":"string","format":"uuid"},"sequence":{"type":"integer","format":"int64"},"status":{"type":"string"},"message":{"type":"string"}}},"ClaimNodeRequest":{"type":"object","properties":{"nodeId":{"type":"string","format":"uuid"},"publicKeyX":{"type":"string","minLength":1,"pattern":"^[A-Za-z0-9_-]{43}$"},"publicKeyY":{"type":"string","minLength":1,"pattern":"^[A-Za-z0-9_-]{43}$"},"firmwareVersion":{"type":"string","maxLength":64,"minLength":0},"organizationId":{"type":"string","format":"uuid"},"timestampMillis":{"type":"integer","format":"int64"},"claimSignature":{"type":"string","minLength":1,"pattern":"^[A-Za-z0-9_-]{86}$"}},"required":["claimSignature","nodeId","organizationId","publicKeyX","publicKeyY","timestampMillis"]},"ClaimReceiptView":{"type":"object","properties":{"nodeId":{"type":"string","format":"uuid"},"organizationId":{"type":"string"},"receipt":{"type":"string"},"tokenType":{"type":"string"}}},"RegisterDeviceRequest":{"type":"object","properties":{"publicKeyX":{"type":"string","minLength":1,"pattern":"^[A-Za-z0-9_-]{43}$"},"publicKeyY":{"type":"string","minLength":1,"pattern":"^[A-Za-z0-9_-]{43}$"},"label":{"type":"string","maxLength":120,"minLength":0}},"required":["publicKeyX","publicKeyY"]},"DeviceView":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"fingerprint":{"type":"string"},"label":{"type":"string"},"createdAt":{"type":"string"},"lastSeenAt":{"type":"string"},"revokedAt":{"type":"string"}}},"IssueCredentialRequest":{"type":"object","properties":{"organizationId":{"type":"string","minLength":1}},"required":["organizationId"]},"CredentialView":{"type":"object","properties":{"credential":{"type":"string"},"tokenType":{"type":"string"},"expiresInSeconds":{"type":"integer","format":"int64"},"organizationId":{"type":"string"},"deviceId":{"type":"string"}}},"LoginRequest":{"type":"object","properties":{"email":{"type":"string","format":"email","minLength":1},"password":{"type":"string","minLength":1}},"required":["email","password"]},"MembershipView":{"type":"object","properties":{"membershipId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"organizationSlug":{"type":"string"},"organizationName":{"type":"string"},"role":{"type":"string"},"status":{"type":"string"}}},"SessionView":{"type":"object","properties":{"userId":{"type":"string","format":"uuid"},"email":{"type":"string"},"memberships":{"type":"array","items":{"$ref":"#/components/schemas/MembershipView"}}}},"UpdateMemberRequest":{"type":"object","properties":{"role":{"type":"string","enum":["ADMIN","MEMBER"]},"status":{"type":"string","enum":["PENDING","ACTIVE","DISABLED"]}}},"UpdateFeedingSiteRequest":{"type":"object","properties":{"name":{"type":"string","maxLength":255,"minLength":0},"description":{"type":"string","maxLength":2000,"minLength":0},"locationLat":{"type":"number","format":"double"},"locationLng":{"type":"number","format":"double"},"locationLabel":{"type":"string","maxLength":255,"minLength":0},"clearLocation":{"type":"boolean"}}},"CloseDeploymentRequest":{"type":"object","properties":{"validUntil":{"type":"string","format":"date-time"}}},"UpdateCatRequest":{"type":"object","properties":{"chipId":{"type":"string","maxLength":64,"minLength":0},"name":{"type":"string","maxLength":255,"minLength":0},"status":{"type":"string","maxLength":64,"minLength":0},"notes":{"type":"string","maxLength":2000,"minLength":0}}},"UpdateNodeRequest":{"type":"object","properties":{"firmwareVersion":{"type":"string","maxLength":64,"minLength":0},"protocolVersion":{"type":"string","maxLength":32,"minLength":0},"statusNote":{"type":"string","maxLength":500,"minLength":0}}},"NodeView":{"type":"object","properties":{"nodeId":{"type":"string","format":"uuid"},"organizationId":{"type":"string"},"state":{"type":"string"},"firmwareVersion":{"type":"string"},"protocolVersion":{"type":"string"},"statusNote":{"type":"string"},"lastContactAt":{"type":"string"},"claimedAt":{"type":"string"},"publicKeyX":{"type":"string"},"publicKeyY":{"type":"string"},"fingerprint":{"type":"string"}}},"VersionResponse":{"type":"object","properties":{"version":{"type":"string"},"apiVersion":{"type":"string"}},"required":["apiVersion","version"]},"RawObservationView":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"organizationId":{"type":"string"},"nodeId":{"type":"string"},"sequence":{"type":"integer","format":"int64"},"chipId":{"type":"string"},"observedAtMillis":{"type":"integer","format":"int64"},"clockStatus":{"type":"string"},"incarnation":{"type":"string"},"monotonicMs":{"type":"integer","format":"int64"},"bootCounter":{"type":"integer","format":"int32"},"feedingSiteId":{"type":"string"},"deploymentId":{"type":"string"},"receivedAt":{"type":"string"}}},"NodeOwnerView":{"type":"object","properties":{"nodeId":{"type":"string","format":"uuid"},"state":{"type":"string"},"organizationId":{"type":"string"},"organizationSlug":{"type":"string"},"organizationName":{"type":"string"},"publicContact":{"type":"string"}}},"HealthResponse":{"type":"object","properties":{"status":{"type":"string"}},"required":["status"]},"IssuerView":{"type":"object","properties":{"issuer":{"type":"string"},"keyId":{"type":"string"},"algorithm":{"type":"string"},"jwk":{"type":"object","additionalProperties":{"type":"string"}},"credentialTtlSeconds":{"type":"integer","format":"int64"}}},"CsrfView":{"type":"object","properties":{"token":{"type":"string"},"headerName":{"type":"string"},"parameterName":{"type":"string"}}}}}}
+{
+  "components": {
+    "schemas": {
+      "CatView": {
+        "properties": {
+          "chipId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ClaimNodeRequest": {
+        "properties": {
+          "claimSignature": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{86}$",
+            "type": "string"
+          },
+          "firmwareVersion": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publicKeyX": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "publicKeyY": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "timestampMillis": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claimSignature",
+          "nodeId",
+          "organizationId",
+          "publicKeyX",
+          "publicKeyY",
+          "timestampMillis"
+        ],
+        "type": "object"
+      },
+      "ClaimReceiptView": {
+        "properties": {
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "receipt": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseDeploymentRequest": {
+        "properties": {
+          "validUntil": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreateCatRequest": {
+        "properties": {
+          "chipId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "notes": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "status": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "chipId"
+        ],
+        "type": "object"
+      },
+      "CreateDeploymentRequest": {
+        "properties": {
+          "feedingSiteId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "validFrom": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "validUntil": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feedingSiteId",
+          "nodeId",
+          "validFrom"
+        ],
+        "type": "object"
+      },
+      "CreateFeedingSiteRequest": {
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "locationLabel": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "locationLat": {
+            "format": "double",
+            "type": "number"
+          },
+          "locationLng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateMemberRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 0,
+            "type": "string"
+          },
+          "password": {
+            "description": "Initial password: at least 12 characters, at most 72 UTF-8 bytes",
+            "maxLength": 72,
+            "minLength": 12,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "ADMIN",
+              "MEMBER"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "type": "object"
+      },
+      "CreateOrganizationRequest": {
+        "properties": {
+          "displayName": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "publicContact": {
+            "maxLength": 500,
+            "minLength": 0,
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "CredentialView": {
+        "properties": {
+          "credential": {
+            "type": "string"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CsrfView": {
+        "properties": {
+          "headerName": {
+            "type": "string"
+          },
+          "parameterName": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeploymentView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "feedingSiteId": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string"
+          },
+          "validUntil": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FeedingSiteView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "locationLabel": {
+            "type": "string"
+          },
+          "locationLat": {
+            "format": "double",
+            "type": "number"
+          },
+          "locationLng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "IngestBatchRequest": {
+        "properties": {
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/IngestObservationRequest"
+            },
+            "type": "array"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "type": "object"
+      },
+      "IngestBatchResponse": {
+        "properties": {
+          "conflicts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "duplicates": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "inserted": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rejected": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/IngestItemResult"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "IngestItemResult": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IngestObservationRequest": {
+        "properties": {
+          "bootCounter": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "chipId": {
+            "type": "string"
+          },
+          "clockStatus": {
+            "type": "string"
+          },
+          "incarnation": {
+            "type": "string"
+          },
+          "monotonicMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "observedAtMillis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "nodeId",
+          "sequence"
+        ],
+        "type": "object"
+      },
+      "IssueCredentialRequest": {
+        "properties": {
+          "organizationId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "type": "object"
+      },
+      "IssuerView": {
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "credentialTtlSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "jwk": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "keyId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "MemberView": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "membershipId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MembershipView": {
+        "properties": {
+          "membershipId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "organizationSlug": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "NodeOwnerView": {
+        "properties": {
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "organizationSlug": {
+            "type": "string"
+          },
+          "publicContact": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "NodeView": {
+        "properties": {
+          "claimedAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "firmwareVersion": {
+            "type": "string"
+          },
+          "lastContactAt": {
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "protocolVersion": {
+            "type": "string"
+          },
+          "publicKeyX": {
+            "type": "string"
+          },
+          "publicKeyY": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "statusNote": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrganizationView": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publicContact": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RawObservationView": {
+        "properties": {
+          "bootCounter": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "chipId": {
+            "type": "string"
+          },
+          "clockStatus": {
+            "type": "string"
+          },
+          "deploymentId": {
+            "type": "string"
+          },
+          "feedingSiteId": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "incarnation": {
+            "type": "string"
+          },
+          "monotonicMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "observedAtMillis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RegisterDeviceRequest": {
+        "properties": {
+          "label": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          },
+          "publicKeyX": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "publicKeyY": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publicKeyX",
+          "publicKeyY"
+        ],
+        "type": "object"
+      },
+      "SessionView": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipView"
+            },
+            "type": "array"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateCatRequest": {
+        "properties": {
+          "chipId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "notes": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "status": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateFeedingSiteRequest": {
+        "properties": {
+          "clearLocation": {
+            "type": "boolean"
+          },
+          "description": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "locationLabel": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "locationLat": {
+            "format": "double",
+            "type": "number"
+          },
+          "locationLng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateMemberRequest": {
+        "properties": {
+          "role": {
+            "enum": [
+              "ADMIN",
+              "MEMBER"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateNodeRequest": {
+        "properties": {
+          "firmwareVersion": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "protocolVersion": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "statusNote": {
+            "maxLength": 500,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "VersionResponse": {
+        "properties": {
+          "apiVersion": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiVersion",
+          "version"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "MiezMerker HTTP API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/csrf": {
+      "get": {
+        "operationId": "getCsrf",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Expose the CSRF token for SPA login flows",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Email/password login, establishes a server-side session",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Invalidate the current server-side session",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "getSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Current session with user and memberships",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/credentials/issuer": {
+      "get": {
+        "operationId": "getCredentialIssuer",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuerView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Backend trust anchor for offline node verification (public key only)",
+        "tags": [
+          "issuer-controller"
+        ]
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "listDevices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List my AppDevices",
+        "tags": [
+          "device-controller"
+        ]
+      },
+      "post": {
+        "operationId": "registerDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Register the current user's AppDevice public key (P-256)",
+        "tags": [
+          "device-controller"
+        ]
+      }
+    },
+    "/api/v1/devices/{deviceId}/credentials": {
+      "post": {
+        "operationId": "issueOfflineCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Issue a signed, time-limited, organization-bound offline credential for my AppDevice (blocked when membership/device is not ACTIVE)",
+        "tags": [
+          "device-controller"
+        ]
+      }
+    },
+    "/api/v1/devices/{deviceId}/revoke": {
+      "post": {
+        "operationId": "revokeDevice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Revoke my AppDevice; it receives no further credentials",
+        "tags": [
+          "device-controller"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Application liveness (database initialized at startup)",
+        "tags": [
+          "system-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes": {
+      "get": {
+        "operationId": "listNodes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NodeView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List nodes of an organization (requires ACTIVE membership)",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/claim": {
+      "post": {
+        "operationId": "claimNode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimNodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimReceiptView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + claim mode)",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/{nodeId}": {
+      "get": {
+        "operationId": "getNode",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Node details; only members of the owning organization (foreign orgs use the public /owner endpoint)",
+        "tags": [
+          "node-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "updateNode",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN updates node metadata (firmware/protocol version, status note)",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/{nodeId}/owner": {
+      "get": {
+        "operationId": "getNodeOwner",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeOwnerView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Public owner hint for a claimed node; no observations/chip data",
+        "tags": [
+          "node-controller"
+        ]
+      }
+    },
+    "/api/v1/observations": {
+      "get": {
+        "operationId": "listObservations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nodeId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "feedingSiteId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chipId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fromMillis",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "toMillis",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RawObservationView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List raw observations with organization, node, site, chip and time filters",
+        "tags": [
+          "observation-controller"
+        ]
+      }
+    },
+    "/api/v1/observations/ingest": {
+      "post": {
+        "operationId": "ingestObservations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestBatchResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Idempotent batch ingest of raw observations (ACTIVE membership; per-item results)",
+        "tags": [
+          "observation-controller"
+        ]
+      }
+    },
+    "/api/v1/observations/{observationId}": {
+      "get": {
+        "operationId": "getObservation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "observationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawObservationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Raw observation details; never readable across organizations",
+        "tags": [
+          "observation-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations": {
+      "get": {
+        "operationId": "listMyOrganizations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizationView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Active organizations of the authenticated user's ACTIVE memberships",
+        "tags": [
+          "organization-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createOrganization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Create an organization; caller becomes ACTIVE ADMIN (test-phase provisioning)",
+        "tags": [
+          "organization-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}": {
+      "get": {
+        "operationId": "getOrganization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Organization details; requires ACTIVE membership (tenant isolation)",
+        "tags": [
+          "organization-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/cats": {
+      "get": {
+        "operationId": "listCats",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List cats of an organization (requires ACTIVE membership)",
+        "tags": [
+          "cat-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createCat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN creates a cat in their own organization",
+        "tags": [
+          "cat-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/cats/{catId}": {
+      "delete": {
+        "operationId": "deleteCat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "catId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN deletes a cat of their own organization",
+        "tags": [
+          "cat-controller"
+        ]
+      },
+      "get": {
+        "operationId": "getCat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "catId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Cat details; never readable across organizations",
+        "tags": [
+          "cat-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "updateCat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "catId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN updates a cat of their own organization",
+        "tags": [
+          "cat-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/deployments": {
+      "get": {
+        "operationId": "listDeployments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nodeId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeploymentView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List deployments of an organization, optionally filtered by node",
+        "tags": [
+          "deployment-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN assigns a node to a feeding site for a validity range",
+        "tags": [
+          "deployment-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/deployments/{deploymentId}": {
+      "delete": {
+        "operationId": "deleteDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "deploymentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN deletes a deployment (stored observation attributions are kept)",
+        "tags": [
+          "deployment-controller"
+        ]
+      },
+      "get": {
+        "operationId": "getDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "deploymentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Deployment details; never readable across organizations",
+        "tags": [
+          "deployment-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "closeDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "deploymentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN closes or reopens a deployment by setting validUntil",
+        "tags": [
+          "deployment-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/feeding-sites": {
+      "get": {
+        "operationId": "listFeedingSites",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeedingSiteView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List feeding sites of an organization (requires ACTIVE membership)",
+        "tags": [
+          "feeding-site-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createFeedingSite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFeedingSiteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedingSiteView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN creates a feeding site in their own organization",
+        "tags": [
+          "feeding-site-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/feeding-sites/{siteId}": {
+      "delete": {
+        "operationId": "deleteFeedingSite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "siteId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN deletes a feeding site (blocked while deployments reference it)",
+        "tags": [
+          "feeding-site-controller"
+        ]
+      },
+      "get": {
+        "operationId": "getFeedingSite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "siteId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedingSiteView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Feeding site details; never readable across organizations",
+        "tags": [
+          "feeding-site-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "updateFeedingSite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "siteId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFeedingSiteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedingSiteView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN updates a feeding site of their own organization",
+        "tags": [
+          "feeding-site-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/members": {
+      "get": {
+        "operationId": "listMembers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN lists members of their own organization",
+        "tags": [
+          "member-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN creates a user and/or ACTIVE membership (test-phase bootstrap, no mail)",
+        "tags": [
+          "member-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/members/{membershipId}": {
+      "patch": {
+        "operationId": "updateMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "membershipId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN changes role or activates/disables a membership",
+        "tags": [
+          "member-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/nodes/{nodeId}/observations": {
+      "get": {
+        "operationId": "listNodeObservations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RawObservationView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List one node's observations within an explicit organization context",
+        "tags": [
+          "observation-controller"
+        ]
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Build and HTTP API version",
+        "tags": [
+          "system-controller"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}

@@ -33,7 +33,8 @@ a client-supplied `organization_id` is never trusted.
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
 
-- Unique per organization (enforced by application code; DB has no unique name constraint)
+- Names are not unique: several sites of one organization may share a name; there is
+  no DB unique constraint on `(organization_id, name)`
 - CRUD: read=ACTIVE, write=ADMIN
 - Location coordinates validated to ±90/±180; must be set together or both null
 
@@ -106,7 +107,7 @@ Immutable primary data ingested from a Node. Never rewritten.
 | sequence | BIGINT | NOT NULL, ≥1, per-node monotonically increasing |
 | chip_id | VARCHAR(64) | NOT NULL, normalized (trim + uppercase) |
 | observed_at_ms | BIGINT | NULL exactly when `clock_status = UNKNOWN` |
-| clock_status | VARCHAR(16) | SYNCED / RTC_ONLY / UNKNOWN (KNOWN accepted as wire alias) |
+| clock_status | VARCHAR(16) | SYNCED / RTC_ONLY / UNKNOWN / KNOWN (KNOWN is a stored wire alias, see below) |
 | incarnation | VARCHAR(36) | Device reset epoch (UUID string) |
 | monotonic_ms | BIGINT | Device monotonic clock at read time |
 | boot_counter | INTEGER | Boot epoch |
@@ -161,9 +162,13 @@ Immutable primary data ingested from a Node. Never rewritten.
    `chip_id` as a non-empty string; normalization happens on the backend to
    ensure consistency with the Cat table.
 
-5. **Clock status alias**: The wire protocol v1 uses `known`/`unknown`.
-   Backend accepts `KNOWN` as an alias for `SYNCED`/`RTC_ONLY` on ingest,
-   stores the canonical three-state value, and returns canonical values.
+5. **Clock status alias**: The BLE protocol view (`protocol_view`) collapses
+   `SYNCED`/`RTC_ONLY` to lowercase `known` and maps `UNKNOWN` to `unknown`.
+   Backend accepts `KNOWN` (any case) on ingest and stores it verbatim as a
+   fourth `clock_status` value. Like `SYNCED`/`RTC_ONLY`, `KNOWN` requires
+   `observed_at_ms` and participates in deployment attribution; only `UNKNOWN`
+   rows stay unattributed. The value is returned as stored (`KNOWN`), never
+   silently rewritten to `SYNCED`.
 
 ## API summary (OpenAPI v1)
 
@@ -183,6 +188,22 @@ Immutable primary data ingested from a Node. Never rewritten.
 | `/api/v1/nodes/claim` | POST | ADMIN | #18 |
 | `/api/v1/nodes/{nodeId}` | GET, PATCH | ACTIVE / ADMIN | |
 | `/api/v1/nodes/{nodeId}/owner` | GET | public | Claimed nodes only |
+
+## API versioning and error format
+
+- Versioning: all endpoints live under `/api/v1`; the OpenAPI document reports
+  `version: v1`. Breaking changes require a version/migration decision (see
+  `docs/architecture.md`).
+- HTTP errors use Spring Boot RFC 7807 problem details
+  (`application/problem+json`): `status`, `title`, `detail`, `instance`.
+  Authentication failures return `401`, missing/inactive membership `403`,
+  unknown ids `404` (foreign-tenant ids also return `403`/`404` and never
+  data), validation failures `400`, deployment overlap / duplicate chip
+  `409`, oversized batch `413`.
+- Batch ingest (`POST /api/v1/observations/ingest`) always returns `200` with
+  per-item results (`CREATED`, `DUPLICATE_IDENTICAL`, `CONFLICT`,
+  `UNKNOWN_NODE`, `INVALID`, `FORBIDDEN`); only malformed batches
+  (missing org, null entries, >5000 items) fail the whole request.
 
 ## Test coverage
 

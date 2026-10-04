@@ -245,7 +245,7 @@ public class NodeController {
             summary = "ADMIN updates node metadata (firmware/protocol version, status note)")
     @Transactional
     public NodeView update(@PathVariable UUID nodeId,
-            @RequestBody UpdateNodeRequest request,
+            @Valid @RequestBody UpdateNodeRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);

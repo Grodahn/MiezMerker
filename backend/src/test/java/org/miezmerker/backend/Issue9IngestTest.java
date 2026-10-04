@@ -796,4 +796,60 @@ class Issue9IngestTest {
         assertEquals(2, byNode.size());
         assertEquals(2, byNode.get(0).get("sequence").asInt());
     }
+
+    @Test
+    void nullEntryAndMissingOrganizationAreRejected() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        claimNode(s.orgA().getId());
+        // A null array entry is a client bug: fail the batch instead of
+        // silently dropping the entry.
+        List<Map<String, Object>> withNull = new ArrayList<>();
+        withNull.add(null);
+        Map<String, Object> nullBody = new LinkedHashMap<>();
+        nullBody.put("organizationId", s.orgA().getId().toString());
+        nullBody.put("observations", withNull);
+        assertEquals(400,
+                post("/api/v1/observations/ingest", mapper.writeValueAsString(nullBody))
+                        .statusCode());
+        // Missing organizationId is rejected; the server never guesses a tenant.
+        assertEquals(400, post("/api/v1/observations/ingest", "{\"observations\":[]}")
+                .statusCode());
+        assertEquals(0, observations.count());
+    }
+
+    @Test
+    void nodeFilterNamingForeignNodeIsForbidden() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        NodeKeys nodeA = claimNode(s.orgA().getId());
+        long at = Instant.now().toEpochMilli();
+        ingest(s.orgA().getId(), List.of(item(nodeA.nodeId(), 1, "chip-1", at, "SYNCED")));
+
+        // An own-node filter keeps working.
+        assertEquals(200, get("/api/v1/observations?organizationId=" + s.orgA().getId()
+                + "&nodeId=" + nodeA.nodeId()).statusCode());
+
+        login("a9-admin-b@example.org", "supersecret-password-b");
+        // A node of another organization as filter is explicitly forbidden,
+        // not answered with a misleading empty list.
+        assertEquals(403, get("/api/v1/observations?organizationId=" + s.orgB().getId()
+                + "&nodeId=" + nodeA.nodeId()).statusCode());
+        assertEquals(403, get("/api/v1/organizations/" + s.orgB().getId() + "/nodes/"
+                + nodeA.nodeId() + "/observations").statusCode());
+    }
+
+    @Test
+    void overlongMetadataUpdatesAreRejected() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = claimNode(s.orgA().getId());
+        UUID site = createSite(s.orgA().getId(), "Site");
+        // Bean validation applies to updates as well (400, not a 500 from the DB).
+        assertEquals(400, patch("/api/v1/nodes/" + n.nodeId(),
+                "{\"statusNote\":\"" + "x".repeat(501) + "\"}").statusCode());
+        assertEquals(400,
+                patch("/api/v1/organizations/" + s.orgA().getId() + "/feeding-sites/"
+                        + site, "{\"name\":\"" + "x".repeat(256) + "\"}").statusCode());
+    }
 }

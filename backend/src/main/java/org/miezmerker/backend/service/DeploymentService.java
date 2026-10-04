@@ -103,7 +103,8 @@ public class DeploymentService {
                         "node not found"));
         if (validUntil != null) {
             validUntil = validUntil.truncatedTo(ChronoUnit.MILLIS);
-        }        if (validUntil != null && !validUntil.isAfter(deployment.getValidFrom())) {
+        }
+        if (validUntil != null && !validUntil.isAfter(deployment.getValidFrom())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "validUntil must be after validFrom");
         }
@@ -128,7 +129,11 @@ public class DeploymentService {
         NodeDeployment deployment = deployments.findByIdAndOrganizationId(deploymentId,
                 organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        nodes.findByIdLocked(deployment.getNode().getNodeId());
+        // Serialize against a concurrent move of the same node; the node must
+        // still exist because the deployment references it.
+        nodes.findByIdLocked(deployment.getNode().getNodeId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "node not found"));
         deployments.delete(deployment);
     }
 
