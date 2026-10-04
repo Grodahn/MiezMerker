@@ -93,6 +93,14 @@ export class CollectorObservationStore implements DurableObservationStore {
               throw new ObservationStoreError(
                 `Conflicting observation identity: ${key.join('/')}`, 'conflict');
             }
+            if (organizationId && existing.organizationId && existing.organizationId !== organizationId) {
+              throw new ObservationStoreError('Observation belongs to another organization.', 'conflict');
+            }
+            // Bind legacy/unassigned rows only when they are retransmitted in
+            // an authenticated sync for this organization, never on upload.
+            if (organizationId && !existing.organizationId) {
+              await this.db.observations.update(key, { organizationId });
+            }
             continue;
           }
           await this.db.observations.add(toStored(r, organizationId ?? null));
@@ -118,9 +126,7 @@ export class CollectorObservationStore implements DurableObservationStore {
 
   async pendingUploads(organizationId: string, limit = Number.MAX_SAFE_INTEGER): Promise<StoredObservation[]> {
     const all = await this.db.observations.where('uploadState').anyOf('pending', 'failed', 'uploading').toArray();
-    // Organization queues stay partitioned even if older rows lack the field
-    // (they default to the requesting org only when explicitly unset is wrong;
-    // rows with a different org never leak into this queue).
+    // Unassigned rows require an authenticated retransmission before upload.
     return all.filter(r => r.organizationId === organizationId).slice(0, limit);
   }
 

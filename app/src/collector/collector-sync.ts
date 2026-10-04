@@ -183,7 +183,8 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       return view;
     }
 
-    const stats = await observations.uploadStats(engineResult.nodeId);
+    const stats = await observations.uploadStats(engineResult.nodeId)
+      .catch(() => ({ pending: engineResult.received, failed: 0, uploaded: 0, total: engineResult.received }));
     try {
       await observations.saveNodeMeta({
         nodeId: engineResult.nodeId,
@@ -209,7 +210,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       owner: engineResult.owner,
       recordsReceived: engineResult.received,
       watermark: engineResult.watermark,
-      pendingUploads: stats.pending,
+      pendingUploads: stats.pending + stats.failed,
       uploadedCount: stats.uploaded,
       fertig: true,
       nodeMessage: `Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).`,

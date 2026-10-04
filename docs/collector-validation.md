@@ -112,3 +112,14 @@ that acceptance criterion complete until the board applies the receipt and the
 collector verifies CLAIMED. Physical Android/Chrome validation (including the new
 Auth fragment handling in the actual board shim) also remains required. Host
 router tests and browser mocks cannot prove either integration.
+
+### Review validation (2026-10-04)
+
+- PWA: 131 Vitest tests passed; TypeScript/Vite production build passed.
+- Generated API client: `api:check` passed without drift.
+- Playwright: both browser integration tests passed against the local backend,
+  including offline shell/outbox reload and restoration of cached account context.
+- Firmware/simulator: all 54 CTest tests passed on the merged branch, including
+  fragmented Auth handling and main's claim power-loss, node-isolation and expiry
+  regressions. Simulator conflicts with main were resolved using its reviewed code.
+- Physical Android/BLE validation and board claim transport remain pending as above.

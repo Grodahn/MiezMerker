@@ -34,6 +34,22 @@ afterEach(async () => {
 });
 
 describe('CollectorObservationStore durable local storage', () => {
+  test('unassigned legacy rows are bound only by an authenticated retransmission', async () => {
+    const { store } = freshDb();
+    await store.putObservations([rec(1)]);
+    expect(await store.pendingUploads('org-a')).toEqual([]);
+    await store.putObservations([rec(1)], 'org-a');
+    expect(await store.pendingUploads('org-a')).toHaveLength(1);
+    await expect(store.putObservations([rec(1)], 'org-b')).rejects.toThrow('another organization');
+    expect(await store.pendingUploads('org-b')).toEqual([]);
+  });
+
+  test('unavailable outbox storage propagates an error instead of empty success', async () => {
+    const { db, store } = freshDb();
+    await store.open();
+    db.close();
+    await expect(store.pendingUploads('org-a')).rejects.toThrow();
+  });
   test('idempotent insert: repeated delivery creates no duplicates', async () => {
     const { db, store } = freshDb();
     await store.open();
