@@ -97,10 +97,21 @@ is application-layer via #17. Unauthorized reads of authorized chars return
   `max_records` is clamped to `min(client max, server max 16, mtu_fit)`.
   Larger logs use `more=1` + `next_cursor` pagination; the client repeats
   `BatchRequest{next_cursor}` until `more=0`.
-- `AuthRequest` (JWT ~700–900 B + 64 B proof) uses GATT long write (queued
-  writes) or L2CAP CoC where available; the codec imposes `cred_len ≤ 2048`.
-  Host tests exercise the full frame; fragmentation is a transport concern
-  and never changes codec bytes.
+- Web Bluetooth caps each attribute write at 512 bytes and does not expose
+  L2CAP CoC. `AuthRequest` uses an Auth-characteristic transport envelope:
+  `0x4d 0x4d | envelope_ver u8 (=1) | start u8 (0/1) | total u16 LE |
+  offset u16 LE | original_frame_bytes[1..12]`. Each write fits even MTU 23.
+  Total is 70..2118 bytes (credential <=2048 plus frame/proof overhead).
+  Start=1 resets any incomplete assembly and requires offset=0. Later offsets
+  must be contiguous with identical total; malformed input clears assembly.
+  Disconnect also clears assembly. Only a complete AuthRequest is dispatched
+  to authorization; original codec bytes and challenge/proof semantics remain
+  unchanged. Small/direct frames remain accepted by host transports.
+  Board shims route Auth writes through `GattRouter::handle_frame`, accept an
+  empty response as an incomplete fragment, and retain the final AuthResponse
+  for the next Auth read. Reject envelope writes on other characteristics.
+  The PWA uses read responses and requests one record per BatchRequest, so it
+  does not depend on notification timing or unimplemented MTU page clamping.
 - Timeouts: GATT op 10 s, full sync bounded only by pending count; very large
   backlogs stream in pages (tested with 5000 records in simulator/PWA).
 

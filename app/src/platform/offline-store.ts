@@ -66,6 +66,8 @@ export interface SyncSessionState {
 }
 
 export interface NodeMeta {
+  // Backend reservation awaiting delivery to the node's provisioning interface.
+  claimReceipt?: string;
   nodeId: string;
   incarnation: string | null;
   claimState: number | null;

@@ -16,6 +16,8 @@ GattRouter::GattRouter(ble::SyncServer& server, OwnerMetadata& owner)
     : server_(&server), owner_(&owner) {}
 
 void GattRouter::disconnect() {
+    auth_fragments_.clear();
+    auth_total_ = 0;
     server_->disconnect();
 }
 
@@ -26,6 +28,35 @@ std::vector<std::uint8_t> GattRouter::advertisement_bytes() const {
 
 std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_t>& request,
                                                    ble::TrustedEpochSeconds now_s) {
+    // Auth-only transport envelope. Empty response means a partial write was
+    // accepted; the board retains the final AuthResponse for the following read.
+    if (!request.empty() && request[0] == 0x4d) {
+        auto reject = [&]() {
+            auth_fragments_.clear();
+            auth_total_ = 0;
+            return error_frame(SyncError::InvalidFrame, "bad auth fragment");
+        };
+        if (request.size() < 9 || request.size() > 20 || request[1] != 0x4d ||
+            request[2] != 1 || request[3] > 1) return reject();
+        const std::size_t total = request[4] | (static_cast<std::size_t>(request[5]) << 8);
+        const std::size_t offset = request[6] | (static_cast<std::size_t>(request[7]) << 8);
+        if (total < 70 || total > 2118) return reject();
+        if (request[3] == 1) {
+            auth_fragments_.clear();
+            auth_total_ = total;
+            if (offset != 0) return reject();
+        }
+        if (auth_total_ != total || offset != auth_fragments_.size() ||
+            offset + request.size() - 8 > total) return reject();
+        auth_fragments_.insert(auth_fragments_.end(), request.begin() + 8, request.end());
+        if (auth_fragments_.size() != total) return {};
+        auto assembled = std::move(auth_fragments_);
+        auth_fragments_.clear();
+        auth_total_ = 0;
+        auto decoded = decode_frame(assembled);
+        if (!decoded || decoded->opcode != Opcode::AuthRequest) return reject();
+        return handle_frame(assembled, now_s);
+    }
     auto frame = decode_frame(request);
     if (!frame) return error_frame(SyncError::InvalidFrame, "malformed frame");
     if (frame->version != kProtocolVersion) {

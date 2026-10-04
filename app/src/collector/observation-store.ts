@@ -116,13 +116,12 @@ export class CollectorObservationStore implements DurableObservationStore {
     return (await this.sequences(nodeId, incarnation)).length;
   }
 
-  async pendingUploads(organizationId: string, limit = 500): Promise<StoredObservation[]> {
-    const all = await this.db.observations.where('uploadState').equals('pending').toArray()
-      .catch(() => [] as StoredObservation[]);
+  async pendingUploads(organizationId: string, limit = Number.MAX_SAFE_INTEGER): Promise<StoredObservation[]> {
+    const all = await this.db.observations.where('uploadState').anyOf('pending', 'failed', 'uploading').toArray();
     // Organization queues stay partitioned even if older rows lack the field
     // (they default to the requesting org only when explicitly unset is wrong;
     // rows with a different org never leak into this queue).
-    return all.filter(r => (r.organizationId ?? organizationId) === organizationId).slice(0, limit);
+    return all.filter(r => r.organizationId === organizationId).slice(0, limit);
   }
 
   async markPending(sequences: Array<{ nodeId: string; incarnation: string; sequence: string }>): Promise<void> {

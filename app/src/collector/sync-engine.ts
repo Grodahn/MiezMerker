@@ -266,6 +266,9 @@ export class SyncEngine {
       if (hello.claimState !== 1) {
         throw new SyncFailedError('unclaimed', 'Node ist UNCLAIMED. Nur ADMIN kann ihn im physischen Claim-Modus claimen.', null);
       }
+      if (hello.nodeId.toLowerCase() !== this.identity.nodeId.toLowerCase()) {
+        throw new SyncFailedError('unauthorized', 'Node identity changed after discovery.', null);
+      }
       if (hello.serverVer !== PROTOCOL_VERSION || (hello.caps & CAP_ALL_V1) !== CAP_ALL_V1) {
         throw new SyncFailedError('incompatible',
           `Inkompatible Protokoll-Version (Node: v${hello.serverVer}, caps 0x${hello.caps.toString(16)}).`, null);
@@ -286,6 +289,9 @@ export class SyncEngine {
       this.owner = decodeOwnerResponse(ownerFrame.payload);
       if (!this.owner || this.owner.nodeId !== hello.nodeId || this.owner.claimState !== 1) {
         throw new SyncFailedError('protocol', 'bad owner identity', this.owner);
+      }
+      if (organizationId && this.owner.organizationId.toLowerCase() !== organizationId.toLowerCase()) {
+        throw new SyncFailedError('foreign', 'Node gehört einer anderen Organisation.', this.owner);
       }
 
       // Challenge + auth.
@@ -442,7 +448,9 @@ export class SyncEngine {
         }
       }
       this.session.watermark = watermark.toString();
-      await this.store.saveSession?.(this.session);
+      // Once observations and ACK are durable, optional progress metadata must
+      // not turn the completed copy into a failed field visit.
+      try { await this.store.saveSession?.(this.session); } catch { /* best effort */ }
 
       // Compact (explicit, after ACK).
       this.phase = 'compacting';
@@ -457,7 +465,7 @@ export class SyncEngine {
       if (!compact || compact.error !== SyncError.Ok || compact.ackWatermark !== watermark) {
         throw new Error('compaction failed');
       }
-      if (stored.some(sequence => sequence > watermark)) {
+      if (watermark < this.status.nextSequence - 1n || stored.some(sequence => sequence > watermark)) {
         throw new SyncFailedError('incomplete',
           'sequence gap remains: Sequenzlücke blockiert ACK (spätere Records bleiben unquittiert auf dem Node).', this.owner);
       }

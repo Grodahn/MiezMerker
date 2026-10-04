@@ -8,6 +8,7 @@
 
 import { api } from '../api/client';
 import { fetchCsrfToken, getAuthState } from '../platform/auth';
+import { CollectorDatabase } from '../platform/offline-store';
 
 export type ClaimFailureKind =
   | 'forbidden-role'
@@ -105,6 +106,25 @@ export async function claimNode(
     }
     throw new ClaimError('backend', 'Claiming fehlgeschlagen. Unverändert erneut versuchen (idempotent).');
   }
+  if (!data.receipt || data.nodeId !== input.nodeId || data.organizationId !== organizationId) {
+    throw new ClaimError('backend', 'Ungültige Claim-Antwort. Backend-Provisionierung unverändert erneut versuchen.');
+  }
+  const db = new CollectorDatabase();
+  try {
+    const previous = await db.nodeMeta.get(input.nodeId);
+    await db.nodeMeta.put({
+      nodeId: input.nodeId, incarnation: previous?.incarnation ?? null,
+      // Backend issuance does not prove the node applied the receipt.
+      claimState: previous?.claimState ?? 0, organizationId,
+      organizationSlug: previous?.organizationSlug ?? null, organizationName: previous?.organizationName ?? null,
+      publicContact: previous?.publicContact ?? null, firmwareVersion: input.firmwareVersion ?? null,
+      lastWatermark: previous?.lastWatermark ?? null, lastSyncAt: previous?.lastSyncAt ?? null,
+      pendingCount: previous?.pendingCount ?? null,
+      publicKeyX: input.publicKeyX, publicKeyY: input.publicKeyY, claimReceipt: data.receipt,
+    });
+  } catch {
+    throw new ClaimError('backend', 'Receipt konnte nicht lokal gespeichert werden. Provisionierung unverändert erneut versuchen.');
+  } finally { db.close(); }
   return {
     nodeId: data.nodeId ?? input.nodeId,
     organizationId: data.organizationId ?? organizationId,

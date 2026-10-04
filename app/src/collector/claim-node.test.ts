@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const post = vi.hoisted(() => vi.fn());
@@ -5,6 +6,7 @@ vi.mock('../api/client', () => ({ api: { POST: post } }));
 vi.mock('../platform/auth', () => ({ getAuthState: vi.fn() }));
 import { getAuthState } from '../platform/auth';
 import { assertAdminMayClaim, claimNode, ClaimError } from './claim-node';
+import { CollectorDatabase } from '../platform/offline-store';
 
 const mockedAuth = vi.mocked(getAuthState);
 
@@ -44,7 +46,7 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
 
   test('ADMIN can claim UNCLAIMED node; retry is safe', async () => {
     authAs('ADMIN');
-    post.mockResolvedValue({ data: { nodeId: 'n', organizationId: 'org-a', receipt: 'jwt' }, response: { status: 200 } });
+    post.mockResolvedValue({ data: { nodeId: '44444444-4444-4444-8444-444444444444', organizationId: 'org-a', receipt: 'jwt' }, response: { status: 200 } });
     const outcome = await claimNode('org-a', {
       nodeId: '44444444-4444-4444-8444-444444444444',
       publicKeyX: 'x'.repeat(43), publicKeyY: 'y'.repeat(43),
@@ -52,6 +54,11 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
     }, { claimModeConfirmed: true });
     expect(outcome.receipt).toBe('jwt');
     expect(post.mock.calls[0][1].body.organizationId).toBe('org-a');
+    const db = new CollectorDatabase();
+    const saved = await db.nodeMeta.get(outcome.nodeId);
+    expect(saved?.claimReceipt).toBe('jwt');
+    expect(saved?.claimState).toBe(0);
+    db.close();
   });
 
   test('node of another organization conflicts without takeover', async () => {

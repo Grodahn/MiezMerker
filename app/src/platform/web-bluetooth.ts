@@ -156,7 +156,6 @@ const GATT_OP_TIMEOUT_MS = 10_000;
 // The SyncEngine talks write(frame)+read(); this routes to GATT operations.
 export class FrameChannel {
   private pendingOpcode: Opcode | null = null;
-  private pendingPayload: Uint8Array = new Uint8Array();
 
   constructor(private readonly gatt: GattOperations) {}
 
@@ -164,12 +163,12 @@ export class FrameChannel {
     const decoded = decodeFrame(frame);
     if (!decoded) throw new BluetoothTransportError('protocol', 'Ungültiger Protokoll-Frame.');
     this.pendingOpcode = decoded.opcode;
-    this.pendingPayload = frame;
     if (isReadOnlyRequest(decoded.opcode)) return;
     const characteristic = characteristicForRequest(decoded.opcode);
     try {
       await this.gatt.write(characteristic, frame);
     } catch (error) {
+      if (error instanceof BluetoothTransportError) throw error;
       throw new BluetoothTransportError('disconnected', 'BLE-Verbindung abgebrochen (Schreiben fehlgeschlagen).', error);
     }
   }
@@ -182,14 +181,8 @@ export class FrameChannel {
     this.pendingOpcode = null;
     const characteristic = characteristicForRequest(opcode);
     try {
-      if (opcode === Opcode.BatchRequest) {
-        // Batch pages may arrive as notification; fall back to read.
-        try {
-          return await this.gatt.notify(characteristic, GATT_OP_TIMEOUT_MS);
-        } catch {
-          return await this.gatt.read(characteristic);
-        }
-      }
+      // The v1 Batch characteristic supports reads. Reading the response after
+      // the write avoids losing a notification delivered before read() begins.
       if (isReadOnlyRequest(opcode)) return await this.gatt.read(characteristic);
       return await this.gatt.read(characteristic);
     } catch (error) {
@@ -234,12 +227,12 @@ export class WebBluetoothTransport implements NodeTransport {
       }
       this.device.addEventListener?.('gattserverdisconnected', this.handleDisconnect);
       this.disconnectHandler = this.handleDisconnect;
-      this.server = await this.device.gatt.connect();
-      const service = await this.server.getPrimaryService(BLE_SERVICE_UUID);
+      this.server = await withTimeout(this.device.gatt.connect(), GATT_OP_TIMEOUT_MS, 'Verbinden zeitüberschritten.');
+      const service: AnyBluetooth = await withTimeout(this.server.getPrimaryService(BLE_SERVICE_UUID), GATT_OP_TIMEOUT_MS, 'Service-Suche zeitüberschritten.');
       this.characteristics.clear();
       for (const uuid of Object.values(BLE_CHAR_UUIDS)) {
         try {
-          this.characteristics.set(uuid, await service.getCharacteristic(uuid));
+          this.characteristics.set(uuid, await withTimeout(service.getCharacteristic(uuid), GATT_OP_TIMEOUT_MS, 'Characteristic-Suche zeitüberschritten.'));
         } catch {
           // Discovery must expose every v1 characteristic; fail fast below.
         }
@@ -249,12 +242,6 @@ export class WebBluetoothTransport implements NodeTransport {
         throw new BluetoothTransportError('protocol',
           `Node meldet inkompatible Protokoll-Version (fehlende Characteristics: ${missing.length}).`);
       }
-      // Batch notifications where supported; correctness does not depend on them.
-      try {
-        await this.characteristics.get(BLE_CHAR_UUIDS.batch)?.startNotifications?.();
-      } catch {
-        // Read fallback in FrameChannel covers this.
-      }
       const ops: GattOperations = {
         read: async (uuid) => this.readValue(uuid),
         write: async (uuid, value) => this.writeValue(uuid, value),
@@ -263,6 +250,7 @@ export class WebBluetoothTransport implements NodeTransport {
       this.channel = new FrameChannel(ops);
       this.connectedFlag = true;
     } catch (error) {
+      await this.disconnect();
       if (error instanceof BluetoothTransportError) throw error;
       throw new BluetoothTransportError('connection-failed',
         'BLE-Verbindung fehlgeschlagen. Näher herangehen und erneut versuchen.', error);
@@ -282,6 +270,7 @@ export class WebBluetoothTransport implements NodeTransport {
       // Disconnect is best-effort.
     }
     this.server = null;
+    this.disconnectHandler = null;
     this.characteristics.clear();
     this.channel = null;
   }
@@ -322,10 +311,12 @@ export class WebBluetoothTransport implements NodeTransport {
   private async writeValue(uuid: string, frame: Uint8Array): Promise<void> {
     const char = this.characteristics.get(uuid);
     if (!char) throw new BluetoothTransportError('protocol', 'Protokollfehler: Characteristic nicht gefunden.');
-    // AuthRequest (JWT ~700-900 B + proof) relies on GATT long write where
-    // available; the codec caps credentials at 2048 B and fragmentation never
-    // changes codec bytes (see messages.md MTU/chunking).
-    await withTimeout(char.writeValueWithResponse(new Uint8Array(frame)), GATT_OP_TIMEOUT_MS, 'Schreiben zeitüberschritten.');
+    // Web Bluetooth rejects attribute values above 512 bytes. Auth uses the
+    // v1 transport envelope documented in messages.md, never a truncated JWT.
+    const chunks = uuid === BLE_CHAR_UUIDS.auth ? authWriteChunks(frame) : [frame];
+    for (const chunk of chunks) {
+      await withTimeout(char.writeValueWithResponse(new Uint8Array(chunk)), GATT_OP_TIMEOUT_MS, 'Schreiben zeitüberschritten.');
+    }
   }
 
   private async waitNotify(uuid: string, timeoutMs: number): Promise<Uint8Array> {
@@ -349,6 +340,23 @@ export class WebBluetoothTransport implements NodeTransport {
       char.addEventListener?.('characteristicvaluechanged', onValue);
     });
   }
+}
+
+export function authWriteChunks(frame: Uint8Array): Uint8Array[] {
+  if (frame.length <= 20) return [frame];
+  if (frame.length > 2118) throw new BluetoothTransportError('protocol', 'Auth-Frame zu groß.');
+  const chunks: Uint8Array[] = [];
+  for (let offset = 0; offset < frame.length; offset += 12) {
+    const part = frame.slice(offset, offset + 12);
+    const chunk = new Uint8Array(8 + part.length);
+    chunk.set([0x4d, 0x4d, 1, offset === 0 ? 1 : 0]);
+    const view = new DataView(chunk.buffer);
+    view.setUint16(4, frame.length, true);
+    view.setUint16(6, offset, true);
+    chunk.set(part, 8);
+    chunks.push(chunk);
+  }
+  return chunks;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

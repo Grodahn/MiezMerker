@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const post = vi.hoisted(() => vi.fn());
 vi.mock('../api/client', () => ({ api: { POST: post } }));
+vi.mock('../platform/auth', () => ({ fetchCsrfToken: async () => 'fresh-csrf' }));
 
 import { CollectorDatabase } from '../platform/offline-store';
 import { CollectorObservationStore } from './observation-store';
@@ -40,6 +41,7 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
     expect(result.uploaded).toBe(1);
     expect(result.duplicates).toBe(1);
     const body = post.mock.calls[0][1].body;
+    expect(post.mock.calls[0][1].headers).toEqual({ 'X-XSRF-TOKEN': 'fresh-csrf' });
     expect(body.organizationId).toBe('org-a');
     expect(body.observations[0].sequence).toBe('1');
     expect(body.observations[0].clockStatus).toBe('SYNCED');
@@ -79,6 +81,38 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
     expect(post).not.toHaveBeenCalled();
     expect((await store.pendingUploads('org-a'))).toHaveLength(1);
   });
+
+  test('failed records are retried and never silently reported complete', async () => {
+    await store.putObservations([rec(1)], 'org-a');
+    post.mockResolvedValue({ data: { results: [{ status: 'CONFLICT' }] } });
+    const uploader = new BackendUploader(store);
+    expect((await uploader.upload('org-a')).state).toBe('failed');
+    expect((await uploader.upload('org-a')).state).toBe('failed');
+    post.mockResolvedValue({ data: { results: [{ status: 'CREATED' }] } });
+    expect((await uploader.upload('org-a')).state).toBe('complete');
+    expect((await store.uploadStats(NODE)).uploaded).toBe(1);
+  });
+
+  test('unassigned records cannot enter another organization queue', async () => {
+    await store.putObservations([rec(1)]);
+    expect(await store.pendingUploads('org-a')).toEqual([]);
+  });
+
+  test('outboxes exceeding 5000 records are fully drained', async () => {
+    const rows = Array.from({ length: 5001 }, (_, i) => ({ ...rec(i + 1),
+      sequence: String(i + 1), epochMs: String(1790899200000 + i + 1), monotonicMs: String(i + 1),
+      receivedAt: Date.now(), organizationId: 'org-a', uploadState: 'pending' as const,
+      uploadAttempts: 0, lastUploadError: null, uploadedAt: null }));
+    const repository = {
+      pendingUploads: async (_org: string, limit = rows.length) => rows.slice(0, limit),
+      markUploadResult: vi.fn(async () => {}),
+    } as unknown as CollectorObservationStore;
+    post.mockImplementation(async (_p: unknown, opts: { body: { observations: unknown[] } }) => ({
+      data: { results: opts.body.observations.map(() => ({ status: 'CREATED' })) },
+    }));
+    expect((await new BackendUploader(repository).upload('org-a')).uploaded).toBe(5001);
+    expect(repository.markUploadResult).toHaveBeenCalledTimes(5001);
+  }, 30000);
 
   test('batching splits large outboxes', async () => {
     const records = Array.from({ length: 5 }, (_, i) => rec(i + 1));

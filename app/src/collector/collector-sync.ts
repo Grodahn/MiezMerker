@@ -21,7 +21,7 @@ import { SyncEngine, SyncFailedError } from './sync-engine';
 import type { OwnerInfo } from './ble-codec';
 import { CollectorObservationStore } from './observation-store';
 import { CollectorDatabase, requestPersistentStorage } from '../platform/offline-store';
-import { BackendUploader, type BackendSyncState } from './backend-upload';
+import type { BackendSyncState } from './backend-upload';
 import { resolveCredential, CredentialError } from './authorization';
 import { PublicProbeTransport } from './public-probe';
 
@@ -215,22 +215,10 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       nodeMessage: `Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).`,
     });
 
-    // Separate retryable backend upload step.
-    const uploader = new BackendUploader(observations);
-    emit({ backendState: 'uploading', backendMessage: 'Backend-Upload läuft …' });
-    try {
-      const upload = await uploader.upload(organizationId);
-      const after = await observations.uploadStats(engineResult.nodeId);
-      emit({
-        backendState: upload.state,
-        backendMessage: upload.message,
-        pendingUploads: after.pending + after.failed,
-        uploadedCount: after.uploaded,
-      });
-    } catch (e) {
-      emit({ backendState: 'failed',
-        backendMessage: `Backend-Upload fehlgeschlagen (${e instanceof Error ? e.message : 'unbekannt'}). Vor-Ort-Sync bleibt gültig.` });
-    }
+    // Return as soon as the field copy completes. The UI independently drains
+    // the outbox on open/online/after a visit; HTTP cannot hold the BLE visit open.
+    emit({ backendState: navigator.onLine ? 'idle' : 'waiting-for-network',
+      backendMessage: 'Beobachtungen lokal gespeichert. Backend-Upload steht separat aus.' });
     return view;
   } finally {
     collectorDb.close();
@@ -293,8 +281,13 @@ export async function runEngineWithDiscovery(
     return { ok: false, message: 'unclaimed', owner: hello.owner, unclaimed: true, foreign: false,
       nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
   }
+  if (hello.owner && hello.owner.organizationId.toLowerCase() !== organizationId.toLowerCase()) {
+    return { ok: false, message: 'foreign', owner: hello.owner, unclaimed: false, foreign: true,
+      nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+  }
   let pinned: { nodeId: string; publicKeyX: string; publicKeyY: string };
   try {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('Offline');
     pinned = await loadTrustedNodeIdentity(hello.nodeId);
   } catch (e) {
     if (e instanceof NodeIdentityError && e.kind === 'forbidden') {
@@ -306,14 +299,29 @@ export async function runEngineWithDiscovery(
     // Offline / backend unreachable: fall back to the locally stored
     // backend-pinned key captured during a previous sync or claim (#18).
     const meta = await observations.nodeMeta(hello.nodeId);
-    if (meta?.publicKeyX && meta?.publicKeyY) {
+    if (meta?.organizationId === organizationId && meta?.publicKeyX && meta?.publicKeyY) {
       pinned = { nodeId: hello.nodeId, publicKeyX: meta.publicKeyX, publicKeyY: meta.publicKeyY };
     } else {
       return { ok: false, message: 'Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', owner: hello.owner,
         unclaimed: false, foreign: false, nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
     }
   }
-  const engine = new SyncEngine(transport, observations, deviceKeys, pinned, { maxBatchRecords: 16 });
+  // Cache the trusted key before receiving/ACKing records. Interrupted first
+  // visits can then resume offline without requiring a successful online sync.
+  const cachedMeta = await observations.nodeMeta(hello.nodeId);
+  await observations.saveNodeMeta({
+    ...cachedMeta,
+    nodeId: hello.nodeId, incarnation: hello.incarnation, claimState: 1, organizationId,
+    organizationSlug: hello.owner?.organizationSlug ?? null,
+    organizationName: hello.owner?.organizationName ?? null,
+    publicContact: hello.owner?.publicContact ?? null, firmwareVersion: null,
+    lastWatermark: cachedMeta?.lastWatermark ?? null, lastSyncAt: cachedMeta?.lastSyncAt ?? null,
+    pendingCount: cachedMeta?.pendingCount ?? null,
+    publicKeyX: pinned.publicKeyX, publicKeyY: pinned.publicKeyY,
+  });
+  // One maximum-size record fits a GATT attribute and the documented 185-byte
+  // transport. Do not assume the board clamps oversized requested pages.
+  const engine = new SyncEngine(transport, observations, deviceKeys, pinned, { maxBatchRecords: 1 });
   const timerHost: { setInterval: typeof setInterval; clearInterval: typeof clearInterval } =
     (typeof window !== 'undefined' ? window : globalThis) as never;
   const progressTimer = timerHost.setInterval(() => {

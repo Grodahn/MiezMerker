@@ -41,6 +41,7 @@ function authAs(org: string | null) {
 }
 
 class ProbeOnlyTransport implements NodeTransport {
+  constructor(private organizationId = 'org-a') {}
   lastResponse: Uint8Array = new Uint8Array();
   async connect() {}
   async disconnect() {}
@@ -55,7 +56,7 @@ class ProbeOnlyTransport implements NodeTransport {
       }) });
     } else if (frame.opcode === Opcode.OwnerRequest) {
       this.lastResponse = encodeFrame({ version: 1, opcode: Opcode.OwnerResponse, payload: encodeOwnerResponse({
-        nodeId: NODE_ID, claimState: 1, organizationId: 'org-b',
+        nodeId: NODE_ID, claimState: 1, organizationId: this.organizationId,
         organizationSlug: 'org', organizationName: 'Org', publicContact: '',
       }) });
     }

@@ -64,7 +64,7 @@ struct FakeAuthorizer final : miezmerker::ble::SyncAuthorizer {
         expires = 0;
         if (!was_pending || now <= 0) return false;
         if (foreign) return false;
-        if (cred != "valid-credential") return false;
+        if (cred != "valid-credential" && cred != std::string(900, 'c')) return false;
         for (auto b : proof)
             if (b != 0xAA) return false;
         if (now >= 1917129600 || now < 1790899200) return false;
@@ -353,11 +353,61 @@ void router_foreign_no_leak() {
     std::cout << "PASS router_foreign_no_leak\n";
 }
 
+void router_fragmented_auth() {
+    using namespace miezmerker::ble;
+    Fixture f;
+    auto core = f.make_core();
+    CHECK(core->initialize());
+    miezmerker::IdentityRecord id;
+    CHECK(f.identity.load(id) == miezmerker::IdentityLoadResult::OK);
+    id.claim_state = miezmerker::ClaimState::CLAIMED;
+    CHECK(f.identity.store(id));
+    core = f.make_core();
+    CHECK(core->initialize());
+    SyncServer server(*core, f.auth, f.rtc, f.signer, f.config);
+    miezmerker::ble_gatt::GattRouter router(server, f.owner);
+    constexpr std::int64_t now = 1790899300;
+    std::array<std::uint8_t, 64> proof{};
+    proof.fill(0xAA);
+    const auto frame = encode_frame(Frame{1, Opcode::AuthRequest, encode_auth_request({std::string(900, 'c'), proof})});
+    auto fragment = [&](std::size_t offset) {
+        std::vector<std::uint8_t> part{0x4d, 0x4d, 1, static_cast<std::uint8_t>(offset == 0 ? 1 : 0),
+            static_cast<std::uint8_t>(frame.size()), static_cast<std::uint8_t>(frame.size() >> 8),
+            static_cast<std::uint8_t>(offset), static_cast<std::uint8_t>(offset >> 8)};
+        const auto end = std::min(offset + 12, frame.size());
+        part.insert(part.end(), frame.begin() + offset, frame.begin() + end);
+        return part;
+    };
+    router.handle_frame(encode_frame(Frame{1, Opcode::ChallengeRequest, {}}), now);
+    for (std::size_t offset = 0; offset < frame.size(); offset += 12) {
+        const auto response = router.handle_frame(fragment(offset), now);
+        if (offset + 12 < frame.size()) {
+            CHECK(response.empty());
+            CHECK(!f.auth.authorized);
+        } else {
+            const auto decoded = decode_frame(response);
+            CHECK(decoded && decoded->opcode == Opcode::AuthResponse);
+            const auto auth = decode_auth_response(decoded->payload);
+            CHECK(auth && auth->ok);
+        }
+    }
+    router.disconnect();
+    CHECK(router.handle_frame(fragment(0), now).empty());
+    router.disconnect();
+    auto rejected = decode_frame(router.handle_frame(fragment(12), now));
+    CHECK(rejected && rejected->opcode == Opcode::Error);
+    CHECK(router.handle_frame(fragment(0), now).empty());
+    rejected = decode_frame(router.handle_frame(fragment(24), now));
+    CHECK(rejected && rejected->opcode == Opcode::Error);
+    CHECK(!f.auth.authorized);
+}
+
 }  // namespace
 
 int main() {
     router_public_and_auth();
     router_foreign_no_leak();
+    router_fragmented_auth();
     std::cout << "All BLE GATT router tests passed (" << checks << " checks)\n";
     return 0;
 }

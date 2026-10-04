@@ -209,4 +209,38 @@ describe('SyncEngine extended field scenarios (issue #8)', () => {
     expect((result.error ?? '').split(':')[0]).toBe('unclaimed');
     expect(node.opcodes).not.toContain(Opcode.AuthRequest);
   });
+
+  test('empty terminal batch cannot hide pending records and report Fertig', async () => {
+    const node = nodeHandler([makeRecord(1)]);
+    const transport = new MockTransport(async frame => {
+      const f = decodeFrame(frame)!;
+      if (f.opcode === Opcode.BatchRequest) {
+        return encodeFrame({ version: 1, opcode: Opcode.BatchResponse, payload: encodeBatchResponse({
+          fromSequence: 1n, nextCursor: 1n, more: false, records: [],
+        }) });
+      }
+      return node.handler(frame);
+    });
+    const result = await new SyncEngine(transport, store, mockKeys, identity, { maxRetries: 0 }).sync('cred', () => 1790899200);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('incomplete');
+    expect(node.getAcked()).toBe(0n);
+  });
+
+  test('node identity changing after discovery never receives the credential', async () => {
+    const node = nodeHandler([makeRecord(1)]);
+    const result = await new SyncEngine(new MockTransport(node.handler), store, mockKeys,
+      { ...identity, nodeId: '66666666-6666-4666-8666-666666666666' }, { maxRetries: 0 }).sync('cred', () => 1790899200);
+    expect(result.ok).toBe(false);
+    expect(node.opcodes).not.toContain(Opcode.AuthRequest);
+  });
+
+  test('session metadata failure after durable ACK does not fail the field visit', async () => {
+    const node = nodeHandler([makeRecord(1)]);
+    store.saveSession = async () => { throw new Error('metadata quota'); };
+    const result = await new SyncEngine(new MockTransport(node.handler), store, mockKeys, identity,
+      { maxRetries: 0 }).sync('cred', () => 1790899200);
+    expect(result.ok).toBe(true);
+    expect(node.getAcked()).toBe(1n);
+  });
 });

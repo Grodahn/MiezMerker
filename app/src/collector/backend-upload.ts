@@ -16,6 +16,7 @@
 // field visit.
 
 import { api } from '../api/client';
+import { fetchCsrfToken } from '../platform/auth';
 import type { CollectorObservationStore } from './observation-store';
 
 export type BackendSyncState =
@@ -59,12 +60,15 @@ export class BackendUploader {
       return { state: 'waiting-for-network', uploaded: 0, duplicates: 0, conflicts: 0, failed: 0,
         message: 'Kein Internet. Upload wartet auf Verbindung.' };
     }
-    const pending = await this.store.pendingUploads(organizationId, 5000);
+    const pending = await this.store.pendingUploads(organizationId);
     if (pending.length === 0) {
       return { state: 'complete', uploaded: 0, duplicates: 0, conflicts: 0, failed: 0,
         message: 'Alle lokal gespeicherten Beobachtungen sind hochgeladen.' };
     }
     const batchSize = this.options.batchSize ?? 200;
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 200) {
+      throw new Error('Upload batch size must be between 1 and 200.');
+    }
     let uploaded = 0;
     let duplicates = 0;
     let conflicts = 0;
@@ -112,6 +116,8 @@ export class BackendUploader {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const { data, error, response } = await api.POST('/api/v1/observations/ingest', {
+          signal: AbortSignal.timeout(10_000),
+          headers: { 'X-XSRF-TOKEN': await fetchCsrfToken() },
           body: {
             organizationId,
             observations: batch.map(r => ({

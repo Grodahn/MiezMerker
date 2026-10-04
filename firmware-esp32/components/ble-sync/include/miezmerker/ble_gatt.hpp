@@ -65,6 +65,8 @@ private:
     ble::SyncServer* server_;
     OwnerMetadata* owner_;
     bool claim_mode_{false};
+    std::vector<std::uint8_t> auth_fragments_;
+    std::size_t auth_total_{0};
 };
 
 }  // namespace miezmerker::ble_gatt

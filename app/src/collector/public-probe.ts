@@ -22,8 +22,8 @@ export class PublicProbeTransport {
   constructor(private readonly transport: NodeTransport) {}
 
   async readPublicHello(): Promise<PublicNodeInfo> {
-    await this.transport.connect();
     try {
+      await this.transport.connect();
       const helloResp = await this.roundTrip(encodeFrame({
         version: PROTOCOL_VERSION, opcode: Opcode.HelloRequest,
         payload: encodeHelloRequest({ clientVer: PROTOCOL_VERSION, caps: CAP_ALL_V1 }),
@@ -32,12 +32,16 @@ export class PublicProbeTransport {
       if (!helloFrame || helloFrame.opcode !== Opcode.HelloPublic) throw new Error('hello failed');
       const hello = decodeHelloPublic(helloFrame.payload);
       if (!hello) throw new Error('hello failed');
+      if (helloFrame.version !== PROTOCOL_VERSION || hello.serverVer !== PROTOCOL_VERSION ||
+          (hello.caps & CAP_ALL_V1) !== CAP_ALL_V1) throw new Error('Protokoll inkompatibel.');
       const ownerResp = await this.roundTrip(encodeFrame({
         version: PROTOCOL_VERSION, opcode: Opcode.OwnerRequest, payload: new Uint8Array(),
       }));
       const ownerFrame = decodeFrame(ownerResp);
       const owner = ownerFrame && ownerFrame.opcode === Opcode.OwnerResponse
         ? decodeOwnerResponse(ownerFrame.payload) : null;
+      if (!owner || ownerFrame?.version !== PROTOCOL_VERSION || owner.nodeId !== hello.nodeId ||
+          owner.claimState !== hello.claimState) throw new Error('Ungültige öffentliche Node-Identität.');
       return {
         nodeId: hello.nodeId, incarnation: hello.incarnation,
         claimState: hello.claimState, serverVer: hello.serverVer, owner,
