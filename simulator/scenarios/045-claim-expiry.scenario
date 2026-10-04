@@ -1,0 +1,23 @@
+name: claim-expiry
+version: 1
+description: Signed claim receipt validity is checked against trusted simulator time.
+
+boot
+import_fixture_node sim-main
+claim_mode_enter
+# Before issuance, even a correctly signed receipt is unusable.
+now 1790899199
+claim_as admin
+assert last_claim fail
+assert claim_state UNCLAIMED
+assert owner_org empty
+# At the exclusive expiry boundary, it is unusable as well.
+now 2106259200
+claim_as admin
+assert last_claim fail
+assert claim_state UNCLAIMED
+assert owner_org empty
+now 1790899300
+claim_as admin
+assert last_claim ok
+assert claim_state CLAIMED

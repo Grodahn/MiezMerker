@@ -81,18 +81,18 @@ assert observations 1
 | `sync_claim` | — | Legacy CLAIMED setup for #22 (direct store + reboot; new scenarios use `claim_as`) |
 | `phone_connect` / `ble_connect` | `[fixed\|alt]` | GATT connect with deterministic challenge (default `fixed` 00..1f; `alt` for replay tests) |
 | `phone_disconnect` / `ble_disconnect` / `disconnect` | — | Drop BLE connection (session cleared, collector survives) |
-| `reconnect` / `ble_reconnect` | `[fixed\|alt]` | Disconnect + connect (fresh challenge) |
+| `reconnect` / `ble_reconnect` | `[fixed\|alt]` | Disconnect + connect with selected deterministic challenge |
 | `hello` | `[client_ver]` | HelloRequest via real router (default ver 1) |
 | `owner` | — | Public OwnerRequest via real router (no auth needed) |
 | `provide_credential` / `auth` | `<member\|admin\|foreign\|expired\|vector\|manipulated\|wrongkey\|replay>` | AuthRequest with canonical fixture JWT + proof via real `OfflineAuthSession` |
 | `claim_mode_enter` / `claim_mode_exit` | — | Physical claim-mode trigger port (#4 fake) |
-| `claim_as` / `claim` | `<admin\|member\|foreign>` | Claim attempt: `admin` verifies the precomputed receipt with the host `SimClaimCrypto` (real ES256/JWT) + ClaimMode + org binding; `member` models backend issuance rejection (ADMIN-only); `foreign` models takeover rejection on CLAIMED nodes |
-| `import_fixture_node` | `<sim-main\|vector>` | Test setup: import canonical fixture identity (node_id + P-256 public + issuer anchor), clear owner/collector, reboot |
+| `claim_as` / `claim` | `<admin\|member\|foreign>` | Claim attempt: `admin` verifies the precomputed receipt with the host `SimClaimCrypto` (real ES256/JWT, trusted-time validity) through production `NodeIdentityManager`; `member` models backend issuance rejection (ADMIN-only); `foreign` models takeover rejection on CLAIMED nodes |
+| `import_fixture_node` | `<sim-main\|vector>` | Test setup: import canonical fixture identity (node_id + P-256 public + issuer anchor), clear node ownership, retain collector, reboot |
 | `collector_persist` | `[seq...]` | Idempotently persist last `ble_batch` records (no args = all; seq args = subset to model transfer gaps like missing 102) |
 | `send_ack` / `collector_ack` | `[watermark]` | Collector ACK: no args = auto high-watermark via production `contiguous_watermark`; explicit watermark for invalid-jump tests |
 | `drop_ack` | — | Model lost ACK (persisted but frame never reached the node; retry with `send_ack`) |
 | `ble_status` | — | StatusRequest via real router (auth-gated) |
-| `ble_batch` / `request_batch` | `<from> [max]` | BatchRequest via real router + codec (auth-gated, paginated) |
+| `ble_batch` / `request_batch` | `<from> [max] [disconnect_after_bytes]` | BatchRequest via real router + codec (auth-gated, paginated) |
 | `ble_ack` | `<watermark>` | Low-level explicit ACK via real router (for gap-rejection tests) |
 | `ble_compact` | — | CompactRequest via real router (frees only the ACKed prefix) |
 | `ble_time` | `<epoch_ms>` | TimeCorrectRequest via real router (future reads only) |
@@ -300,16 +300,25 @@ Additional scenarios for fault injection validation:
    ctest --test-dir build --output-on-failure
    ```
 
+Additional review regressions run through CTest automatically:
+- `043-claim-power-loss`: atomic claim and reset recovery, idempotent claim retry,
+  usable same-org authorization and node proof after a committed claim crash.
+- `044-collector-node-isolation`: old-node sequences cannot fill a new-node gap
+  or ACK records that the phone has not persisted for that node.
+- `045-claim-expiry`: signed claim receipts fail before issuance and at expiry.
+
 ## How a BLE Scenario Executes
 
 1. `import_fixture_node sim-main` loads the canonical fixture identity
    (`protocol/fixtures/sim-ble-v1.json`) into the durable stores and reboots.
 2. `claim_mode_enter` + `claim_as admin` verifies the precomputed claim receipt
-   with the host `SimClaimCrypto` (real ES256/JWT), checks the ClaimMode gate and
-   node/key binding, then atomically persists `CLAIMED` + owner metadata.
+   through production `NodeIdentityManager::apply_claim`. The manager checks
+   ClaimMode, node/key binding and same-org retry; `SimDeviceIdentity` atomically
+   stores keys, capture metadata, receipt and ownership. `SimClaimCrypto` verifies
+   ES256 with the pinned issuer and checks validity against trusted `now`.
 3. `phone_connect [fixed|alt]` creates a production `OfflineAuthSession` with the
    node's pinned issuer + claimed org and generates the deterministic fixture
-   challenge through the real `begin` path.
+   challenge through a wire `ChallengeRequest`/`ChallengeResponse`.
 4. `provide_credential <kind>` sends a real `AuthRequest` frame through the real
    `GattRouter`/`SyncServer`; the real session verifies JWT signature, expiry
    against the scenario `trusted_now_s` (set via `now`), org binding, scope/role
@@ -319,12 +328,17 @@ Additional scenarios for fault injection validation:
    so version gating, auth gating, cursor math, monotonic ACK and compaction are
    the production behaviors. `collector_persist` models durable PWA persistence
    (idempotent by `(node_id, sequence)`); `send_ack` computes the collector
-   high-watermark with the production `contiguous_watermark` before sending.
+   high-watermark for the current node only with production `contiguous_watermark`
+   before sending. The outbox retains records for other nodes across reset/import.
+   `ble_batch 1 16 20` cuts delivery after 20 response bytes, disconnects before
+   decoding/persistence and leaves every unacknowledged record on the node.
 
 ## Production Components Reused (and Documented Gaps)
 
 Reused without modification:
 - `Core` (#5): capture, debounce, sequence, persistence contracts.
+- `NodeIdentityManager` (#18): claim gates, binding, atomic ownership, retry,
+  session-signing message construction and key rotation during Core reset.
 - `SyncServer` (#6): gating, cursor math, monotonic ACK, explicit compaction.
 - `GattRouter` (#6): version negotiation, frame routing, public-vs-protected gating.
 - `ble_codec` (#6): every wire byte in both directions.
@@ -334,8 +348,10 @@ Reused without modification:
 Host test doubles (no competing protocol logic; see `sim_ble.hpp`):
 - `SimBleTransport` orchestration + `SimCollector` outbox (phone-side Dexie model
   without browser concepts) + deterministic challenge injector (board CSPRNG stand-in).
-- `SimOwnerStore`/`SimClaimMode`/`SimNodeKeys`: durable owner/claim-mode/key ports
-  (ESP32 adapters in #4); cleared on factory reset like `NodeIdentity`.
+- `SimDeviceIdentity`: atomic simulated NodeIdentity media with fail-before-write
+  and crash-after-commit injection; ownership and keys are in one record.
+- `SimOwnerStore`/`SimNodeKeys`: public views rebuilt from NodeIdentity after boot
+  and reset. `SimClaimMode` implements the volatile physical ClaimMode port.
 - `SimClaimCrypto` (`NodeCrypto`): host JWT/ES256 verifier for claim receipts with
   the same strict JWS rules. No ESP32 `NodeCrypto` adapter exists yet (#4); this host
   verifier follows ADR-0012/0013 and is pinned by canonical fixtures. Genuine upstream
@@ -344,7 +360,9 @@ Host test doubles (no competing protocol logic; see `sim_ble.hpp`):
   gates (node-side receipt/binding/mode checks stay real).
 - Node/Collector ECDSA *verification* uses the same mbed-TLS P-256/SHA-256 primitive as
   production; valid signatures are precomputed in fixtures (no dynamic signing in the
-  simulator, no private keys committed).
+  simulator, no fixture private keys committed). Reset generates deterministic
+  test-only P-256 keys to exercise production key-rotation checks. Imported
+  identities carry an opaque signing handle, not their original private scalar.
 
 Legacy `sync_claim`/`sync_batch`/`sync_ack`/`sync_compact`/`sync_status` (scenarios
 027–031) keep the original dummy-authorized `SyncServer` path for #22 compatibility;
@@ -373,7 +391,7 @@ new `ble_*`/`phone_*`/`claim_*`/`collector_*` events use the real session path a
   source for `OfflineAuthSession::begin`; production uses hardware CSPRNG).
 - Reboot semantics: volatile state (Core RAM, BLE session, claim-mode flag) resets;
   persistent simulated state survives per #5 contracts.
-- Factory reset is clearly distinct from reboot (new node_id, new incarnation, new sequence lifetime; owner/keys cleared).
+- Factory reset is clearly distinct from reboot (new node_id, new incarnation, new sequence lifetime; ownership cleared, keys rotated).
 - Power-loss testing: deterministic fault injection around the persistence strategy from #5.
 
 ## Requirements

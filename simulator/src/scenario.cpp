@@ -155,10 +155,13 @@ static bool validate_event_arity(std::string_view type, std::size_t argc, std::s
         if (argc != 1) { err = std::string(type) + " takes 1 argument"; return false; }
     } else if (type == "claim_mode_enter" || type == "claim_mode_exit") {
         if (argc != 0) { err = std::string(type) + " takes 0 arguments"; return false; }
-    } else if (type == "collector_persist" || type == "persist_collector_batch" ||
-               type == "send_ack" || type == "collector_ack" ||
-               type == "ble_batch" || type == "request_batch" ||
-               type == "ble_ack") {
+    } else if (type == "ble_batch" || type == "request_batch") {
+        if (argc < 1 || argc > 3) { err = std::string(type) + " takes 1-3 arguments"; return false; }
+    } else if (type == "send_ack" || type == "collector_ack") {
+        if (argc > 1) { err = std::string(type) + " takes 0 or 1 arguments"; return false; }
+    } else if (type == "ble_ack") {
+        if (argc != 1) { err = "ble_ack takes 1 argument"; return false; }
+    } else if (type == "collector_persist" || type == "persist_collector_batch") {
         if (argc > 8) { err = std::string(type) + " takes 0-8 arguments"; return false; }
     } else if (type == "assert") {
         if (argc < 1) { err = "assert takes at least 1 argument"; return false; }

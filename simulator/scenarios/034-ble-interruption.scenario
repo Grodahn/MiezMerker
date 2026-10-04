@@ -25,10 +25,13 @@ assert ble_disconnected
 reconnect
 provide_credential member
 assert last_auth ok
-ble_batch 1 2
-assert batch_count 2
-# Disconnect mid-batch after the first page: first page not yet persisted.
-phone_disconnect
+# Cut the response after 20 bytes, inside the first page. No decoded records
+# reach the collector and no ACK reaches the node.
+ble_batch 1 2 20
+assert ble_disconnected
+assert collector_persisted 0
+assert ack_watermark 0
+assert observations 4
 reconnect
 provide_credential member
 assert last_auth ok
