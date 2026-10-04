@@ -25,13 +25,47 @@ std::string format_record_result(RecordResult r) {
 
 }  // namespace
 
+// Deterministic authorization/RTC/signing ports for transfer scenarios only.
+// Cryptographic credentials and replay are exercised by offline-auth tests.
+struct ScenarioRunner::SyncFixture {
+    struct Authorizer : ble::SyncAuthorizer {
+        bool active{false};
+        bool begin(std::array<std::uint8_t, 32>& challenge) override {
+            active = false;
+            challenge.fill(0xA5);
+            return true;
+        }
+        bool authorize(const std::string&, const std::array<std::uint8_t, 64>&,
+                       ble::TrustedEpochSeconds) override { active = true; return true; }
+        bool can_sync(ble::TrustedEpochSeconds) const override { return active; }
+        void disconnect() override { active = false; }
+    } auth;
+    struct Rtc : ble::RtcControl {
+        SimRtc& rtc;
+        explicit Rtc(SimRtc& r) : rtc(r) {}
+        bool set_corrected_epoch_ms(std::uint64_t ms) override { rtc.correct(ms); return true; }
+    } rtc;
+    struct Signer : ble::NodeSigner {
+        bool sign_session(const std::array<std::uint8_t, 32>&,
+                          std::array<std::uint8_t, 64>& signature) override {
+            signature.fill(0x5A); return true;
+        }
+    } signer;
+    ble::SyncServer server;
+    static constexpr ble::TrustedEpochSeconds now = 1790899200;
+    SyncFixture(Core& core, SimRtc& clock) : rtc(clock), server(core, auth, rtc, signer) {
+        std::array<std::uint8_t, 32> challenge{};
+        auth.begin(challenge);
+        auth.authorize("simulator", {}, now);
+    }
+};
+
 ScenarioRunner::ScenarioRunner(const Scenario& scenario)
     : scenario_(scenario),
       clock_(rtc_),
       random_(scenario.seed),
       capacity_(scenario.capacity),
-      debounce_ms_(scenario.debounce_ms),
-      seed_(scenario.seed) {
+      debounce_ms_(scenario.debounce_ms) {
     observations_ = SimObservationStore(capacity_);
     identity_ = SimDeviceIdentity();
 }
@@ -39,6 +73,9 @@ ScenarioRunner::ScenarioRunner(const Scenario& scenario)
 ScenarioRunner::~ScenarioRunner() = default;
 
 void ScenarioRunner::destroy_core() {
+    sync_.reset();
+    last_batch_.reset();
+    last_status_.reset();
     core_.reset();
 }
 
@@ -53,6 +90,9 @@ bool ScenarioRunner::boot_core() {
     }
     last_node_id_ = core_->node_id();
     last_incarnation_ = core_->incarnation();
+    if (core_->claim_state() == ClaimState::CLAIMED) {
+        sync_ = std::make_unique<SyncFixture>(*core_, rtc_);
+    }
     return true;
 }
 
@@ -107,7 +147,9 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
     bool is_mutating = (event.type == "boot" || event.type == "reboot" ||
                         event.type == "factory_reset" || event.type == "read" ||
                         event.type == "expect_read" || event.type == "ack" ||
-                        event.type == "expect_ack");
+                        event.type == "expect_ack" ||
+                        event.type == "sync_batch" || event.type == "sync_ack" ||
+                        event.type == "sync_compact" || event.type == "sync_claim");
 
     if (is_mutating) {
         reset_fault_counters();
@@ -138,6 +180,13 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
         if (event.type == "fail_clear_next") return execute_fail_clear_next();
         if (event.type == "crash_clear_next") return execute_crash_clear_next();
         if (event.type == "fail_watermark_next") return execute_fail_watermark_next();
+        if (event.type == "fail_prune_next") return execute_fail_prune_next();
+        if (event.type == "crash_prune_next") return execute_crash_prune_next();
+        if (event.type == "sync_batch") return execute_sync_batch(event.args);
+        if (event.type == "sync_ack") return execute_sync_ack(event.args);
+        if (event.type == "sync_compact") return execute_sync_compact();
+        if (event.type == "sync_status") return execute_sync_status();
+        if (event.type == "sync_claim") return execute_sync_claim();
         if (event.type == "assert") return execute_assert(event.args);
         return false; // unknown event type (should not reach here, parser validates)
     } catch (const PowerLoss&) {
@@ -371,6 +420,100 @@ bool ScenarioRunner::execute_fail_watermark_next() {
     return true;
 }
 
+bool ScenarioRunner::execute_fail_prune_next() {
+    observations_.fail_next_prune();
+    return true;
+}
+
+bool ScenarioRunner::execute_crash_prune_next() {
+    observations_.crash_next_prune();
+    crash_armed_ = true;
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_batch(const std::vector<std::string>& args) {
+    if (!core_) {
+        fail("sync_batch", "booted core", "null", "core not initialized");
+        return false;
+    }
+    if (args.size() < 1) { fail("sync_batch", "from_sequence", "none", "arg count"); return false; }
+    std::uint64_t from_seq;
+    if (!miezmerker::sim::parse_uint64(args[0], from_seq)) {
+        fail("sync_batch", "valid from_sequence", args[0], "parse");
+        return false;
+    }
+    std::uint16_t max_records = 16;
+    if (args.size() >= 2) {
+        std::uint64_t max_records_64;
+        if (!miezmerker::sim::parse_uint64(args[1], max_records_64)) {
+            fail("sync_batch", "valid max_records", args[1], "parse");
+            return false;
+        }
+        if (max_records_64 > 65535) {
+            fail("sync_batch", "max_records <= 65535", args[1], "parse");
+            return false;
+        }
+        max_records = static_cast<std::uint16_t>(max_records_64);
+    }
+    if (!sync_) { fail("sync_batch", "sync_claim", "unclaimed", "no sync fixture"); return false; }
+    last_batch_request_from_ = from_seq;
+    last_batch_request_max_ = max_records;
+    last_batch_ = sync_->server.batch(from_seq, max_records, SyncFixture::now);
+    if (last_batch_->error == ble::SyncError::Ok) {
+        // Exercise exactly the wire codec used by the collector as well.
+        auto decoded = ble::decode_batch_response(ble::encode_batch_response(last_batch_->batch));
+        if (!decoded) { fail("sync_batch", "decodable batch", "invalid", "codec"); return false; }
+        last_batch_->batch = *decoded;
+    }
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_ack(const std::vector<std::string>& args) {
+    if (!core_) {
+        fail("sync_ack", "booted core", "null", "core not initialized");
+        return false;
+    }
+    if (args.size() != 1) { fail("sync_ack", "watermark", "none", "arg count"); return false; }
+    std::uint64_t watermark;
+    if (!miezmerker::sim::parse_uint64(args[0], watermark)) {
+        fail("sync_ack", "valid watermark", args[0], "parse");
+        return false;
+    }
+    if (!sync_) { fail("sync_ack", "sync_claim", "unclaimed", "no sync fixture"); return false; }
+    last_ack_result_ = sync_->server.ack(watermark, SyncFixture::now).error == ble::SyncError::Ok;
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_compact() {
+    if (!core_) {
+        fail("sync_compact", "booted core", "null", "core not initialized");
+        return false;
+    }
+    if (!sync_) { fail("sync_compact", "sync_claim", "unclaimed", "no sync fixture"); return false; }
+    last_compact_result_ = sync_->server.compact(SyncFixture::now).error == ble::SyncError::Ok;
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_status() {
+    if (!core_) {
+        fail("sync_status", "booted core", "null", "core not initialized");
+        return false;
+    }
+    if (!sync_) { fail("sync_status", "sync_claim", "unclaimed", "no sync fixture"); return false; }
+    last_status_ = sync_->server.status(SyncFixture::now);
+    if (!last_status_) { fail("sync_status", "authorized status", "none", "sync"); return false; }
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_claim() {
+    if (!core_ || !core_->ready()) return false;
+    IdentityRecord id;
+    if (identity_.load(id) != IdentityLoadResult::OK) return false;
+    id.claim_state = ClaimState::CLAIMED;
+    if (!identity_.store(id)) return false;
+    return reboot_core();
+}
+
 bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
     if (!core_) {
         fail("assert", "booted core", "null", "core not initialized");
@@ -378,6 +521,21 @@ bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
     }
 
     std::string what = args[0];
+
+    if (what == "batch_count" || what == "batch_cursor" || what == "batch_error" ||
+        what == "sync_pending") {
+        if (args.size() != 2) return false;
+        std::uint64_t expected;
+        if (!parse_uint64(args[1], expected)) return false;
+        if (what == "sync_pending") {
+            if (!last_status_) return false;
+            return expect_eq(last_status_->pending, expected, what);
+        }
+        if (!last_batch_) return false;
+        if (what == "batch_count") return expect_eq(last_batch_->batch.records.size(), expected, what);
+        if (what == "batch_cursor") return expect_eq(last_batch_->batch.next_cursor, expected, what);
+        return expect_eq(static_cast<std::uint64_t>(last_batch_->error), expected, what);
+    }
 
     if (what == "observations") {
         if (args.size() != 2) { fail("assert observations", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
@@ -495,6 +653,26 @@ bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
             has_last = true;
         }
         return true;
+    }
+    if (what == "last_batch_request_from") {
+        if (args.size() != 2) { fail("assert last_batch_request_from", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
+        std::uint64_t expected; if (!miezmerker::sim::parse_uint64(args[1], expected)) { fail("assert last_batch_request_from", "uint64", args[1], "parse"); return false; }
+        return expect_eq(last_batch_request_from_, expected, "last_batch_request_from");
+    }
+    if (what == "last_batch_request_max") {
+        if (args.size() != 2) { fail("assert last_batch_request_max", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
+        std::uint64_t expected64; if (!miezmerker::sim::parse_uint64(args[1], expected64)) { fail("assert last_batch_request_max", "uint16", args[1], "parse"); return false; }
+        if (expected64 > 65535) { fail("assert last_batch_request_max", "uint16 <= 65535", args[1], "parse"); return false; }
+        return expect_eq(static_cast<std::uint64_t>(last_batch_request_max_), expected64, "last_batch_request_max");
+    }
+    if (what == "last_compact") {
+        if (args.size() != 2) { fail("assert last_compact", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
+        if (!last_compact_result_) { fail("assert last_compact", args[1], "nullopt", "no prior compact"); return false; }
+        bool expected;
+        if (args[1] == "true" || args[1] == "ok") expected = true;
+        else if (args[1] == "false" || args[1] == "fail") expected = false;
+        else { fail("assert last_compact", "true|false|ok|fail", args[1], "parse expected"); return false; }
+        return expect_eq(*last_compact_result_, expected, "last_compact");
     }
 
     fail("assert", "known assertion type", what, "unknown assertion");
@@ -614,7 +792,8 @@ int ScenarioRunner::run() {
         if (event.type == "boot" || event.type == "reboot" ||
             event.type == "factory_reset" || event.type == "read" ||
             event.type == "expect_read" || event.type == "ack" ||
-            event.type == "expect_ack") {
+            event.type == "expect_ack" || event.type == "sync_batch" ||
+            event.type == "sync_ack" || event.type == "sync_compact" || event.type == "sync_claim") {
             crash_expected_ = false;
         }
     }

@@ -152,8 +152,9 @@ production. Production proxy/hosting configuration belongs to deployment work.
 
 See `docs/adr/` for decisions. Implemented: tenancy/session auth (#16, ADR-0014),
 offline credentials with per-AppDevice keys (#17, ADR-0012), node identity/claim
-(#18, ADR-0013), and portable raw observation capture with durable sequence/RTC
-(#5, ADR-0012-firmware-core-observations). Detailed RFID, ESP32 flash adapters, GATT codecs, collector
+(#18, ADR-0013), portable raw observation capture with durable sequence/RTC
+(#5, ADR-0012-firmware-core-observations), and organization-scoped domain with idempotent
+ingest (#9). Detailed RFID, ESP32 flash adapters, GATT codecs, collector
 transfers, admin features, derivation, invite-onboarding (#19), real backend upload and
 visit engine belong to #5–#19. This foundation plus #16–#18 establishes ownership,
 contracts, auth and claim boundaries. Host ESP32 composition builds; a flashable ESP-IDF

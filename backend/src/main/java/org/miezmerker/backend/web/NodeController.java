@@ -23,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -74,8 +75,15 @@ public class NodeController {
 
     @Schema(name = "NodeView")
     public record NodeView(UUID nodeId, String organizationId, String state,
-            String firmwareVersion, String claimedAt, String publicKeyX,
+            String firmwareVersion, String protocolVersion, String statusNote,
+            String lastContactAt, String claimedAt, String publicKeyX,
             String publicKeyY, String fingerprint) {}
+
+    @Schema(name = "UpdateNodeRequest")
+    public record UpdateNodeRequest(
+            @Size(max = 64) String firmwareVersion,
+            @Size(max = 32) String protocolVersion,
+            @Size(max = 500) String statusNote) {}
 
     @Schema(name = "NodeOwnerView")
     public record NodeOwnerView(UUID nodeId, String state, String organizationId,
@@ -84,7 +92,9 @@ public class NodeController {
     private static NodeView toView(NodeDevice n) {
         return new NodeView(n.getNodeId(),
                 n.getOrganization() == null ? null : n.getOrganization().getId().toString(),
-                n.getState().name(), n.getFirmwareVersion(),
+                n.getState().name(), n.getFirmwareVersion(), n.getProtocolVersion(),
+                n.getStatusNote(),
+                n.getLastContactAt() == null ? null : n.getLastContactAt().toString(),
                 n.getClaimedAt() == null ? null : n.getClaimedAt().toString(),
                 n.getPublicKeyX(), n.getPublicKeyY(), n.getFingerprint());
     }
@@ -227,5 +237,49 @@ public class NodeController {
         var org = node.getOrganization();
         return new NodeOwnerView(node.getNodeId(), node.getState().name(), org.getId().toString(),
                 org.getSlug(), org.getDisplayName(), org.getPublicContact());
+    }
+
+    @PatchMapping(value = "/{nodeId}", consumes = "application/json",
+            produces = "application/json")
+    @Operation(operationId = "updateNode",
+            summary = "ADMIN updates node metadata (firmware/protocol version, status note)")
+    @Transactional
+    public NodeView update(@PathVariable UUID nodeId,
+            @Valid @RequestBody UpdateNodeRequest request,
+            @AuthenticationPrincipal AppUserDetails principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        // Serialize metadata updates with ingest/contact and deployment writes.
+        NodeDevice node = nodes.findByIdLocked(nodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (node.getOrganization() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        try {
+            tenants.requireActive(principal.getId(), node.getOrganization().getId());
+        } catch (ResponseStatusException e) {
+            if (e.getStatusCode() != HttpStatus.FORBIDDEN) throw e;
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        tenants.requireAdmin(principal.getId(), node.getOrganization().getId());
+        if (request != null) {
+            if (request.firmwareVersion() != null) {
+                node.setFirmwareVersion(
+                        request.firmwareVersion().isBlank() ? null
+                                : request.firmwareVersion().trim());
+            }
+            if (request.protocolVersion() != null) {
+                node.setProtocolVersion(
+                        request.protocolVersion().isBlank() ? null
+                                : request.protocolVersion().trim());
+            }
+            if (request.statusNote() != null) {
+                node.setStatusNote(
+                        request.statusNote().isBlank() ? null : request.statusNote().trim());
+            }
+            nodes.save(node);
+        }
+        return toView(node);
     }
 }

@@ -1,5 +1,21 @@
 # Build the composition boundary on a host without installing an ESP32 SDK.
 # An ESP-IDF board application will provide these ports in the firmware ticket.
-add_library(firmware-esp32-scaffold STATIC src/composition.cpp)
+add_library(firmware-esp32-scaffold STATIC src/composition.cpp components/ble-sync/ble_gatt.cpp)
 target_link_libraries(firmware-esp32-scaffold PUBLIC firmware-core)
-target_include_directories(firmware-esp32-scaffold PUBLIC include)
+target_include_directories(firmware-esp32-scaffold PUBLIC include components/ble-sync/include
+  ../firmware-core/include)
+if(BUILD_TESTING)
+  add_executable(ble-gatt-test tests-host/ble_gatt_test.cpp)
+  target_link_libraries(ble-gatt-test PRIVATE firmware-esp32-scaffold firmware-core)
+  if(MSVC)
+    target_compile_options(ble-gatt-test PRIVATE /W4 /WX)
+  else()
+    target_compile_options(ble-gatt-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  if(MSVC)
+    target_compile_options(ble-gatt-test PRIVATE /UNDEBUG)
+  else()
+    target_compile_options(ble-gatt-test PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME esp32-ble-gatt COMMAND ble-gatt-test)
+endif()

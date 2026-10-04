@@ -38,6 +38,15 @@ public class NodeDevice {
     @Column(name = "firmware_version", length = 64)
     private String firmwareVersion;
 
+    @Column(name = "protocol_version", length = 32)
+    private String protocolVersion;
+
+    @Column(name = "status_note", length = 500)
+    private String statusNote;
+
+    @Column(name = "last_contact_at")
+    private Instant lastContactAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -64,8 +73,23 @@ public class NodeDevice {
     public Organization getOrganization() { return organization; }
     public NodeState getState() { return state; }
     public String getFirmwareVersion() { return firmwareVersion; }
+    public String getProtocolVersion() { return protocolVersion; }
+    public String getStatusNote() { return statusNote; }
+    public Instant getLastContactAt() { return lastContactAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getClaimedAt() { return claimedAt; }
+
+    public void setFirmwareVersion(String firmwareVersion) {
+        this.firmwareVersion = firmwareVersion;
+    }
+
+    public void setProtocolVersion(String protocolVersion) {
+        this.protocolVersion = protocolVersion;
+    }
+
+    public void setStatusNote(String statusNote) { this.statusNote = statusNote; }
+
+    public void touchContact() { this.lastContactAt = Instant.now(); }
 
     public void claim(Organization organization) {
         this.organization = organization;

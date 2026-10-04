@@ -20,7 +20,9 @@ Issue #5 ergänzt die hardwareunabhängige Rohdaten-Erfassung mit RTC, Sequence
 und persistentem Store (`firmware-core/README.md`).
 Organisationen, Benutzer, Memberships und Login (#16), signierte Offline-BLE-
 Berechtigungen mit AppDevice-Identitäten (#17) sowie Node-Identität und Claiming (#18)
-sind implementiert. #19 (Invite-per-E-Mail) und die übrigen Features folgen.
+sind implementiert.
+**Issue #9 (organisationsgescopter Domain + idempotenter Rohdaten-Ingest) ist implementiert.**
+#19 (Invite-per-E-Mail) und die übrigen Features folgen.
 
 ## Repository
 
@@ -184,6 +186,6 @@ idempotentem Retry, öffentliche Owner-Metadaten für fremde Organisationen, sow
 determinische Interop-Vektoren unter `protocol/fixtures/`.
 
 Offen: #19 (Invite-per-E-Mail), BLE-Transport/GATT-Codec (#6), Collector (#8),
-Rohdaten-Ingest (#9), Verwaltungsoberflächen (#11), echte Uploads, Visit-Ableitung
+Verwaltungsoberflächen (#11), echte Uploads, Visit-Ableitung (#10)
 und Hardware-Adapter. Kein gemeinsames Organisations-Secret; sofortige Offline-
 Revocation gibt es bewusst nicht (ADR-0012).

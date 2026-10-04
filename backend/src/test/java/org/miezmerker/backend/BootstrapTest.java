@@ -7,6 +7,7 @@ import org.miezmerker.backend.repo.AppDeviceRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
+import org.miezmerker.backend.repo.RawObservationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,11 +23,13 @@ class BootstrapTest {
     @Autowired MembershipRepository memberships;
     @Autowired AppDeviceRepository devices;
     @Autowired NodeRepository nodes;
+    @Autowired RawObservationRepository observations;
     @Autowired PasswordEncoder passwords;
     @Autowired jakarta.validation.Validator validator;
 
     @Test
     void bootstrapCreatesFirstOrgAndAdminOnce() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -51,6 +54,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsPasswordsOverBcryptsByteLimitBeforeWriting() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -76,6 +80,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapRequiresNoSecretsInRepoAndStrongPassword() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -89,6 +94,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsAnEmailThatCannotBeUsedByTheLoginApi() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -103,6 +109,7 @@ class BootstrapTest {
 
     @Test
     void invalidBootstrapMetadataIsRejectedBeforeWritingAnyEntities() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -124,6 +131,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapCannotAttachTheFirstAdminToADisabledOrganization() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();

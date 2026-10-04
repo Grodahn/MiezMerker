@@ -81,7 +81,7 @@ bool RawObservation::valid() const {
     if (clock_status == ClockStatus::UNKNOWN) {
         if (observed_at_epoch_ms.has_value()) return false;
     } else if (clock_status == ClockStatus::SYNCED || clock_status == ClockStatus::RTC_ONLY) {
-        if (!observed_at_epoch_ms.has_value()) return false;
+        if (!observed_at_epoch_ms.has_value() || *observed_at_epoch_ms == 0) return false;
     } else {
         return false;
     }

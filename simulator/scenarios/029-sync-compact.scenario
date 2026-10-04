@@ -1,0 +1,38 @@
+# Sync explicit compaction after ACK
+name: sync-compact
+version: 1
+description: Explicit compact frees acked prefix; unacked data preserved.
+
+boot
+sync_claim
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+read CHIP-003
+read CHIP-004
+read CHIP-005
+assert observations 5
+
+sync_ack 3
+assert ack_watermark 3
+
+sync_compact
+assert last_compact true
+assert observations 2
+
+assert ack_watermark 3
+
+read CHIP-006
+read CHIP-007
+assert observations 4
+
+sync_ack 7
+assert ack_watermark 7
+
+sync_compact
+assert last_compact true
+assert observations 0
+
+sync_ack 7
+assert last_ack true
+assert ack_watermark 7

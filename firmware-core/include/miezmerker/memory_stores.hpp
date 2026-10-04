@@ -35,11 +35,13 @@ public:
     StoreStatus status() const override;
     std::uint64_t ack_watermark() const override;
     bool set_ack_watermark(std::uint64_t sequence) override;
+    bool prune_acked() override;
     bool clear() override;
 
     // --- Fault injection for deterministic power-loss tests ---
     void set_fail_next_append(bool fail) { fail_next_append_ = fail; }
     void set_fail_next_watermark(bool fail) { fail_next_watermark_ = fail; }
+    void set_fail_next_prune(bool fail) { fail_next_prune_ = fail; }
     void set_fail_next_clear(bool fail) { fail_next_clear_ = fail; }
     std::size_t append_attempts() const { return append_attempts_; }
 
@@ -47,8 +49,10 @@ private:
     std::vector<RawObservation> records_;
     std::size_t capacity_;
     std::uint64_t ack_watermark_{0};
+    std::uint64_t high_sequence_{0};
     bool fail_next_append_{false};
     bool fail_next_watermark_{false};
+    bool fail_next_prune_{false};
     bool fail_next_clear_{false};
     std::size_t append_attempts_{0};
 };

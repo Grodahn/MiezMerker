@@ -176,7 +176,7 @@ RecordResult Core::record_chip_read(const std::string& chip_id) {
 
     // RTC value actually observed at read time, with the trust status that
     // applied at that instant. Never synthesize a trustworthy timestamp.
-    WallClockReading wall = clock_->wall_clock();
+    WallClockReading wall = wall_clock();
     ClockStatus status = wall.status;
     std::optional<std::uint64_t> epoch = wall.epoch_ms;
     if (status == ClockStatus::UNKNOWN) {
@@ -284,6 +284,17 @@ StoreStatus Core::store_status() const {
     return observations_->status();
 }
 
+WallClockReading Core::wall_clock() const {
+    if (!ready_ || clock_ == nullptr) return {};
+    auto reading = clock_->wall_clock();
+    if (reading.status == ClockStatus::UNKNOWN || !reading.epoch_ms.has_value() ||
+        *reading.epoch_ms == 0) {
+        reading.status = ClockStatus::UNKNOWN;
+        reading.epoch_ms.reset();
+    }
+    return reading;
+}
+
 std::uint64_t Core::ack_watermark() const {
     if (observations_ == nullptr) return 0;
     return observations_->ack_watermark();
@@ -297,8 +308,20 @@ bool Core::set_ack_watermark(std::uint64_t sequence) {
     for (const auto& obs : observations_->load_all()) {
         if (obs.node_id == identity_.node_id && obs.sequence > last) last = obs.sequence;
     }
-    if (sequence > last) return false;
+    if (sequence > last) {
+        // After prune_acked() the acked prefix is gone; the durable watermark
+        // itself remains the proof of the highest acked sequence. Re-ACKing
+        // the same watermark is idempotent even when the log is empty.
+        if (sequence != ack_watermark() || observations_->size() != 0) return false;
+        return observations_->set_ack_watermark(sequence);
+    }
     return observations_->set_ack_watermark(sequence);
+}
+
+bool Core::compact_acked() {
+    if (!ready_ || observations_ == nullptr) return false;
+    if (identity_.reset_pending) return false;
+    return observations_->prune_acked();
 }
 
 std::vector<RawObservation> Core::load_observations() {
