@@ -24,6 +24,7 @@ import org.miezmerker.backend.repo.AppDeviceRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
+import org.miezmerker.backend.repo.RawObservationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -54,6 +55,7 @@ class TenancyAuthTest {
     @Autowired MembershipRepository memberships;
     @Autowired AppDeviceRepository devices;
     @Autowired NodeRepository nodes;
+    @Autowired RawObservationRepository observations;
     @Autowired PasswordEncoder passwords;
 
     final ObjectMapper mapper = new ObjectMapper();
@@ -114,6 +116,7 @@ class TenancyAuthTest {
             AppUser adminB, AppUser pendingA, AppUser disabledA, AppUser multi) {}
 
     Fixture seed() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();

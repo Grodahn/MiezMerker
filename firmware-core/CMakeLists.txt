@@ -4,6 +4,8 @@ add_library(firmware-core
   src/memory_stores.cpp
   src/protocol_view.cpp
   src/types.cpp
+  src/ble_codec.cpp
+  src/ble_sync.cpp
 )
 target_include_directories(firmware-core PUBLIC include)
 if(MSVC)
@@ -35,8 +37,16 @@ if(BUILD_TESTING)
     target_compile_options(recovery-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
   endif()
   add_test(NAME firmware-recovery COMMAND recovery-test)
+  add_executable(ble-sync-test tests/ble_sync_test.cpp)
+  target_link_libraries(ble-sync-test PRIVATE firmware-core)
+  if(MSVC)
+    target_compile_options(ble-sync-test PRIVATE /W4 /WX)
+  else()
+    target_compile_options(ble-sync-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME firmware-ble-sync COMMAND ble-sync-test)
   # Assertions include operations under test; keep them in Release/CI builds.
-  foreach(test_target core-test node-identity-test observation-test recovery-test)
+  foreach(test_target core-test node-identity-test observation-test recovery-test ble-sync-test)
     if(MSVC)
       target_compile_options(${test_target} PRIVATE /UNDEBUG)
     else()

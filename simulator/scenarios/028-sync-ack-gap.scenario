@@ -1,0 +1,41 @@
+# Sync ACK watermark semantics
+name: sync-ack-watermark
+version: 1
+description: Sync ACK enforces contiguous high-watermark; gaps block advance.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+read CHIP-003
+assert observations 3
+
+# ACK 2 succeeds
+sync_ack 2
+assert last_ack true
+assert ack_watermark 2
+
+# ACK 3 succeeds
+sync_ack 3
+assert last_ack true
+assert ack_watermark 3
+
+# Gap: record 4 missing, try ACK 5 -> fail
+fail_append 1
+read CHIP-005
+assert last_result IO_ERROR
+# Core has records 1,2,3,5 - sequence 4 is missing
+sync_ack 5
+assert last_ack false
+assert ack_watermark 3
+
+# After 4 arrives, ACK 5 succeeds
+read CHIP-004
+sync_ack 5
+assert last_ack true
+assert ack_watermark 5
+
+# Re-ACK same value is idempotent
+sync_ack 5
+assert last_ack true
+assert ack_watermark 5

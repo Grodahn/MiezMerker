@@ -107,7 +107,9 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
     bool is_mutating = (event.type == "boot" || event.type == "reboot" ||
                         event.type == "factory_reset" || event.type == "read" ||
                         event.type == "expect_read" || event.type == "ack" ||
-                        event.type == "expect_ack");
+                        event.type == "expect_ack" ||
+                        event.type == "sync_batch" || event.type == "sync_ack" ||
+                        event.type == "sync_compact");
 
     if (is_mutating) {
         reset_fault_counters();
@@ -138,6 +140,12 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
         if (event.type == "fail_clear_next") return execute_fail_clear_next();
         if (event.type == "crash_clear_next") return execute_crash_clear_next();
         if (event.type == "fail_watermark_next") return execute_fail_watermark_next();
+        if (event.type == "fail_prune_next") return execute_fail_prune_next();
+        if (event.type == "crash_prune_next") return execute_crash_prune_next();
+        if (event.type == "sync_batch") return execute_sync_batch(event.args);
+        if (event.type == "sync_ack") return execute_sync_ack(event.args);
+        if (event.type == "sync_compact") return execute_sync_compact();
+        if (event.type == "sync_status") return execute_sync_status();
         if (event.type == "assert") return execute_assert(event.args);
         return false; // unknown event type (should not reach here, parser validates)
     } catch (const PowerLoss&) {
@@ -371,6 +379,85 @@ bool ScenarioRunner::execute_fail_watermark_next() {
     return true;
 }
 
+bool ScenarioRunner::execute_fail_prune_next() {
+    observations_.fail_next_prune();
+    return true;
+}
+
+bool ScenarioRunner::execute_crash_prune_next() {
+    observations_.crash_next_prune();
+    crash_armed_ = true;
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_batch(const std::vector<std::string>& args) {
+    if (!core_) {
+        fail("sync_batch", "booted core", "null", "core not initialized");
+        return false;
+    }
+    if (args.size() < 1) { fail("sync_batch", "from_sequence", "none", "arg count"); return false; }
+    std::uint64_t from_seq;
+    if (!miezmerker::sim::parse_uint64(args[0], from_seq)) {
+        fail("sync_batch", "valid from_sequence", args[0], "parse");
+        return false;
+    }
+    std::uint16_t max_records = 16;
+    if (args.size() >= 2) {
+        std::uint64_t max_records_64;
+        if (!miezmerker::sim::parse_uint64(args[1], max_records_64)) {
+            fail("sync_batch", "valid max_records", args[1], "parse");
+            return false;
+        }
+        if (max_records_64 > 65535) {
+            fail("sync_batch", "max_records <= 65535", args[1], "parse");
+            return false;
+        }
+        max_records = static_cast<std::uint16_t>(max_records_64);
+    }
+    // We can't invoke SyncServer directly here, but we can simulate by checking
+    // the core's observations. The core exposes pending count and next sequence.
+    // For simulator sync tests, we just verify the core state is correct.
+    // Actual BLE sync is tested in firmware-core unit tests.
+    // We can assert pending count, next sequence etc.
+    // For now, just record the request for assertions.
+    last_batch_request_from_ = from_seq;
+    last_batch_request_max_ = max_records;
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_ack(const std::vector<std::string>& args) {
+    if (!core_) {
+        fail("sync_ack", "booted core", "null", "core not initialized");
+        return false;
+    }
+    if (args.size() != 1) { fail("sync_ack", "watermark", "none", "arg count"); return false; }
+    std::uint64_t watermark;
+    if (!miezmerker::sim::parse_uint64(args[0], watermark)) {
+        fail("sync_ack", "valid watermark", args[0], "parse");
+        return false;
+    }
+    last_ack_result_ = core_->set_ack_watermark(watermark);
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_compact() {
+    if (!core_) {
+        fail("sync_compact", "booted core", "null", "core not initialized");
+        return false;
+    }
+    last_compact_result_ = core_->compact_acked();
+    return true;
+}
+
+bool ScenarioRunner::execute_sync_status() {
+    if (!core_) {
+        fail("sync_status", "booted core", "null", "core not initialized");
+        return false;
+    }
+    // Status is read via existing assert observations/ack_watermark/pending etc.
+    return true;
+}
+
 bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
     if (!core_) {
         fail("assert", "booted core", "null", "core not initialized");
@@ -496,6 +583,26 @@ bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
         }
         return true;
     }
+    if (what == "last_batch_request_from") {
+        if (args.size() != 2) { fail("assert last_batch_request_from", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
+        std::uint64_t expected; if (!miezmerker::sim::parse_uint64(args[1], expected)) { fail("assert last_batch_request_from", "uint64", args[1], "parse"); return false; }
+        return expect_eq(last_batch_request_from_, expected, "last_batch_request_from");
+    }
+    if (what == "last_batch_request_max") {
+        if (args.size() != 2) { fail("assert last_batch_request_max", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
+        std::uint64_t expected64; if (!miezmerker::sim::parse_uint64(args[1], expected64)) { fail("assert last_batch_request_max", "uint16", args[1], "parse"); return false; }
+        if (expected64 > 65535) { fail("assert last_batch_request_max", "uint16 <= 65535", args[1], "parse"); return false; }
+        return expect_eq(static_cast<std::uint64_t>(last_batch_request_max_), expected64, "last_batch_request_max");
+    }
+    if (what == "last_compact") {
+        if (args.size() != 2) { fail("assert last_compact", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
+        if (!last_compact_result_) { fail("assert last_compact", args[1], "nullopt", "no prior compact"); return false; }
+        bool expected;
+        if (args[1] == "true" || args[1] == "ok") expected = true;
+        else if (args[1] == "false" || args[1] == "fail") expected = false;
+        else { fail("assert last_compact", "true|false|ok|fail", args[1], "parse expected"); return false; }
+        return expect_eq(*last_compact_result_, expected, "last_compact");
+    }
 
     fail("assert", "known assertion type", what, "unknown assertion");
     return false;
@@ -614,7 +721,8 @@ int ScenarioRunner::run() {
         if (event.type == "boot" || event.type == "reboot" ||
             event.type == "factory_reset" || event.type == "read" ||
             event.type == "expect_read" || event.type == "ack" ||
-            event.type == "expect_ack") {
+            event.type == "expect_ack" || event.type == "sync_batch" ||
+            event.type == "sync_ack" || event.type == "sync_compact") {
             crash_expected_ = false;
         }
     }

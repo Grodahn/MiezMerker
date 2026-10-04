@@ -297,8 +297,20 @@ bool Core::set_ack_watermark(std::uint64_t sequence) {
     for (const auto& obs : observations_->load_all()) {
         if (obs.node_id == identity_.node_id && obs.sequence > last) last = obs.sequence;
     }
-    if (sequence > last) return false;
+    if (sequence > last) {
+        // After prune_acked() the acked prefix is gone; the durable watermark
+        // itself remains the proof of the highest acked sequence. Re-ACKing
+        // the same watermark is idempotent even when the log is empty.
+        if (sequence != ack_watermark() || observations_->size() != 0) return false;
+        return observations_->set_ack_watermark(sequence);
+    }
     return observations_->set_ack_watermark(sequence);
+}
+
+bool Core::compact_acked() {
+    if (!ready_ || observations_ == nullptr) return false;
+    if (identity_.reset_pending) return false;
+    return observations_->prune_acked();
 }
 
 std::vector<RawObservation> Core::load_observations() {

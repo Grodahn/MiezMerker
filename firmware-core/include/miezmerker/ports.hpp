@@ -80,6 +80,10 @@ enum class StoreStatus : std::uint8_t { OK = 0, NEARLY_FULL = 1, FULL = 2 };
 ///   compaction of acknowledged records belongs to #6.
 /// - clear() atomically erases records and the ack cursor, or preserves both.
 ///   It is idempotent so an interrupted factory reset can resume on boot.
+/// - prune_acked() atomically erases the acked prefix (sequence <= watermark)
+///   added in #6 for BLE sync compaction. It never touches unacked records,
+///   never moves the watermark, and is idempotent. Empty log with a nonzero
+///   watermark keeps accepting the same watermark as idempotent ACK.
 struct ObservationStore {
     virtual ~ObservationStore() = default;
     virtual PutResult append(const RawObservation& observation) = 0;
@@ -89,6 +93,7 @@ struct ObservationStore {
     virtual StoreStatus status() const = 0;
     virtual std::uint64_t ack_watermark() const = 0;
     virtual bool set_ack_watermark(std::uint64_t sequence) = 0;
+    virtual bool prune_acked() = 0;
     virtual bool clear() = 0;
 };
 

@@ -17,6 +17,7 @@ PutResult InMemoryObservationStore::append(const RawObservation& observation) {
     if (!observation.valid()) return PutResult::IO_ERROR;
     if (records_.size() >= capacity_) return PutResult::FULL;
     records_.push_back(observation);
+    if (observation.sequence > high_sequence_) high_sequence_ = observation.sequence;
     return PutResult::OK;
 }
 
@@ -44,8 +45,30 @@ bool InMemoryObservationStore::set_ack_watermark(std::uint64_t sequence) {
         return false;
     }
     if (sequence < ack_watermark_) return false;
-    if (sequence > 0 && (records_.empty() || sequence > records_.back().sequence)) return false;
+    if (sequence == ack_watermark_) return true;
+    // The durable high-water mark survives prune_acked(): an empty log with a
+    // nonzero watermark still accepts the same watermark idempotently, but
+    // nothing beyond the highest sequence ever appended.
+    const std::uint64_t last =
+        records_.empty() ? high_sequence_ : records_.back().sequence > high_sequence_
+                                                   ? records_.back().sequence
+                                                   : high_sequence_;
+    if (last == 0 || sequence > last) return false;
     ack_watermark_ = sequence;
+    return true;
+}
+
+bool InMemoryObservationStore::prune_acked() {
+    if (fail_next_prune_) {
+        fail_next_prune_ = false;
+        return false;
+    }
+    std::vector<RawObservation> kept;
+    kept.reserve(records_.size());
+    for (const auto& r : records_) {
+        if (r.sequence > ack_watermark_) kept.push_back(r);
+    }
+    records_.swap(kept);
     return true;
 }
 
@@ -56,6 +79,7 @@ bool InMemoryObservationStore::clear() {
     }
     records_.clear();
     ack_watermark_ = 0;
+    high_sequence_ = 0;
     return true;
 }
 

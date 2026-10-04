@@ -95,6 +95,18 @@ public:
         }
         return media_.set_ack_watermark(sequence);
     }
+    bool prune_acked() override {
+        if (fail_next_prune_) {
+            fail_next_prune_ = false;
+            return false;
+        }
+        if (crash_next_prune_) {
+            crash_next_prune_ = false;
+            media_.prune_acked();
+            throw PowerLoss{};
+        }
+        return media_.prune_acked();
+    }
     bool clear() override {
         if (fail_next_clear_) {
             fail_next_clear_ = false;
@@ -120,6 +132,8 @@ public:
         fail_next_clear_ = false;
         crash_next_clear_ = false;
         fail_next_watermark_ = false;
+        fail_next_prune_ = false;
+        crash_next_prune_ = false;
         append_count_ = 0;
     }
 
@@ -129,14 +143,16 @@ public:
     void fail_next_clear() { fail_next_clear_ = true; }
     void crash_next_clear() { crash_next_clear_ = true; }
     void fail_next_watermark() { fail_next_watermark_ = true; }
+    void fail_next_prune() { fail_next_prune_ = true; }
+    void crash_next_prune() { crash_next_prune_ = true; }
 
     bool has_crash_armed() const {
-        return crash_append_at_ != 0 || crash_next_clear_;
+        return crash_append_at_ != 0 || crash_next_clear_ || crash_next_prune_;
     }
 
     bool has_fail_armed() const {
         return fail_append_at_ != 0 || fail_next_append_ || fail_next_clear_ ||
-               fail_next_watermark_;
+               fail_next_watermark_ || fail_next_prune_;
     }
 
     const InMemoryObservationStore& media() const { return media_; }
@@ -150,6 +166,8 @@ private:
     bool fail_next_clear_{false};
     bool crash_next_clear_{false};
     bool fail_next_watermark_{false};
+    bool fail_next_prune_{false};
+    bool crash_next_prune_{false};
 };
 
 /// Simulated device identity store with fault injection.

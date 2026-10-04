@@ -120,6 +120,10 @@ public:
     StoreStatus store_status() const;
     std::uint64_t ack_watermark() const;
     bool set_ack_watermark(std::uint64_t sequence);
+    /// Frees the acked prefix (sequence <= watermark) after a valid ACK (#6).
+    /// Never touches unacked records, never moves the watermark, idempotent.
+    /// Returns false when not ready or the store fails.
+    bool compact_acked();
     std::vector<RawObservation> load_observations();
     std::uint64_t debounce_interval_ms() const { return config_.debounce_interval_ms; }
 

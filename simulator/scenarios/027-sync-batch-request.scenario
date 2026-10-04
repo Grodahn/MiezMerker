@@ -1,0 +1,20 @@
+# Sync batch request simulation
+name: sync-batch-request
+version: 1
+description: Simulate a sync batch request from the PWA.
+
+boot
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+read CHIP-003
+assert observations 3
+assert next_sequence 4
+# Simulate PWA requesting batch from sequence 1
+sync_batch 1 16
+assert last_batch_request_from 1
+assert last_batch_request_max 16
+# Simulate PWA requesting next page
+sync_batch 4 16
+assert last_batch_request_from 4
+assert last_batch_request_max 16

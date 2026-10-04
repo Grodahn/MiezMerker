@@ -27,6 +27,7 @@ import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
+import org.miezmerker.backend.repo.RawObservationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,6 +50,7 @@ class OfflineCredentialTest {
     @Autowired MembershipRepository memberships;
     @Autowired AppDeviceRepository devices;
     @Autowired NodeRepository nodes;
+    @Autowired RawObservationRepository observations;
     @Autowired PasswordEncoder passwords;
     @Autowired CredentialIssuerService issuer;
     @Autowired OfflineAuthService offline;
@@ -99,6 +101,7 @@ class OfflineCredentialTest {
     record Seed(Organization orgA, Organization orgB, AppUser adminA, AppUser memberA) {}
 
     Seed seed() {
+        observations.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();

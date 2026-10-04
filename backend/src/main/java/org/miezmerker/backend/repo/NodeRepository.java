@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.miezmerker.backend.domain.NodeDevice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 public interface NodeRepository extends JpaRepository<NodeDevice, UUID> {
@@ -15,4 +16,8 @@ public interface NodeRepository extends JpaRepository<NodeDevice, UUID> {
     Optional<NodeDevice> findByFingerprint(String fingerprint);
 
     List<NodeDevice> findByOrganizationId(UUID organizationId);
+
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select n from NodeDevice n where n.nodeId = :nodeId")
+    Optional<NodeDevice> findByIdLocked(UUID nodeId);
 }

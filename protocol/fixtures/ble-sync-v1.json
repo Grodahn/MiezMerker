@@ -1,0 +1,123 @@
+{
+  "format": "miezmerker-ble-sync-v1",
+  "description": "Golden vectors for BLE sync v1 codec and domain behavior. All integers little-endian on the wire; frames are ver(1) opcode(1) len(2 LE) payload. Verify by decoding hex and comparing fields; re-encoding must reproduce the same hex.",
+  "protocol_version": 1,
+  "service_uuid": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b6c",
+  "characteristics": {
+    "info": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b01",
+    "owner": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b02",
+    "challenge": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b03",
+    "auth": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b04",
+    "node_proof": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b05",
+    "status": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b06",
+    "batch": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b07",
+    "ack": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b08",
+    "time": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b09"
+  },
+  "capabilities": {
+    "BATCH": 1,
+    "ACK": 2,
+    "TIME_CORRECT": 4,
+    "NODE_PROOF": 8,
+    "COMPACT": 16,
+    "v1_all": 31
+  },
+  "opcodes": {
+    "hello_request": 1,
+    "hello_public": 2,
+    "owner_request": 3,
+    "owner_response": 4,
+    "challenge_request": 5,
+    "challenge_response": 6,
+    "auth_request": 7,
+    "auth_response": 8,
+    "node_proof_request": 9,
+    "node_proof_response": 10,
+    "batch_request": 11,
+    "batch_response": 12,
+    "ack_request": 13,
+    "ack_response": 14,
+    "time_request": 15,
+    "time_response": 16,
+    "status_request": 17,
+    "status_response": 18,
+    "compact_request": 19,
+    "compact_response": 20,
+    "error": 255
+  },
+  "enums": {
+    "claim": { "UNCLAIMED": 0, "CLAIMED": 1 },
+    "clock": { "UNKNOWN": 0, "RTC_ONLY": 1, "SYNCED": 2 },
+    "store": { "OK": 0, "NEARLY_FULL": 1, "FULL": 2 },
+    "error": {
+      "OK": 0, "UNKNOWN_VERSION": 1, "UNAUTHORIZED": 2, "FORBIDDEN_FOREIGN": 3,
+      "INVALID_FRAME": 4, "INVALID_SEQUENCE": 5, "INVALID_RECORD": 6, "NOT_FOUND": 7,
+      "STORE_FULL": 8, "CLOCK_UNAVAILABLE": 9, "AUTH_EXPIRED": 10, "REPLAY": 11,
+      "INVALID_CREDENTIAL": 12, "INVALID_PROOF": 13, "INVALID_STATE": 14, "INTERNAL": 15
+    }
+  },
+  "advertisement": {
+    "service_data_hex": "01010000",
+    "fields": { "proto_ver": 1, "flags": 1, "reserved": 0, "flag_meaning": "CLAIMED, no CLAIM_MODE" },
+    "privacy_note": "No chip, node_id, org, pending or time fields."
+  },
+  "node_id": "44444444-4444-4444-8444-444444444444",
+  "incarnation": "55555555-5555-4555-9555-555555555555",
+  "firmware_version": "miezmerker-esp32c3-1.0.0",
+  "owner": {
+    "organization_id": "22222222-2222-4222-8222-222222222222",
+    "organization_slug": "vector-org",
+    "organization_name": "Vector Org",
+    "public_contact": "help@vector.example"
+  },
+  "vectors": {
+    "hello_request_frame_hex": "01010300011f00",
+    "hello_request": { "client_ver": 1, "caps": 31 },
+    "hello_public_frame_hex": "01023e00011f004444444444444444844444444444444455555555555545559555555555555555186d69657a6d65726b65722d657370333263332d312e302e300102",
+    "hello_public": {
+      "server_ver": 1, "caps": 31,
+      "node_id": "44444444-4444-4444-8444-444444444444",
+      "incarnation": "55555555-5555-4555-9555-555555555555",
+      "firmware_version": "miezmerker-esp32c3-1.0.0",
+      "claim": 1, "clock": 2
+    },
+    "owner_frame_hex": "010464004444444444444444844444444444444401240032323232323232322d323232322d343232322d383232322d3232323232323232323232320a00766563746f722d6f72670a00566563746f72204f7267130068656c7040766563746f722e6578616d706c65",
+    "challenge_frame_hex": "01062000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "challenge_nonce_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "record_101_hex": "444444444444444484444444444444445555555555554555955555555555555565000000000000000f00323736303938313036303030303031020020e9f9a0010000e80300000000000007000000",
+    "record_101": {
+      "sequence": 101, "chip_id": "276098106000001",
+      "clock": 2, "epoch_ms": 1790899200000, "monotonic_ms": 1000, "boot_counter": 7
+    },
+    "batch_request_frame_hex": "010b0a0065000000000000001000",
+    "batch_request": { "from_seq": 101, "max_records": 16 },
+    "batch_response_frame_hex": "010cfd0065000000000000000300006800000000000000444444444444444484444444444444445555555555554555955555555555555565000000000000000f00323736303938313036303030303031020020e9f9a0010000e80300000000000007000000444444444444444484444444444444445555555555554555955555555555555566000000000000000f0032373630393831303630303030303202e823e9f9a0010000a00f00000000000007000000444444444444444484444444444444445555555555554555955555555555555567000000000000000f00323736303938313036303030303033000000000000000000581b00000000000007000000",
+    "batch_response": {
+      "from_seq": 101, "count": 3, "more": 0, "next_cursor": 104,
+      "sequences": [101, 102, 103]
+    },
+    "ack_request_frame_hex": "010d08006700000000000000",
+    "ack_request": { "watermark": 103 },
+    "ack_response_frame_hex": "010e0900670000000000000000",
+    "ack_response": { "new_watermark": 103, "error": 0 },
+    "status_response_frame_hex": "01121e0003000000640000000000000000020020e9f9a00100006800000000000000",
+    "status_response": {
+      "pending": 3, "ack": 100, "store": 0, "clock": 2,
+      "epoch_ms": 1790899200000, "next_seq": 104
+    },
+    "time_request_frame_hex": "010f08000055f5f9a0010000",
+    "time_request": { "epoch_ms": 1790900000000 },
+    "time_response_frame_hex": "01100a0001000055f5f9a0010000",
+    "time_response": { "ok": 1, "error": 0, "applied_epoch_ms": 1790900000000 },
+    "compact_request_frame_hex": "01130000",
+    "compact_response_frame_hex": "011411000300000000000000670000000000000000",
+    "compact_response": { "freed": 3, "remaining": 0, "ack": 103, "error": 0 },
+    "error_unknown_version_frame_hex": "01ff1600011300756e737570706f727465642076657273696f6e"
+  },
+  "ack_example": {
+    "stored": [100, 101, 103],
+    "missing": 102,
+    "max_legal_ack": 101,
+    "note": "Never skip gaps; see protocol/ble/ack-semantics.md"
+  }
+}

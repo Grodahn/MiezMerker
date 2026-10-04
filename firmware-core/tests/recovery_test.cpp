@@ -69,6 +69,7 @@ struct Observations final : miezmerker::ObservationStore {
     bool set_ack_watermark(std::uint64_t sequence) override {
         return cell.set_ack_watermark(sequence);
     }
+    bool prune_acked() override { return cell.prune_acked(); }
     bool clear() override {
         const bool result = cell.clear();
         if (crash_after_clear) {

@@ -54,6 +54,9 @@ private:
     std::optional<IncarnationId> previous_incarnation_; // incarnation before last factory_reset
     std::optional<RecordResult> last_result_;
     std::optional<bool> last_ack_result_;
+    std::optional<bool> last_compact_result_;
+    std::uint64_t last_batch_request_from_{0};
+    std::uint16_t last_batch_request_max_{0};
     bool crash_armed_{false};                 // whether a crash fault is armed for next operation
     bool crash_expected_{false};              // whether the current operation expects a crash
     std::size_t events_executed_{0};
@@ -94,6 +97,12 @@ private:
     bool execute_fail_clear_next();
     bool execute_crash_clear_next();
     bool execute_fail_watermark_next();
+    bool execute_fail_prune_next();
+    bool execute_crash_prune_next();
+    bool execute_sync_batch(const std::vector<std::string>& args);
+    bool execute_sync_ack(const std::vector<std::string>& args);
+    bool execute_sync_compact();
+    bool execute_sync_status();
     bool execute_assert(const std::vector<std::string>& args);
 
     // Assertion helpers
