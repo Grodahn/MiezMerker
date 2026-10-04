@@ -263,6 +263,7 @@ std::vector<std::uint8_t> encode_record(const RawObservation& obs) {
 }
 std::optional<RawObservation> decode_record(const std::vector<std::uint8_t>& bytes,
                                              std::size_t& consumed) {
+    if (consumed > bytes.size()) return std::nullopt;
     Cursor c{bytes.data() + consumed, bytes.size() - consumed};
     RawObservation obs;
     std::uint16_t chip_len = 0;

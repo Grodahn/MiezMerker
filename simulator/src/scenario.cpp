@@ -83,7 +83,7 @@ static bool is_known_event_type(std::string_view type) {
         "fail_clear_next", "crash_clear_next",
         "fail_watermark_next",
         "fail_prune_next", "crash_prune_next",
-        "sync_batch", "sync_ack", "sync_compact", "sync_status",
+        "sync_batch", "sync_ack", "sync_compact", "sync_status", "sync_claim",
         "assert",
         "repeat", "end"
     };
@@ -97,7 +97,7 @@ static bool validate_event_arity(std::string_view type, std::size_t argc, std::s
         type == "fail_clear_next" || type == "crash_clear_next" ||
         type == "fail_watermark_next" || type == "fail_prune_next" ||
         type == "crash_prune_next" || type == "sync_compact" ||
-        type == "sync_status" || type == "storage_available" ||
+        type == "sync_status" || type == "sync_claim" || type == "storage_available" ||
         type == "storage_unavailable" || type == "rtc_invalid" || type == "end") {
         if (argc != 0) { err = std::string(type) + " takes 0 arguments"; return false; }
     } else if (type == "advance_ms" || type == "set_ms" ||

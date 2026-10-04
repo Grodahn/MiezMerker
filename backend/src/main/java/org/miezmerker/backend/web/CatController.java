@@ -110,7 +110,7 @@ public class CatController {
         var org = organizations.findById(organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         String chip = Cat.normalizeChipId(request.chipId());
-        if (chip == null || chip.isEmpty()) {
+        if (chip == null || chip.isEmpty() || chip.length() > 64) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "chipId must have 1..64 characters");
         }
@@ -147,7 +147,7 @@ public class CatController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (request.chipId() != null) {
             String chip = Cat.normalizeChipId(request.chipId());
-            if (chip == null || chip.isEmpty()) {
+            if (chip == null || chip.isEmpty() || chip.length() > 64) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "chipId must have 1..64 characters");
             }

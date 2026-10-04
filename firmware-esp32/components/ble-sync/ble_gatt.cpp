@@ -45,10 +45,12 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         case Opcode::OwnerRequest: {
             if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad owner req");
             OwnerInfo info = server_->public_owner();
-            info.organization_id = owner_->organization_id;
-            info.organization_slug = owner_->organization_slug;
-            info.organization_name = owner_->organization_name;
-            info.public_contact = owner_->public_contact;
+            if (info.claim_state == miezmerker::ClaimState::CLAIMED) {
+                info.organization_id = owner_->organization_id;
+                info.organization_slug = owner_->organization_slug;
+                info.organization_name = owner_->organization_name;
+                info.public_contact = owner_->public_contact;
+            }
             return encode_frame(
                 Frame{kProtocolVersion, Opcode::OwnerResponse, encode_owner_response(info)});
         }
@@ -86,9 +88,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             if (!nonce) return error_frame(SyncError::InvalidFrame, "bad node proof");
             auto res = server_->node_proof(*nonce, now_s);
             if (res.error != SyncError::Ok) {
-                return error_frame(res.error == SyncError::InvalidState ? SyncError::InvalidState
-                                                                        : SyncError::Unauthorized,
-                                   "node proof denied");
+                return error_frame(res.error, "node proof denied");
             }
             return encode_frame(Frame{kProtocolVersion, Opcode::NodeProofResponse,
                                       encode_node_proof_response(res.signature)});
@@ -111,7 +111,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
                     return error_frame(SyncError::InvalidSequence, "bad cursor");
                 if (res.error == SyncError::InvalidState)
                     return error_frame(SyncError::InvalidState, "unclaimed");
-                return error_frame(SyncError::Unauthorized, "unauthorized");
+                return error_frame(res.error, "batch denied");
             }
             return encode_frame(Frame{kProtocolVersion, Opcode::BatchResponse,
                                       encode_batch_response(res.batch)});
@@ -120,12 +120,12 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             auto w = decode_ack_request(frame->payload);
             if (!w) return error_frame(SyncError::InvalidFrame, "bad ack");
             auto res = server_->ack(*w, now_s);
-            if (res.error != SyncError::Ok && *w != res.new_watermark) {
+            if (res.error != SyncError::Ok) {
                 if (res.error == SyncError::InvalidSequence)
                     return error_frame(SyncError::InvalidSequence, "bad watermark");
                 if (res.error == SyncError::InvalidState)
                     return error_frame(SyncError::InvalidState, "unclaimed");
-                return error_frame(SyncError::Unauthorized, "unauthorized");
+                return error_frame(res.error, "ack denied");
             }
             AckResponse ack{res.new_watermark, res.error};
             return encode_frame(
@@ -137,7 +137,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             auto res = server_->correct_time(*v, now_s);
             TimeResponse t{res.ok, res.error, res.applied_epoch_ms};
             if (!res.ok && res.error == SyncError::Unauthorized)
-                return error_frame(SyncError::Unauthorized, "unauthorized");
+                return error_frame(res.error, "time correction denied");
             return encode_frame(
                 Frame{kProtocolVersion, Opcode::TimeResponse, encode_time_response(t)});
         }
@@ -147,7 +147,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             if (res.error != SyncError::Ok) {
                 if (res.error == SyncError::InvalidState)
                     return error_frame(SyncError::InvalidState, "unclaimed");
-                return error_frame(SyncError::Unauthorized, "unauthorized");
+                return error_frame(res.error, "compact denied");
             }
             CompactResponse c{res.freed, res.remaining, res.ack_watermark, res.error};
             return encode_frame(Frame{kProtocolVersion, Opcode::CompactResponse,

@@ -250,9 +250,16 @@ public class NodeController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        NodeDevice node = nodes.findById(nodeId)
+        // Serialize metadata updates with ingest/contact and deployment writes.
+        NodeDevice node = nodes.findByIdLocked(nodeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (node.getOrganization() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        try {
+            tenants.requireActive(principal.getId(), node.getOrganization().getId());
+        } catch (ResponseStatusException e) {
+            if (e.getStatusCode() != HttpStatus.FORBIDDEN) throw e;
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         tenants.requireAdmin(principal.getId(), node.getOrganization().getId());

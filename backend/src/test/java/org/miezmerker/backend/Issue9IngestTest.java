@@ -442,6 +442,47 @@ class Issue9IngestTest {
     // ---- tenant isolation ----
 
     @Test
+    void timestampOutsideDatabaseRangeRejectsOnlyItsItem() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = claimNode(s.orgA().getId());
+        JsonNode out = ingest(s.orgA().getId(), List.of(
+                item(n.nodeId(), 1, "chip-1", 10_000_000_000_000_000L, "RTC_ONLY"),
+                item(n.nodeId(), 2, "chip-2", 0L, "SYNCED"),
+                item(n.nodeId(), 3, "chip-3", Instant.now().toEpochMilli(), "SYNCED"),
+                item(n.nodeId(), 4, "chip-4", 9_224_318_015_999_999L, "RTC_ONLY"),
+                item(n.nodeId(), 5, "chip-5", 9_224_318_016_000_000L, "RTC_ONLY")));
+        assertEquals(2, out.get("inserted").asInt());
+        assertEquals(3, out.get("rejected").asInt());
+        assertEquals("INVALID", out.get("results").get(0).get("status").asText());
+        assertEquals("CREATED", out.get("results").get(2).get("status").asText());
+        assertEquals("CREATED", out.get("results").get(3).get("status").asText());
+        assertEquals("INVALID", out.get("results").get(4).get("status").asText());
+    }
+
+    @Test
+    void rawIntegerFieldsRoundTripAsDecimalStringsWithoutPrecisionLoss() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = claimNode(s.orgA().getId());
+        var record = item(n.nodeId(), 9_007_199_254_740_993L, "chip-1", null, "UNKNOWN");
+        record.put("sequence", "9007199254740993");
+        record.put("monotonicMs", Long.toString(Long.MAX_VALUE));
+        JsonNode created = ingest(s.orgA().getId(), List.of(record));
+        assertTrue(created.get("results").get(0).get("sequence").isString());
+        assertEquals("9007199254740993", created.get("results").get(0).get("sequence").asText());
+        JsonNode rows = mapper.readTree(get("/api/v1/observations?organizationId=" + s.orgA().getId()).body());
+        assertTrue(rows.get(0).get("sequence").isString());
+        assertEquals("9007199254740993", rows.get(0).get("sequence").asText());
+        assertTrue(rows.get(0).get("monotonicMs").isString());
+        assertEquals(Long.toString(Long.MAX_VALUE), rows.get(0).get("monotonicMs").asText());
+        assertEquals(1, ingest(s.orgA().getId(), List.of(record)).get("duplicates").asInt());
+        var invalid = ingest(s.orgA().getId(), List.of(item(n.nodeId(), -1, "chip-1", null, "UNKNOWN")));
+        assertEquals("INVALID", invalid.get("results").get(0).get("status").asText());
+        assertEquals("-1", invalid.get("results").get(0).get("sequence").asText());
+    }
+
+    @Test
     void organizationACannotReadOrganizationBResources() throws Exception {
         Seed s = seed();
         login("a9-admin-a@example.org", "supersecret-password-a");
@@ -464,7 +505,8 @@ class Issue9IngestTest {
         assertEquals(403,
                 get("/api/v1/organizations/" + s.orgA().getId() + "/cats/" + catA)
                         .statusCode());
-        assertEquals(403, get("/api/v1/observations/" + obsA).statusCode());
+        assertEquals(404, get("/api/v1/observations/" + obsA).statusCode());
+        assertEquals(404, get("/api/v1/observations/" + UUID.randomUUID()).statusCode());
         assertEquals(403,
                 get("/api/v1/observations?organizationId=" + s.orgA().getId()).statusCode());
         // Node of the other organization is not readable in full.
@@ -484,7 +526,11 @@ class Issue9IngestTest {
         JsonNode out = ingest(s.orgA().getId(),
                 List.of(item(nodeB.nodeId(), 1, "chip-1", Instant.now().toEpochMilli(),
                         "SYNCED")));
-        assertEquals("FORBIDDEN", out.get("results").get(0).get("status").asText());
+        assertEquals("UNKNOWN_NODE", out.get("results").get(0).get("status").asText());
+        JsonNode unknown = ingest(s.orgA().getId(), List.of(item(UUID.randomUUID(), 1,
+                "chip-1", Instant.now().toEpochMilli(), "SYNCED")));
+        assertEquals(unknown.get("results").get(0).get("message"),
+                out.get("results").get(0).get("message"));
         assertEquals(0, observations.count());
 
         // Mixed batch: own item succeeds, foreign item is reported, nothing leaks.
@@ -494,7 +540,7 @@ class Issue9IngestTest {
                 item(nodeA.nodeId(), 1, "chip-1", at, "SYNCED"),
                 item(nodeB.nodeId(), 2, "chip-1", at, "SYNCED")));
         assertEquals(1, mixed.get("inserted").asInt());
-        assertEquals("FORBIDDEN", mixed.get("results").get(1).get("status").asText());
+        assertEquals("UNKNOWN_NODE", mixed.get("results").get(1).get("status").asText());
         assertEquals(1, observations.count());
         assertEquals(1, observations.countByOrganizationId(s.orgA().getId()));
         assertEquals(0, observations.countByOrganizationId(s.orgB().getId()));
@@ -732,7 +778,7 @@ class Issue9IngestTest {
 
         // Foreign admin cannot manage another organization's node.
         login("a9-admin-b@example.org", "supersecret-password-b");
-        assertEquals(403, patch("/api/v1/nodes/" + nodeA.nodeId(),
+        assertEquals(404, patch("/api/v1/nodes/" + nodeA.nodeId(),
                 "{\"statusNote\":\"hijack\"}").statusCode());
         // Managing an unknown node id is 404, never cross-tenant data.
         assertEquals(404, patch("/api/v1/nodes/" + UUID.randomUUID(),
@@ -758,7 +804,7 @@ class Issue9IngestTest {
         assertEquals(404, post("/api/v1/organizations/" + s.orgA().getId() + "/deployments",
                 mapper.writeValueAsString(foreignSite)).statusCode());
 
-        // Foreign node for own site: 403.
+        // Foreign node for own site is indistinguishable from an unknown node.
         login("a9-admin-b@example.org", "supersecret-password-b");
         NodeKeys nodeB = claimNode(s.orgB().getId());
         login("a9-admin-a@example.org", "supersecret-password-a");
@@ -766,7 +812,7 @@ class Issue9IngestTest {
         foreignNode.put("nodeId", nodeB.nodeId().toString());
         foreignNode.put("feedingSiteId", siteA.toString());
         foreignNode.put("validFrom", Instant.now().minus(Duration.ofDays(1)).toString());
-        assertEquals(403, post("/api/v1/organizations/" + s.orgA().getId() + "/deployments",
+        assertEquals(404, post("/api/v1/organizations/" + s.orgA().getId() + "/deployments",
                 mapper.writeValueAsString(foreignNode)).statusCode());
         assertEquals(0, deployments.findByNodeNodeId(nodeB.nodeId()).size());
     }
@@ -819,7 +865,7 @@ class Issue9IngestTest {
     }
 
     @Test
-    void nodeFilterNamingForeignNodeIsForbidden() throws Exception {
+    void nodeFiltersDoNotDiscloseForeignIdentities() throws Exception {
         Seed s = seed();
         login("a9-admin-a@example.org", "supersecret-password-a");
         NodeKeys nodeA = claimNode(s.orgA().getId());
@@ -831,11 +877,12 @@ class Issue9IngestTest {
                 + "&nodeId=" + nodeA.nodeId()).statusCode());
 
         login("a9-admin-b@example.org", "supersecret-password-b");
-        // A node of another organization as filter is explicitly forbidden,
-        // not answered with a misleading empty list.
-        assertEquals(403, get("/api/v1/observations?organizationId=" + s.orgB().getId()
+        // Foreign and absent IDs return the same response.
+        assertEquals(404, get("/api/v1/observations?organizationId=" + s.orgB().getId()
                 + "&nodeId=" + nodeA.nodeId()).statusCode());
-        assertEquals(403, get("/api/v1/organizations/" + s.orgB().getId() + "/nodes/"
+        assertEquals(404, get("/api/v1/observations?organizationId=" + s.orgB().getId()
+                + "&nodeId=" + UUID.randomUUID()).statusCode());
+        assertEquals(404, get("/api/v1/organizations/" + s.orgB().getId() + "/nodes/"
                 + nodeA.nodeId() + "/observations").statusCode());
     }
 
@@ -851,5 +898,64 @@ class Issue9IngestTest {
         assertEquals(400,
                 patch("/api/v1/organizations/" + s.orgA().getId() + "/feeding-sites/"
                         + site, "{\"name\":\"" + "x".repeat(256) + "\"}").statusCode());
+    }
+
+    @Test
+    void nonFiniteCoordinatesAreRejectedWithoutChangingSites() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        UUID site = createSite(s.orgA().getId(), "Site");
+        String path = "/api/v1/organizations/" + s.orgA().getId() + "/feeding-sites";
+        for (String invalid : List.of("NaN", "Infinity", "-Infinity")) {
+            for (String coordinate : List.of("locationLat", "locationLng")) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("name", "Invalid site");
+                body.put("locationLat", 0);
+                body.put("locationLng", 0);
+                body.put(coordinate, invalid);
+                String json = mapper.writeValueAsString(body);
+                assertEquals(400, post(path, json).statusCode());
+                assertEquals(400, patch(path + "/" + site, json).statusCode());
+            }
+        }
+        JsonNode sites = mapper.readTree(get(path).body());
+        assertEquals(1, sites.size());
+        assertEquals("Site", sites.get(0).get("name").asText());
+        assertTrue(sites.get(0).get("locationLat").isNull());
+        assertTrue(sites.get(0).get("locationLng").isNull());
+    }
+
+    @Test
+    void referencedDeploymentDeleteReturnsConflictAndKeepsHistory() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = claimNode(s.orgA().getId());
+        UUID site = createSite(s.orgA().getId(), "Historical site");
+        long at = Instant.now().toEpochMilli();
+        UUID deployment = createDeployment(s.orgA().getId(), n.nodeId(), site,
+                Instant.ofEpochMilli(at - 1000), null);
+        ingest(s.orgA().getId(), List.of(item(n.nodeId(), 1, "chip-a", at, "SYNCED")));
+        String path = "/api/v1/organizations/" + s.orgA().getId() + "/deployments/" + deployment;
+        assertEquals(409, delete(path).statusCode());
+        assertEquals(200, get(path).statusCode());
+        var view = mapper.readTree(get("/api/v1/observations?organizationId=" + s.orgA().getId()).body()).get(0);
+        assertEquals(deployment.toString(), view.get("deploymentId").asText());
+        assertEquals(site.toString(), view.get("feedingSiteId").asText());
+    }
+
+    @Test
+    void normalizationOverflowRejectsOnlyTheInvalidItem() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = claimNode(s.orgA().getId());
+        long at = Instant.now().toEpochMilli();
+        var result = ingest(s.orgA().getId(), List.of(
+                item(n.nodeId(), 1, "ß".repeat(64), at, "SYNCED"),
+                item(n.nodeId(), 2, "chip-a", at, "SYNCED")));
+        assertEquals(1, result.get("rejected").asInt());
+        assertEquals("INVALID", result.get("results").get(0).get("status").asText());
+        assertEquals(1, result.get("inserted").asInt());
+        assertEquals(400, post("/api/v1/organizations/" + s.orgA().getId() + "/cats",
+                mapper.writeValueAsString(Map.of("chipId", "ß".repeat(64)))).statusCode());
     }
 }

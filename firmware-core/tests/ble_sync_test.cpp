@@ -8,6 +8,7 @@
 #include <array>
 #include <cassert>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include "miezmerker/ble_codec.hpp"
@@ -286,6 +287,9 @@ void sync_gating_and_transfers() {
     auto t = server.correct_time(1790900000000ULL, now);
     CHECK(t.ok && t.applied_epoch_ms == 1790900000000ULL);
     CHECK(f.rtc.applied == 1790900000000ULL);
+    // Status/hello report the corrected RTC even with no new observation.
+    CHECK(server.status(now)->epoch_ms == 1790900000000ULL);
+    CHECK(server.public_hello().clock_status == miezmerker::ClockStatus::SYNCED);
     CHECK(core2->record_chip_read("276098106000004") == miezmerker::RecordResult::RECORDED);
     auto all = core2->load_observations();
     CHECK(all.back().observed_at_epoch_ms == 1790900000000ULL);
@@ -302,6 +306,18 @@ void sync_gating_and_transfers() {
     CHECK(!server.status(now));
     CHECK(server.batch(1, 8, now).error == SyncError::Unauthorized);
     CHECK(server.public_owner().claim_state == miezmerker::ClaimState::CLAIMED);
+    // A real reserve-before-append gap cannot be confirmed by numeric ACK.
+    f.auth.foreign = false;
+    CHECK(server.begin_challenge(ch));
+    CHECK(server.authorize("valid-credential", good_proof, now));
+    f.observations.set_fail_next_append(true);
+    CHECK(core2->record_chip_read("lost-read") == miezmerker::RecordResult::IO_ERROR);
+    CHECK(core2->record_chip_read("after-gap") == miezmerker::RecordResult::RECORDED);
+    CHECK(server.ack(6, now).error == SyncError::InvalidSequence);
+    CHECK(server.ack_watermark() == 3);
+    // Oversized credential invalidates an already authorized session.
+    CHECK(!server.authorize(std::string(2049, 'x'), good_proof, now));
+    CHECK(!server.authorized(now));
     std::cout << "PASS sync_gating_and_transfers\n";
 }
 
@@ -313,6 +329,28 @@ void watermark_math() {
     CHECK(contiguous_watermark(0, {1, 1, 2}) == 2);  // duplicates harmless
     CHECK(contiguous_watermark(5, {7, 6}) == 7);
     std::cout << "PASS watermark_math\n";
+}
+
+void zero_rtc_is_unknown() {
+    Fixture f;
+    auto core = f.make_core();
+    CHECK(core->initialize());
+    for (const auto status : {miezmerker::ClockStatus::RTC_ONLY, miezmerker::ClockStatus::SYNCED}) {
+        f.clock.set_wall_clock(status, 0);
+        CHECK(core->wall_clock().status == miezmerker::ClockStatus::UNKNOWN);
+        CHECK(!core->wall_clock().epoch_ms.has_value());
+        CHECK(core->record_chip_read("zero-clock") == miezmerker::RecordResult::RECORDED);
+        auto record = core->load_observations().back();
+        CHECK(record.clock_status == miezmerker::ClockStatus::UNKNOWN);
+        CHECK(!record.observed_at_epoch_ms.has_value());
+        const auto bytes = miezmerker::ble::encode_record(record);
+        std::size_t off = 0;
+        CHECK(miezmerker::ble::decode_record(bytes, off).has_value());
+        record.clock_status = status;
+        record.observed_at_epoch_ms = 0;
+        CHECK(!record.valid());
+        CHECK(miezmerker::ble::encode_record(record).empty());
+    }
 }
 
 void invalid_inputs() {
@@ -333,6 +371,8 @@ void invalid_inputs() {
     // Batch with zero max or zero cursor rejected.
     CHECK(!decode_batch_request(encode_batch_request({0, 8})));
     CHECK(!decode_batch_request(encode_batch_request({1, 0})));
+    std::size_t outside = 1;
+    CHECK(!decode_record({}, outside));
     std::cout << "PASS invalid_inputs\n";
 }
 
@@ -342,6 +382,7 @@ int main() {
     codec_golden_vectors();
     watermark_math();
     invalid_inputs();
+    zero_rtc_is_unknown();
     sync_gating_and_transfers();
     std::cout << "All BLE sync tests passed (" << checks << " checks)\n";
     return 0;

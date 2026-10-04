@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  decodeAdvertisement, decodeAuthResponse, decodeBatchRequest, decodeBatchResponse,
+  decodeAdvertisement, decodeAuthRequest, decodeAuthResponse, decodeBatchRequest, decodeBatchResponse,
   decodeChallengeResponse, decodeFrame, decodeHelloPublic, decodeOwnerResponse,
   decodeRecord, decodeStatusResponse, decodeTimeResponse,
   encodeAckRequest, encodeAdvertisement, encodeAuthRequest, encodeAuthResponse,
@@ -21,7 +21,34 @@ function hex(b: Uint8Array): string {
 const NODE_ID = '44444444-4444-4444-8444-444444444444';
 const INCARNATION = '55555555-5555-4555-9555-555555555555';
 
+test('rejects zero sequence, zero identity, invalid offset and trailing auth bytes', () => {
+  const record = { nodeId: NODE_ID, incarnation: INCARNATION, sequence: 1n,
+    chipId: 'chip-a', clockStatus: 2, epochMs: 1790899200000n, monotonicMs: 1n, bootCounter: 1 };
+  const zeroSequence = encodeRecord(record);
+  zeroSequence.fill(0, 32, 40);
+  expect(decodeRecord(zeroSequence)).toBeNull();
+  const zeroIdentity = encodeRecord(record);
+  zeroIdentity.fill(0, 0, 16);
+  expect(decodeRecord(zeroIdentity)).toBeNull();
+  expect(decodeRecord(new Uint8Array(), -1)).toBeNull();
+  expect(decodeRecord(new Uint8Array(), 1)).toBeNull();
+  const auth = encodeAuthRequest({ credential: 'credential', proof: new Uint8Array(64) });
+  const trailing = new Uint8Array(auth.length + 1);
+  trailing.set(auth);
+  expect(decodeAuthRequest(trailing)).toBeNull();
+});
+
 describe('ble-codec golden vectors', () => {
+  test('rejects malformed chip UTF-8 and preserves a leading BOM', () => {
+    const record = { nodeId: NODE_ID, incarnation: INCARNATION, sequence: 1n,
+      chipId: 'X', clockStatus: 0, epochMs: null, monotonicMs: 0n, bootCounter: 1 };
+    const invalid = encodeRecord(record);
+    invalid[42] = 0xff;
+    expect(decodeRecord(invalid)).toBeNull();
+    const chipId = '\uFEFFX';
+    expect(decodeRecord(encodeRecord({ ...record, chipId }))?.record.chipId).toBe(chipId);
+  });
+
   test('hello public frame matches fixture', () => {
     const payload = encodeHelloPublic({
       serverVer: 1, caps: 0x001f,

@@ -21,23 +21,8 @@ HelloPublic SyncServer::public_hello() const {
     msg.incarnation = core_->incarnation();
     msg.firmware_version = config_.firmware_version;
     msg.claim_state = core_->claim_state();
-    // Clock status for hello: read current RTC without exposing epoch.
-    // Epoch itself is protected (reveals activity timing); status alone is
-    // technical discovery. The full wall value is in Status (authorized).
-    // We approximate via observation-free reading: use last observation's
-    // status? No — use core-agnostic UNKNOWN when no info. Instead, expose
-    // the live clock via a best-effort: if core has any observation, use its
-    // status is wrong. Better: SyncServer cannot read Clock directly, so
-    // report UNKNOWN here and authoritative status in StatusResponse derived
-    // from the same source as observations? For v1, hello clock mirrors the
-    // most recent observation's status when available, else UNKNOWN.
-    // This leaks no chip/pending data.
-    auto all = const_cast<Core*>(core_)->load_observations();
-    if (!all.empty()) {
-        msg.clock_status = all.back().clock_status;
-    } else {
-        msg.clock_status = ClockStatus::UNKNOWN;
-    }
+    // Public technical clock status, without exposing an observation's time.
+    msg.clock_status = core_->wall_clock().status;
     return msg;
 }
 
@@ -70,7 +55,10 @@ bool SyncServer::begin_challenge(std::array<std::uint8_t, 32>& challenge) {
 bool SyncServer::authorize(const std::string& credential,
                            const std::array<std::uint8_t, 64>& proof,
                            TrustedEpochSeconds now_s) {
-    if (credential.size() > config_.max_credential_bytes) return false;
+    if (credential.size() > config_.max_credential_bytes) {
+        authorizer_->disconnect();  // Every failed attempt consumes the session.
+        return false;
+    }
     return authorizer_->authorize(credential, proof, now_s);
 }
 
@@ -79,7 +67,7 @@ bool SyncServer::claimed() const {
 }
 
 bool SyncServer::authorized(TrustedEpochSeconds now_s) const {
-    return authorizer_->can_sync(now_s);
+    return core_->ready() && authorizer_->can_sync(now_s);
 }
 
 std::uint32_t SyncServer::pending_count() const {
@@ -102,15 +90,9 @@ std::optional<StatusResponse> SyncServer::status(TrustedEpochSeconds now_s) cons
     msg.pending = pending_count();
     msg.ack_watermark = core_->ack_watermark();
     msg.store_status = core_->store_status();
-    auto all = const_cast<Core*>(core_)->load_observations();
-    if (!all.empty()) {
-        msg.clock_status = all.back().clock_status;
-        msg.epoch_ms = all.back().observed_at_epoch_ms.value_or(0);
-        if (msg.clock_status == ClockStatus::UNKNOWN) msg.epoch_ms = 0;
-    } else {
-        msg.clock_status = ClockStatus::UNKNOWN;
-        msg.epoch_ms = 0;
-    }
+    const auto wall = core_->wall_clock();
+    msg.clock_status = wall.status;
+    msg.epoch_ms = wall.epoch_ms.value_or(0);
     msg.next_sequence = core_->next_sequence();
     return msg;
 }
@@ -189,7 +171,6 @@ SyncServer::BatchResult SyncServer::batch(std::uint64_t from_sequence, std::uint
 
 SyncServer::AckResult SyncServer::ack(std::uint64_t watermark, TrustedEpochSeconds now_s) {
     AckResult result;
-    result.new_watermark = core_->ack_watermark();
     if (!authorized(now_s)) {
         result.error = SyncError::Unauthorized;
         return result;
@@ -198,6 +179,7 @@ SyncServer::AckResult SyncServer::ack(std::uint64_t watermark, TrustedEpochSecon
         result.error = SyncError::InvalidState;
         return result;
     }
+    result.new_watermark = core_->ack_watermark();
     if (watermark == kInvalidSequence && watermark != core_->ack_watermark()) {
         // ACK 0 is only legal as idempotent no-op when nothing acked yet.
         if (core_->ack_watermark() != 0) {
@@ -215,9 +197,19 @@ SyncServer::AckResult SyncServer::ack(std::uint64_t watermark, TrustedEpochSecon
         result.error = SyncError::Ok;  // idempotent replay (lost ACK path).
         return result;
     }
-    if (!core_->set_ack_watermark(watermark)) {
-        // Beyond last durable sequence, or store failure.
+    // A numeric high-watermark must not jump an absent sequence. Reserved
+    // sequences lost before append remain gaps; no range/tombstone protocol
+    // exists in v1 that would let the collector prove such a gap durable.
+    std::vector<std::uint64_t> sequences;
+    for (const auto& obs : core_->load_observations()) {
+        if (obs.node_id == core_->node_id() && obs.valid()) sequences.push_back(obs.sequence);
+    }
+    if (watermark > contiguous_watermark(core_->ack_watermark(), sequences)) {
         result.error = SyncError::InvalidSequence;
+        return result;
+    }
+    if (!core_->set_ack_watermark(watermark)) {
+        result.error = SyncError::Internal;  // Durable watermark write failed.
         return result;
     }
     result.new_watermark = core_->ack_watermark();
@@ -303,19 +295,13 @@ SyncServer::ProofResult SyncServer::node_proof(const std::array<std::uint8_t, 32
 std::uint64_t contiguous_watermark(std::uint64_t base,
                                    const std::vector<std::uint64_t>& stored) {
     std::uint64_t w = base;
-    // O(n log n) is fine for bounded batches; the TS mirror uses a Set.
-    // Duplicate stored sequences are harmless (idempotent retransmission).
-    for (;;) {
-        bool found = false;
-        for (const auto v : stored) {
-            if (v == w + 1) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) break;
-        if (w + 1 == std::numeric_limits<std::uint64_t>::max()) break;
-        ++w;
+    auto ordered = stored;
+    std::sort(ordered.begin(), ordered.end());
+    for (const auto sequence : ordered) {
+        if (sequence <= w) continue;
+        if (w == std::numeric_limits<std::uint64_t>::max() || sequence != w + 1 ||
+            sequence == std::numeric_limits<std::uint64_t>::max()) break;
+        w = sequence;
     }
     return w;
 }

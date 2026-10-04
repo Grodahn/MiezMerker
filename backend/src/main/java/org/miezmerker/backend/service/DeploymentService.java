@@ -72,8 +72,7 @@ public class DeploymentService {
                         "node not found"));
         if (node.getState() != NodeState.CLAIMED || node.getOrganization() == null
                 || !node.getOrganization().getId().equals(organizationId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "node does not belong to this organization");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "node not found");
         }
         FeedingSite site = sites.findByIdAndOrganizationId(feedingSiteId, organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -134,7 +133,13 @@ public class DeploymentService {
         nodes.findByIdLocked(deployment.getNode().getNodeId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "node not found"));
-        deployments.delete(deployment);
+        try {
+            deployments.delete(deployment);
+            deployments.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "deployment is still referenced by observations");
+        }
     }
 
     static boolean overlaps(Instant fromA, Instant untilA, Instant fromB, Instant untilB) {

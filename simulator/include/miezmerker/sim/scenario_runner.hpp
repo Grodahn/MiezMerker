@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "miezmerker/core.hpp"
+#include "miezmerker/ble_sync.hpp"
 #include "miezmerker/sim/scenario.hpp"
 #include "miezmerker/sim/sim_clock.hpp"
 #include "miezmerker/sim/sim_rfid.hpp"
@@ -41,11 +42,14 @@ private:
 
     // Core instance (volatile, recreated on boot/reboot/factory_reset)
     std::unique_ptr<Core> core_;
+    struct SyncFixture;
+    std::unique_ptr<SyncFixture> sync_;
+    std::optional<ble::SyncServer::BatchResult> last_batch_;
+    std::optional<ble::StatusResponse> last_status_;
 
     // Per-scenario configuration
     std::size_t capacity_;
     std::uint64_t debounce_ms_;
-    std::uint64_t seed_;
 
     // Runtime state
     std::optional<NodeId> last_node_id_;      // node_id after last boot/reboot/factory_reset
@@ -103,6 +107,7 @@ private:
     bool execute_sync_ack(const std::vector<std::string>& args);
     bool execute_sync_compact();
     bool execute_sync_status();
+    bool execute_sync_claim();
     bool execute_assert(const std::vector<std::string>& args);
 
     // Assertion helpers

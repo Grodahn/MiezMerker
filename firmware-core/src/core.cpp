@@ -176,7 +176,7 @@ RecordResult Core::record_chip_read(const std::string& chip_id) {
 
     // RTC value actually observed at read time, with the trust status that
     // applied at that instant. Never synthesize a trustworthy timestamp.
-    WallClockReading wall = clock_->wall_clock();
+    WallClockReading wall = wall_clock();
     ClockStatus status = wall.status;
     std::optional<std::uint64_t> epoch = wall.epoch_ms;
     if (status == ClockStatus::UNKNOWN) {
@@ -282,6 +282,17 @@ std::size_t Core::observation_count() const {
 StoreStatus Core::store_status() const {
     if (observations_ == nullptr) return StoreStatus::OK;
     return observations_->status();
+}
+
+WallClockReading Core::wall_clock() const {
+    if (!ready_ || clock_ == nullptr) return {};
+    auto reading = clock_->wall_clock();
+    if (reading.status == ClockStatus::UNKNOWN || !reading.epoch_ms.has_value() ||
+        *reading.epoch_ms == 0) {
+        reading.status = ClockStatus::UNKNOWN;
+        reading.epoch_ms.reset();
+    }
+    return reading;
 }
 
 std::uint64_t Core::ack_watermark() const {

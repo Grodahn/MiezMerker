@@ -4,6 +4,7 @@ version: 1
 description: Explicit compact frees acked prefix; unacked data preserved.
 
 boot
+sync_claim
 rtc SYNCED 1700000000000
 read CHIP-001
 read CHIP-002

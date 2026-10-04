@@ -53,6 +53,9 @@ public class ObservationIngestService {
     private static final Logger log = LoggerFactory.getLogger(ObservationIngestService.class);
 
     static final Set<String> CLOCK_STATUSES = Set.of("SYNCED", "RTC_ONLY", "UNKNOWN", "KNOWN");
+    // PostgreSQL's finite timestamp upper bound (294277-01-01, exclusive).
+    // Validate before deployment lookup so a bad item cannot abort its batch.
+    static final long MAX_OBSERVED_AT_MS_EXCLUSIVE = 9_224_318_016_000_000L;
 
     public record IngestItem(UUID nodeId, long sequence, String chipId, Long observedAtMs,
             String clockStatus, String incarnation, Long monotonicMs, Integer bootCounter) {}
@@ -102,20 +105,11 @@ public class ObservationIngestService {
             } catch (DataIntegrityViolationException concurrent) {
                 // Concurrent duplicate won the unique constraint race between our
                 // existence check and our insert; classify against the winner.
-                result = self.getObject().classifyExisting(item);
+                result = self.getObject().classifyExisting(organizationId, item);
                 if (result == null) {
                     throw new ResponseStatusException(HttpStatus.CONFLICT,
                             "duplicate observation conflicts with a concurrent upload");
                 }
-            } catch (ResponseStatusException e) {
-                if (e.getStatusCode() != HttpStatus.FORBIDDEN) {
-                    throw e;
-                }
-                // Per-item tenant violation (e.g. a node of another organization
-                // inside an otherwise valid batch): report it on the item without
-                // failing sibling items that already committed independently.
-                result = new ItemResult(item.nodeId(), item.sequence(), "FORBIDDEN",
-                        e.getReason() != null ? e.getReason() : "forbidden");
             }
             results.add(result);
             switch (result.status()) {
@@ -146,10 +140,9 @@ public class ObservationIngestService {
         }
         if (node.getState() != NodeState.CLAIMED || node.getOrganization() == null
                 || !node.getOrganization().getId().equals(organizationId)) {
-            // Same visibility rule as the node detail endpoint: foreign nodes are
-            // forbidden, never silently accepted into another tenant.
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "node does not belong to this organization");
+            // Do not turn ingest into an oracle for foreign node identities.
+            return new ItemResult(item.nodeId(), item.sequence(), "UNKNOWN_NODE",
+                    "node is not registered; claim it via #18 before uploading");
         }
 
         RawObservation existing =
@@ -185,10 +178,10 @@ public class ObservationIngestService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ItemResult classifyExisting(IngestItem item) {
+    public ItemResult classifyExisting(UUID organizationId, IngestItem item) {
         var existing = observations.findByNodeNodeIdAndSequence(item.nodeId(), item.sequence())
                 .orElse(null);
-        if (existing == null) {
+        if (existing == null || !existing.getOrganization().getId().equals(organizationId)) {
             return null;
         }
         String incarnation = item.incarnation() == null || item.incarnation().isBlank()
@@ -240,7 +233,7 @@ public class ObservationIngestService {
             return "sequence must be >= 1";
         }
         if (item.chipId() == null || item.chipId().trim().isEmpty()
-                || item.chipId().trim().length() > 64) {
+                || Cat.normalizeChipId(item.chipId()).length() > 64) {
             return "chipId must have 1..64 characters";
         }
         if (item.clockStatus() == null
@@ -255,8 +248,9 @@ public class ObservationIngestService {
         if (!"UNKNOWN".equals(clock) && item.observedAtMs() == null) {
             return "observedAtMs is required unless clockStatus is UNKNOWN";
         }
-        if (item.observedAtMs() != null && item.observedAtMs() < 0) {
-            return "observedAtMs must be >= 0";
+        if (item.observedAtMs() != null && (item.observedAtMs() <= 0
+                || item.observedAtMs() >= MAX_OBSERVED_AT_MS_EXCLUSIVE)) {
+            return "observedAtMs must be a positive finite PostgreSQL timestamp";
         }
         if (item.monotonicMs() != null && item.monotonicMs() < 0) {
             return "monotonicMs must be >= 0";
@@ -267,7 +261,10 @@ public class ObservationIngestService {
         String incarnation = item.incarnation() == null ? null : item.incarnation().trim();
         if (incarnation != null && !incarnation.isEmpty()) {
             try {
-                UUID.fromString(incarnation);
+                if (incarnation.length() != 36 ||
+                        !UUID.fromString(incarnation).toString().equalsIgnoreCase(incarnation)) {
+                    return "incarnation must be a UUID string";
+                }
             } catch (IllegalArgumentException e) {
                 return "incarnation must be a UUID string";
             }

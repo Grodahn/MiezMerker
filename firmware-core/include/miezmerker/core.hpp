@@ -118,6 +118,7 @@ public:
     ClaimState claim_state() const { return identity_.claim_state; }
     std::size_t observation_count() const;
     StoreStatus store_status() const;
+    WallClockReading wall_clock() const;
     std::uint64_t ack_watermark() const;
     bool set_ack_watermark(std::uint64_t sequence);
     /// Frees the acked prefix (sequence <= watermark) after a valid ACK (#6).

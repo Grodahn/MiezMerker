@@ -1,0 +1,28 @@
+name: sync-prune-faults
+version: 1
+description: Failed compaction and power loss retain all unacknowledged data.
+boot
+sync_claim
+rtc SYNCED 1700000000000
+read CHIP-001
+read CHIP-002
+read CHIP-003
+sync_ack 2
+assert last_ack true
+fail_prune_next
+sync_compact
+assert last_compact false
+assert observations 3
+crash_prune_next
+sync_compact
+reboot
+assert ack_watermark 2
+assert observations 1
+sync_status
+assert sync_pending 1
+sync_batch 3 16
+assert batch_error 0
+assert batch_count 1
+assert batch_cursor 4
+sync_compact
+assert observations 1

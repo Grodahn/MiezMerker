@@ -93,7 +93,8 @@ Historical assignment of a Node to a FeedingSite with a validity interval.
   on the node row (pessimistic lock) and a `CHECK (valid_until IS NULL OR valid_until > valid_from)`.
 - A move closes the old interval and opens a new one.
 - CRUD: read=ACTIVE, write=ADMIN
-- Deleting a deployment keeps frozen observation attributions intact.
+- Deleting a deployment referenced by observations returns `409`; its historical
+  attribution stays intact. Unreferenced deployments can be deleted.
 
 ## RawObservation
 
@@ -130,6 +131,15 @@ Immutable primary data ingested from a Node. Never rewritten.
 
 ## Ingest behavior summary
 
+HTTP raw-observation `sequence`, `observedAtMillis`, and `monotonicMs` use
+decimal strings in requests and responses, preserving 64-bit values in the PWA.
+Legacy numeric request values are still accepted, but callers should send strings
+to avoid JavaScript rounding before upload. The database stores signed 64-bit
+integers. Known-clock timestamps must be greater than zero and less than
+`9224318016000000` ms (PostgreSQL's finite timestamp upper bound); invalid
+items return `INVALID` while valid siblings continue. Unknown clocks omit the
+timestamp. Raw values are never clamped or rewritten to fit that range.
+
 | Scenario | Result |
 |----------|--------|
 | First occurrence | `CREATED` |
@@ -137,7 +147,7 @@ Immutable primary data ingested from a Node. Never rewritten.
 | Same key, different payload | `CONFLICT` (logged, original kept) |
 | Unknown node | `UNKNOWN_NODE` (403-level) |
 | Invalid chip/sequence/timestamp | `INVALID` (400-level) |
-| Foreign-organization node in batch | `FORBIDDEN` (per-item, sibling items still commit) |
+| Foreign-organization node in batch | `UNKNOWN_NODE` (same response as an absent node; siblings still commit) |
 
 ## Known limitations
 
@@ -197,12 +207,12 @@ Immutable primary data ingested from a Node. Never rewritten.
 - HTTP errors use Spring Boot RFC 7807 problem details
   (`application/problem+json`): `status`, `title`, `detail`, `instance`.
   Authentication failures return `401`, missing/inactive membership `403`,
-  unknown ids `404` (foreign-tenant ids also return `403`/`404` and never
-  data), validation failures `400`, deployment overlap / duplicate chip
+  unknown ids `404` (foreign observation IDs and node filters also return
+  `404`, without disclosing existence), validation failures `400`, deployment overlap / duplicate chip
   `409`, oversized batch `413`.
 - Batch ingest (`POST /api/v1/observations/ingest`) always returns `200` with
   per-item results (`CREATED`, `DUPLICATE_IDENTICAL`, `CONFLICT`,
-  `UNKNOWN_NODE`, `INVALID`, `FORBIDDEN`); only malformed batches
+  `UNKNOWN_NODE`, `INVALID`); only malformed batches
   (missing org, null entries, >5000 items) fail the whole request.
 
 ## Test coverage

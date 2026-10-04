@@ -25,13 +25,47 @@ std::string format_record_result(RecordResult r) {
 
 }  // namespace
 
+// Deterministic authorization/RTC/signing ports for transfer scenarios only.
+// Cryptographic credentials and replay are exercised by offline-auth tests.
+struct ScenarioRunner::SyncFixture {
+    struct Authorizer : ble::SyncAuthorizer {
+        bool active{false};
+        bool begin(std::array<std::uint8_t, 32>& challenge) override {
+            active = false;
+            challenge.fill(0xA5);
+            return true;
+        }
+        bool authorize(const std::string&, const std::array<std::uint8_t, 64>&,
+                       ble::TrustedEpochSeconds) override { active = true; return true; }
+        bool can_sync(ble::TrustedEpochSeconds) const override { return active; }
+        void disconnect() override { active = false; }
+    } auth;
+    struct Rtc : ble::RtcControl {
+        SimRtc& rtc;
+        explicit Rtc(SimRtc& r) : rtc(r) {}
+        bool set_corrected_epoch_ms(std::uint64_t ms) override { rtc.correct(ms); return true; }
+    } rtc;
+    struct Signer : ble::NodeSigner {
+        bool sign_session(const std::array<std::uint8_t, 32>&,
+                          std::array<std::uint8_t, 64>& signature) override {
+            signature.fill(0x5A); return true;
+        }
+    } signer;
+    ble::SyncServer server;
+    static constexpr ble::TrustedEpochSeconds now = 1790899200;
+    SyncFixture(Core& core, SimRtc& clock) : rtc(clock), server(core, auth, rtc, signer) {
+        std::array<std::uint8_t, 32> challenge{};
+        auth.begin(challenge);
+        auth.authorize("simulator", {}, now);
+    }
+};
+
 ScenarioRunner::ScenarioRunner(const Scenario& scenario)
     : scenario_(scenario),
       clock_(rtc_),
       random_(scenario.seed),
       capacity_(scenario.capacity),
-      debounce_ms_(scenario.debounce_ms),
-      seed_(scenario.seed) {
+      debounce_ms_(scenario.debounce_ms) {
     observations_ = SimObservationStore(capacity_);
     identity_ = SimDeviceIdentity();
 }
@@ -39,6 +73,9 @@ ScenarioRunner::ScenarioRunner(const Scenario& scenario)
 ScenarioRunner::~ScenarioRunner() = default;
 
 void ScenarioRunner::destroy_core() {
+    sync_.reset();
+    last_batch_.reset();
+    last_status_.reset();
     core_.reset();
 }
 
@@ -53,6 +90,9 @@ bool ScenarioRunner::boot_core() {
     }
     last_node_id_ = core_->node_id();
     last_incarnation_ = core_->incarnation();
+    if (core_->claim_state() == ClaimState::CLAIMED) {
+        sync_ = std::make_unique<SyncFixture>(*core_, rtc_);
+    }
     return true;
 }
 
@@ -109,7 +149,7 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
                         event.type == "expect_read" || event.type == "ack" ||
                         event.type == "expect_ack" ||
                         event.type == "sync_batch" || event.type == "sync_ack" ||
-                        event.type == "sync_compact");
+                        event.type == "sync_compact" || event.type == "sync_claim");
 
     if (is_mutating) {
         reset_fault_counters();
@@ -146,6 +186,7 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
         if (event.type == "sync_ack") return execute_sync_ack(event.args);
         if (event.type == "sync_compact") return execute_sync_compact();
         if (event.type == "sync_status") return execute_sync_status();
+        if (event.type == "sync_claim") return execute_sync_claim();
         if (event.type == "assert") return execute_assert(event.args);
         return false; // unknown event type (should not reach here, parser validates)
     } catch (const PowerLoss&) {
@@ -414,14 +455,16 @@ bool ScenarioRunner::execute_sync_batch(const std::vector<std::string>& args) {
         }
         max_records = static_cast<std::uint16_t>(max_records_64);
     }
-    // We can't invoke SyncServer directly here, but we can simulate by checking
-    // the core's observations. The core exposes pending count and next sequence.
-    // For simulator sync tests, we just verify the core state is correct.
-    // Actual BLE sync is tested in firmware-core unit tests.
-    // We can assert pending count, next sequence etc.
-    // For now, just record the request for assertions.
+    if (!sync_) { fail("sync_batch", "sync_claim", "unclaimed", "no sync fixture"); return false; }
     last_batch_request_from_ = from_seq;
     last_batch_request_max_ = max_records;
+    last_batch_ = sync_->server.batch(from_seq, max_records, SyncFixture::now);
+    if (last_batch_->error == ble::SyncError::Ok) {
+        // Exercise exactly the wire codec used by the collector as well.
+        auto decoded = ble::decode_batch_response(ble::encode_batch_response(last_batch_->batch));
+        if (!decoded) { fail("sync_batch", "decodable batch", "invalid", "codec"); return false; }
+        last_batch_->batch = *decoded;
+    }
     return true;
 }
 
@@ -436,7 +479,8 @@ bool ScenarioRunner::execute_sync_ack(const std::vector<std::string>& args) {
         fail("sync_ack", "valid watermark", args[0], "parse");
         return false;
     }
-    last_ack_result_ = core_->set_ack_watermark(watermark);
+    if (!sync_) { fail("sync_ack", "sync_claim", "unclaimed", "no sync fixture"); return false; }
+    last_ack_result_ = sync_->server.ack(watermark, SyncFixture::now).error == ble::SyncError::Ok;
     return true;
 }
 
@@ -445,7 +489,8 @@ bool ScenarioRunner::execute_sync_compact() {
         fail("sync_compact", "booted core", "null", "core not initialized");
         return false;
     }
-    last_compact_result_ = core_->compact_acked();
+    if (!sync_) { fail("sync_compact", "sync_claim", "unclaimed", "no sync fixture"); return false; }
+    last_compact_result_ = sync_->server.compact(SyncFixture::now).error == ble::SyncError::Ok;
     return true;
 }
 
@@ -454,8 +499,19 @@ bool ScenarioRunner::execute_sync_status() {
         fail("sync_status", "booted core", "null", "core not initialized");
         return false;
     }
-    // Status is read via existing assert observations/ack_watermark/pending etc.
+    if (!sync_) { fail("sync_status", "sync_claim", "unclaimed", "no sync fixture"); return false; }
+    last_status_ = sync_->server.status(SyncFixture::now);
+    if (!last_status_) { fail("sync_status", "authorized status", "none", "sync"); return false; }
     return true;
+}
+
+bool ScenarioRunner::execute_sync_claim() {
+    if (!core_ || !core_->ready()) return false;
+    IdentityRecord id;
+    if (identity_.load(id) != IdentityLoadResult::OK) return false;
+    id.claim_state = ClaimState::CLAIMED;
+    if (!identity_.store(id)) return false;
+    return reboot_core();
 }
 
 bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
@@ -465,6 +521,21 @@ bool ScenarioRunner::execute_assert(const std::vector<std::string>& args) {
     }
 
     std::string what = args[0];
+
+    if (what == "batch_count" || what == "batch_cursor" || what == "batch_error" ||
+        what == "sync_pending") {
+        if (args.size() != 2) return false;
+        std::uint64_t expected;
+        if (!parse_uint64(args[1], expected)) return false;
+        if (what == "sync_pending") {
+            if (!last_status_) return false;
+            return expect_eq(last_status_->pending, expected, what);
+        }
+        if (!last_batch_) return false;
+        if (what == "batch_count") return expect_eq(last_batch_->batch.records.size(), expected, what);
+        if (what == "batch_cursor") return expect_eq(last_batch_->batch.next_cursor, expected, what);
+        return expect_eq(static_cast<std::uint64_t>(last_batch_->error), expected, what);
+    }
 
     if (what == "observations") {
         if (args.size() != 2) { fail("assert observations", "1 argument", std::to_string(args.size() - 1), "arg count"); return false; }
@@ -722,7 +793,7 @@ int ScenarioRunner::run() {
             event.type == "factory_reset" || event.type == "read" ||
             event.type == "expect_read" || event.type == "ack" ||
             event.type == "expect_ack" || event.type == "sync_batch" ||
-            event.type == "sync_ack" || event.type == "sync_compact") {
+            event.type == "sync_ack" || event.type == "sync_compact" || event.type == "sync_claim") {
             crash_expected_ = false;
         }
     }

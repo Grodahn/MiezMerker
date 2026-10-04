@@ -9,15 +9,16 @@
 
 import Dexie, { type Table } from 'dexie';
 import {
-  type BleRecord, type BatchResponse, type OwnerInfo, type StatusResponse,
-  decodeBatchResponse, decodeFrame, decodeStatusResponse,
-  encodeAckRequest, encodeAuthRequest, encodeBatchRequest,
-  encodeChallengeRequest, encodeCompactRequest, encodeHelloRequest,
-  encodeNodeProofRequest, encodeOwnerRequest, encodeStatusRequest,
-  encodeTimeRequest, Opcode, PROTOCOL_VERSION, SyncError,
+  type BleRecord, type OwnerInfo, type StatusResponse,
+  decodeAckResponse, decodeAuthResponse, decodeBatchResponse, decodeCompactResponse,
+  decodeFrame, decodeHelloPublic, decodeNodeProofResponse, decodeOwnerResponse,
+  decodeStatusResponse, encodeFrame, encodeAckRequest, encodeAuthRequest,
+  encodeBatchRequest, encodeHelloRequest, encodeNodeProofRequest,
+  CAP_ALL_V1, Opcode, PROTOCOL_VERSION, SyncError,
 } from './ble-codec';
 import type { NodeTransport } from '../platform/node-transport';
 import type { AppDeviceKeys } from '../platform/device-keys';
+import { beginNodeAuthentication, type TrustedNodeIdentity } from '../platform/node-identity';
 
 export type SyncPhase =
   | 'idle'
@@ -161,6 +162,7 @@ export class SyncEngine {
     private transport: NodeTransport,
     private store: SyncStore,
     private keys: AppDeviceKeys,
+    private identity: TrustedNodeIdentity,
     private options: SyncEngineOptions = {},
   ) {}
 
@@ -186,6 +188,9 @@ export class SyncEngine {
   }
 
   private async syncOnce(credential: string, trustedNowS: () => number): Promise<SyncResult> {
+    this.owner = null;
+    this.status = null;
+    this.session = null;
     this.phase = 'connecting';
     await this.transport.connect();
     try {
@@ -194,11 +199,17 @@ export class SyncEngine {
       const helloResp = await this.sendFrame(encodeFrame({
         version: PROTOCOL_VERSION,
         opcode: Opcode.HelloRequest,
-        payload: encodeHelloRequest({ clientVer: PROTOCOL_VERSION, caps: 0 }),
+        payload: encodeHelloRequest({ clientVer: PROTOCOL_VERSION, caps: CAP_ALL_V1 }),
       }));
       const helloFrame = decodeFrame(helloResp);
       if (!helloFrame || helloFrame.opcode !== Opcode.HelloPublic) {
         throw new Error('hello failed');
+      }
+      const hello = decodeHelloPublic(helloFrame.payload);
+      if (!hello || hello.serverVer !== PROTOCOL_VERSION || hello.claimState !== 1 ||
+          hello.nodeId !== this.identity.nodeId.toLowerCase() ||
+          (hello.caps & CAP_ALL_V1) !== CAP_ALL_V1) {
+        throw new Error('unsupported or unexpected node identity');
       }
       // Owner (public).
       const ownerResp = await this.sendFrame(encodeFrame({
@@ -207,10 +218,12 @@ export class SyncEngine {
         payload: new Uint8Array(),
       }));
       const ownerFrame = decodeFrame(ownerResp);
-      if (ownerFrame && ownerFrame.opcode === Opcode.OwnerResponse) {
-        // OwnerInfo decode is in ble-codec; we re-decode here.
-        const { decodeOwnerResponse } = await import('./ble-codec');
-        this.owner = decodeOwnerResponse(ownerFrame.payload);
+      if (!ownerFrame || ownerFrame.opcode !== Opcode.OwnerResponse) {
+        throw new Error('owner failed');
+      }
+      this.owner = decodeOwnerResponse(ownerFrame.payload);
+      if (!this.owner || this.owner.nodeId !== hello.nodeId || this.owner.claimState !== 1) {
+        throw new Error('bad owner identity');
       }
 
       // Challenge + auth.
@@ -225,6 +238,7 @@ export class SyncEngine {
         throw new Error('challenge failed');
       }
       const nonce = chFrame.payload;
+      if (nonce.length !== 32) throw new Error('bad challenge');
       const proof = await this.keys.signChallenge(nonce);
 
       this.phase = 'authorizing';
@@ -237,21 +251,30 @@ export class SyncEngine {
       if (!authFrame || authFrame.opcode !== Opcode.AuthResponse) {
         throw new Error('auth failed');
       }
-      const { decodeAuthResponse } = await import('./ble-codec');
       const auth = decodeAuthResponse(authFrame.payload);
-      if (!auth.ok) {
-        throw new Error(`auth denied: ${SyncError[auth.error]}`);
+      if (!auth || !auth.ok || auth.error !== SyncError.Ok ||
+          (auth.expiresS !== 0n && BigInt(trustedNowS()) >= auth.expiresS)) {
+        throw new Error('auth denied or expired');
+      }
+      // Trust comes from the cached backend identity, never the BLE peer's key.
+      const nodeAuth = await beginNodeAuthentication(this.identity);
+      const proofFrame = decodeFrame(await this.sendFrame(encodeFrame({
+        version: PROTOCOL_VERSION, opcode: Opcode.NodeProofRequest,
+        payload: encodeNodeProofRequest(nodeAuth.challenge),
+      })));
+      const signature = proofFrame?.opcode === Opcode.NodeProofResponse
+        ? decodeNodeProofResponse(proofFrame.payload) : null;
+      if (!signature || !await nodeAuth.verify(signature)) {
+        throw new Error('node proof invalid');
       }
       this.phase = 'authorized';
 
       // Load or create session.
-      const nodeId = this.owner?.nodeId ?? 'unknown';
-      const incarnation = this.owner?.nodeId ?? 'unknown';
-      const existing = await this.store.session(nodeId);
+      const { nodeId, incarnation } = hello;
       this.session = {
         nodeId,
         incarnation,
-        watermark: existing?.watermark ?? '0',
+        watermark: '0',
         phase: 'authorized',
         updatedAt: Date.now(),
       };
@@ -268,11 +291,20 @@ export class SyncEngine {
         throw new Error('status failed');
       }
       this.status = decodeStatusResponse(stFrame.payload);
-      if (!this.status) throw new Error('bad status');
+      if (!this.status || this.status.ackWatermark >= this.status.nextSequence) {
+        throw new Error('bad status');
+      }
+      // The authenticated node's durable ACK is the shared baseline. Another
+      // collector may have acknowledged records absent from this local store.
+      const base = this.status.ackWatermark;
+      this.session.watermark = base.toString();
 
       let totalReceived = 0;
       let cursor = this.status.ackWatermark + 1n;
       const maxBatch = this.options.maxBatchRecords ?? 16;
+      if (!Number.isInteger(maxBatch) || maxBatch < 1 || maxBatch > 64) {
+        throw new Error('invalid batch size');
+      }
 
       // Batch loop: receive pages, persist durably, advance cursor.
       for (;;) {
@@ -286,7 +318,20 @@ export class SyncEngine {
           throw new Error('batch failed');
         }
         const batch = decodeBatchResponse(batchFrame.payload);
-        if (!batch) throw new Error('bad batch');
+        if (!batch || batch.fromSequence !== cursor || batch.records.length > maxBatch) {
+          throw new Error('bad batch');
+        }
+        let previous = cursor - 1n;
+        for (const record of batch.records) {
+          if (record.nodeId !== nodeId || record.incarnation !== incarnation ||
+              record.sequence <= previous) throw new Error('unexpected batch record');
+          previous = record.sequence;
+        }
+        const expectedCursor = batch.records.length ? previous + 1n : cursor;
+        if (batch.nextCursor !== expectedCursor ||
+            (batch.more && (batch.records.length === 0 || batch.nextCursor <= cursor))) {
+          throw new Error('non-progressing or invalid batch cursor');
+        }
 
         if (batch.records.length > 0) {
           // Durable persist BEFORE ACK.
@@ -301,7 +346,6 @@ export class SyncEngine {
 
       // Compute contiguous watermark from durable store.
       const stored = await this.store.sequences(nodeId, incarnation);
-      const base = BigInt(this.session.watermark);
       const watermark = contiguousWatermark(base, stored);
 
       // ACK only after durable persist.
@@ -316,14 +360,13 @@ export class SyncEngine {
         if (!ackFrame || ackFrame.opcode !== Opcode.AckResponse) {
           throw new Error('ack failed');
         }
-        const { decodeAckResponse } = await import('./ble-codec');
         const ack = decodeAckResponse(ackFrame.payload);
-        if (ack.error !== SyncError.Ok) {
-          throw new Error(`ack rejected: ${SyncError[ack.error]}`);
+        if (!ack || ack.error !== SyncError.Ok || ack.newWatermark !== watermark) {
+          throw new Error('ack rejected or mismatched');
         }
-        this.session.watermark = watermark.toString();
-        await this.store.saveSession(this.session);
       }
+      this.session.watermark = watermark.toString();
+      await this.store.saveSession(this.session);
 
       // Compact (explicit, after ACK).
       this.phase = 'compacting';
@@ -333,9 +376,12 @@ export class SyncEngine {
         payload: new Uint8Array(),
       }));
       const compactFrame = decodeFrame(compactResp);
-      if (compactFrame && compactFrame.opcode === Opcode.CompactResponse) {
-        // Compaction confirmed; watermark is durable.
+      const compact = compactFrame?.opcode === Opcode.CompactResponse
+        ? decodeCompactResponse(compactFrame.payload) : null;
+      if (!compact || compact.error !== SyncError.Ok || compact.ackWatermark !== watermark) {
+        throw new Error('compaction failed');
       }
+      if (stored.some(sequence => sequence > watermark)) throw new Error('sequence gap remains');
 
       this.phase = 'complete';
       return { ok: true, recordsReceived: totalReceived, watermark };
@@ -346,6 +392,9 @@ export class SyncEngine {
 
   private async sendFrame(frame: Uint8Array): Promise<Uint8Array> {
     await this.transport.write(frame);
-    return this.transport.read();
+    const response = await this.transport.read();
+    const decoded = decodeFrame(response);
+    if (!decoded || decoded.version !== PROTOCOL_VERSION) throw new Error('invalid response version or frame');
+    return response;
   }
 }

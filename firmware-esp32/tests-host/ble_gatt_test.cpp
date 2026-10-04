@@ -8,6 +8,7 @@
 #include <array>
 #include <cassert>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include "miezmerker/ble_codec.hpp"
@@ -338,6 +339,16 @@ void router_foreign_no_leak() {
         encode_frame(Frame{1, Opcode::BatchRequest, encode_batch_request({1, 8})}), now);
     auto bf = decode_frame(batch);
     CHECK(bf && bf->opcode == Opcode::Error);
+
+    // Even a guessed current watermark must return only an authorization error.
+    CHECK(core2->set_ack_watermark(1));
+    for (auto watermark : {std::uint64_t{0}, std::uint64_t{1}}) {
+        auto ack = decode_frame(router.handle_frame(
+            encode_frame(Frame{1, Opcode::AckRequest, encode_ack_request(watermark)}), now));
+        CHECK(ack && ack->opcode == Opcode::Error);
+        auto error = decode_error_payload(ack->payload);
+        CHECK(error && error->code == SyncError::Unauthorized);
+    }
 
     std::cout << "PASS router_foreign_no_leak\n";
 }

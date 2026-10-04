@@ -172,7 +172,7 @@ Reboot semantics: volatile Core state (debounce cache, boot_counter increment) i
 | 16 | `016-storage-full.scenario` | Storage full |
 | 17 | `017-no-silent-deletion.scenario` | No silent deletion of unacknowledged data |
 | 18 | `027-sync-batch-request.scenario` | Sync batch request simulation |
-| 19 | `028-sync-ack-watermark.scenario` | Sync ACK contiguous high-watermark |
+| 19 | `028-sync-ack-gap.scenario` | Sync ACK contiguous high-watermark |
 | 20 | `029-sync-compact.scenario` | Sync explicit compaction |
 | 21 | `030-sync-retry.scenario` | Sync retry after disconnect/power loss |
 
@@ -202,6 +202,14 @@ The following BLE/Security functionality is **not** implemented in this simulato
 - PWA behavior (#8)
 
 BLE/GATT sync protocol (#6) and ACK/retry semantics (#6) ARE implemented in simulator scenarios 027–030 and firmware-core unit tests. The simulator covers the domain state machine and durability aspects; full GATT transport remains a board concern (#4).
+
+`sync_claim` prepares a claimed identity and deterministic authorized test
+session, with a fresh fixture after reboot. It is a simulator-only setup,
+not a cryptographic claim handshake. `sync_batch`, `sync_ack`, `sync_compact`
+and `sync_status` invoke the production portable `SyncServer`; batch responses
+also round-trip through the production wire codec. Assertions `batch_count`,
+`batch_cursor`, `batch_error` and `sync_pending` inspect the actual responses.
+Scenario 031 exercises failed compaction and power loss after pruning.
 
 ## Architecture Notes
 

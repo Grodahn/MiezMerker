@@ -64,6 +64,9 @@ sequence)` identity.
 
 `chip_id` is the unchanged canonical reader string; reader normalization
 belongs to the adapter and must be specified before capture comparisons.
+Collectors reject malformed UTF-8 and preserve a leading BOM as identifier
+data. A zero RTC reading is captured as `UNKNOWN` before persistence, so
+known-clock records always have a nonzero epoch and round-trip through v1.
 
 ## GATT mapping (NimBLE, ESP32-C3)
 

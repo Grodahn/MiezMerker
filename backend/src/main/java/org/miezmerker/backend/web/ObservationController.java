@@ -1,5 +1,6 @@
 package org.miezmerker.backend.web;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.EntityManager;
@@ -9,7 +10,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import org.miezmerker.backend.domain.NodeDevice;
+import org.miezmerker.backend.domain.Cat;
 import org.miezmerker.backend.domain.RawObservation;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
@@ -58,12 +59,15 @@ public class ObservationController {
     @Schema(name = "IngestObservationRequest")
     public record IngestObservationRequest(
             @NotNull UUID nodeId,
-            @NotNull Long sequence,
+            @NotNull @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^[0-9]+$", example = "9007199254740993") Long sequence,
             String chipId,
-            Long observedAtMillis,
+            @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^[0-9]+$") Long observedAtMillis,
             String clockStatus,
             String incarnation,
-            Long monotonicMs,
+            @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^[0-9]+$") Long monotonicMs,
             Integer bootCounter) {}
 
     @Schema(name = "IngestBatchRequest")
@@ -72,7 +76,9 @@ public class ObservationController {
             List<IngestObservationRequest> observations) {}
 
     @Schema(name = "IngestItemResult")
-    public record IngestItemResult(UUID nodeId, Long sequence, String status,
+    public record IngestItemResult(UUID nodeId,
+            @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^-?[0-9]+$") Long sequence, String status,
             String message) {}
 
     @Schema(name = "IngestBatchResponse")
@@ -81,8 +87,13 @@ public class ObservationController {
 
     @Schema(name = "RawObservationView")
     public record RawObservationView(UUID id, String organizationId, String nodeId,
-            long sequence, String chipId, Long observedAtMillis, String clockStatus,
-            String incarnation, Long monotonicMs, Integer bootCounter, String feedingSiteId,
+            @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^[0-9]+$") long sequence, String chipId,
+            @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^[0-9]+$") Long observedAtMillis, String clockStatus,
+            String incarnation, @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^[0-9]+$") Long monotonicMs,
+            Integer bootCounter, String feedingSiteId,
             String deploymentId, String receivedAt) {}
 
     private static RawObservationView toView(RawObservation o) {
@@ -163,7 +174,7 @@ public class ObservationController {
         }
         rejectForeignNodeFilter(nodeId, organizationId);
         String normalizedChip =
-                chipId == null || chipId.isBlank() ? null : chipId.trim().toUpperCase();
+                chipId == null || chipId.isBlank() ? null : Cat.normalizeChipId(chipId);
         String jpql = "select o from RawObservation o join fetch o.node n "
                 + "left join fetch o.feedingSite "
                 + "where o.organization.id = :org"
@@ -172,7 +183,7 @@ public class ObservationController {
                 + (normalizedChip != null ? " and o.chipId = :chip" : "")
                 + (fromMillis != null ? " and o.observedAtMs >= :from" : "")
                 + (toMillis != null ? " and o.observedAtMs < :to" : "")
-                + " order by o.receivedAt asc, o.sequence asc";
+                + " order by o.receivedAt asc, o.sequence asc, o.id asc";
         var query = entities.createQuery(jpql, RawObservation.class)
                 .setParameter("org", organizationId)
                 .setFirstResult(offset)
@@ -210,7 +221,12 @@ public class ObservationController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         // Tenant gate on the stored organization, not on any client parameter.
-        tenants.requireActive(principal.getId(), observation.getOrganization().getId());
+        try {
+            tenants.requireActive(principal.getId(), observation.getOrganization().getId());
+        } catch (ResponseStatusException e) {
+            if (e.getStatusCode() != HttpStatus.FORBIDDEN) throw e;
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
         // Re-fetch with joins for the view (find does not fetch associations).
         var full = entities.createQuery(
                 "select o from RawObservation o join fetch o.node n "
@@ -256,19 +272,18 @@ public class ObservationController {
     }
 
     /**
-     * A node filter naming a node claimed by another organization is rejected
-     * explicitly instead of returning an empty list: the caller asked for data
-     * outside their tenant, which must be visible as forbidden.
+     * Unknown and foreign node filters have identical visibility.
      */
     private void rejectForeignNodeFilter(UUID nodeId, UUID organizationId) {
         if (nodeId == null) {
             return;
         }
-        var node = entities.find(NodeDevice.class, nodeId);
-        if (node != null && node.getOrganization() != null
-                && !node.getOrganization().getId().equals(organizationId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "node does not belong to this organization");
+        var visible = entities.createQuery(
+                "select n.nodeId from NodeDevice n where n.nodeId = :node and n.organization.id = :org",
+                UUID.class).setParameter("node", nodeId).setParameter("org", organizationId)
+                .getResultList();
+        if (visible.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
     }
 

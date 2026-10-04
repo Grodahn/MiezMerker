@@ -41,18 +41,16 @@ On `AckRequest{watermark}` the node checks, in order, with trusted time:
 2. Claimed; else `INVALID_STATE`.
 3. `watermark >= current ack` (monotonic, equal is idempotent success);
    decreasing → `INVALID_SEQUENCE`, cursor unchanged.
-4. `watermark <= last durable sequence` for this `node_id`; beyond → 
-   `INVALID_SEQUENCE`, cursor unchanged (covers reserved-but-unappended
-   sequences and future values).
+4. Every sequence between `current ack + 1` and `watermark` exists durably
+   for this `node_id`; a gap or future value → `INVALID_SEQUENCE`, cursor unchanged.
 5. Persist via `ObservationStore::set_ack_watermark` atomically; failure →
    `INTERNAL`, cursor unchanged.
 6. Return `AckResponse{new_watermark}`. Deletion is **not** implied.
 
-The node cannot verify PWA-side contiguity directly; it trusts the PWA to
-compute `w` correctly. PWA unit tests prove the computation never skips gaps.
-The node guarantees it never advances past durable data and never moves
-backwards, so a buggy client cannot delete unpersisted data by skipping —
-the worst case is a rejected ACK.
+The node can reject gaps in its own log, but cannot inspect the PWA's storage.
+The collector must compute `w` only from committed local records. It verifies
+the node's private-key proof against a cached trusted backend identity before
+using its status as the shared ACK baseline.
 
 ## Compaction (freeing acknowledged data)
 
@@ -82,6 +80,9 @@ the worst case is a rejected ACK.
 | App restart mid-sync | Dexie durable, watermark recomputed | resume at persisted `w` | no loss |
 | Many pending (5000+) | paginated `more/next_cursor` | stream until `more=0` | bounded memory |
 
-Sequence gaps from crash reserve-then-append are normal; the PWA treats a
-missing sequence as a hole that blocks the watermark but never as an error.
-The backend independently deduplicates by full event identity.
+Sequence gaps from crash reserve-then-append block both client and server
+watermarks. The PWA retains the later records and reports incomplete sync.
+Those records stay unacknowledged on the node even after compaction. V1 has no
+authenticated tombstone/range mechanism to resolve a permanently missing
+sequence; adding one requires an explicit protocol extension.
+The backend independently deduplicates by `(node_id, sequence)`.

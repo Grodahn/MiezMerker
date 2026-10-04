@@ -4,6 +4,7 @@ version: 1
 description: Sync resumes at ack+1 after link loss; lost ACK handled idempotently.
 
 boot
+sync_claim
 rtc SYNCED 1700000000000
 read CHIP-001
 read CHIP-002
@@ -25,14 +26,16 @@ sync_ack 4
 assert last_ack true
 assert ack_watermark 4
 
+# An ACK of the current watermark is a no-op and consumes no write fault.
+read CHIP-005
 fail_watermark_next
-sync_ack 4
+sync_ack 5
 assert last_ack false
 assert ack_watermark 4
 
-sync_ack 4
+sync_ack 5
 assert last_ack true
-assert ack_watermark 4
+assert ack_watermark 5
 
 sync_compact
 assert observations 0

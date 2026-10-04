@@ -182,7 +182,9 @@ export function decodeHelloPublic(p: Uint8Array): HelloPublic | null {
   const nodeId = r.bytes(16);
   const incarnation = r.bytes(16);
   const fwLen = r.u8();
-  if (fwLen === null || nodeId === null || incarnation === null) return null;
+  if (serverVer === null || caps === null || fwLen === null || fwLen > 64 ||
+      nodeId === null || incarnation === null ||
+      !nodeId.some(b => b !== 0) || !incarnation.some(b => b !== 0)) return null;
   const fw = r.bytes(fwLen);
   const claimState = r.u8();
   const clockStatus = r.u8();
@@ -249,7 +251,7 @@ export function decodeAuthRequest(p: Uint8Array): AuthRequest | null {
   const credential = r.str16(2048);
   if (credential === null || credential.length === 0) return null;
   const proof = r.bytes(64);
-  if (proof === null) return null;
+  if (proof === null || r.remaining !== 0) return null;
   return { credential, proof };
 }
 
@@ -295,6 +297,12 @@ export interface BleRecord {
   monotonicMs: bigint; bootCounter: number;
 }
 export function encodeRecord(r: BleRecord): Uint8Array {
+  const u64Max = 0xffffffffffffffffn;
+  if (r.sequence < 1n || r.sequence > u64Max || r.monotonicMs < 0n || r.monotonicMs > u64Max ||
+      !Number.isInteger(r.bootCounter) || r.bootCounter < 0 || r.bootCounter > 0xffffffff ||
+      !Number.isInteger(r.clockStatus) || r.clockStatus < 0 || r.clockStatus > 2 ||
+      (r.clockStatus === 0 ? r.epochMs !== null : r.epochMs === null || r.epochMs <= 0n) ||
+      (r.epochMs !== null && r.epochMs > u64Max)) throw new Error('invalid record');
   const w = new Writer();
   w.bytes(uuidToBytes(r.nodeId));
   w.bytes(uuidToBytes(r.incarnation));
@@ -310,12 +318,14 @@ export function encodeRecord(r: BleRecord): Uint8Array {
   return w.toBytes();
 }
 export function decodeRecord(bytes: Uint8Array, offset = 0): { record: BleRecord; consumed: number } | null {
+  if (!Number.isInteger(offset) || offset < 0 || offset > bytes.length) return null;
   const r = new Reader(bytes.slice(offset));
   const nodeId = r.bytes(16);
   const incarnation = r.bytes(16);
   const sequence = r.u64();
   const chipLen = r.u16();
   if (nodeId === null || incarnation === null || sequence === null || chipLen === null) return null;
+  if (sequence === 0n || !nodeId.some(b => b !== 0) || !incarnation.some(b => b !== 0)) return null;
   if (chipLen === 0 || chipLen > 64) return null;
   const chip = r.bytes(chipLen);
   const clockStatus = r.u8();
@@ -326,10 +336,18 @@ export function decodeRecord(bytes: Uint8Array, offset = 0): { record: BleRecord
   if (clockStatus > 2) return null;
   if (clockStatus === 0 && epoch !== 0n) return null;
   if (clockStatus !== 0 && epoch === 0n) return null;
+  let chipId: string;
+  try {
+    // Preserve a leading BOM as part of the opaque identifier; reject invalid
+    // bytes instead of replacing them before persistence and ACK.
+    chipId = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(chip);
+  } catch {
+    return null;
+  }
   return {
     record: {
       nodeId: bytesToUuid(nodeId), incarnation: bytesToUuid(incarnation),
-      sequence, chipId: new TextDecoder().decode(chip),
+      sequence, chipId,
       clockStatus, epochMs: clockStatus === 0 ? null : epoch,
       monotonicMs, bootCounter,
     },
@@ -534,6 +552,8 @@ export function decodeAdvertisement(b: Uint8Array): Advertisement | null {
 }
 
 function uuidToBytes(uuid: string): Uint8Array {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid) ||
+      uuid === '00000000-0000-0000-0000-000000000000') throw new Error('invalid uuid');
   const hex = uuid.replace(/-/g, '');
   if (hex.length !== 32) throw new Error('invalid uuid');
   const out = new Uint8Array(16);

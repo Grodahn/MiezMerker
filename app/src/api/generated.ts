@@ -107,9 +107,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                deviceId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -126,9 +124,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                deviceId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -196,9 +192,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                nodeId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         /** Node details; only members of the owning organization (foreign orgs use the public /owner endpoint) */
@@ -216,13 +210,62 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                nodeId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         /** Public owner hint for a claimed node; no observations/chip data */
         get: operations["getNodeOwner"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List raw observations with organization, node, site, chip and time filters */
+        get: operations["listObservations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/observations/ingest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Idempotent batch ingest of raw observations (ACTIVE membership; per-item results) */
+        post: operations["ingestObservations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/observations/{observationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Raw observation details; never readable across organizations */
+        get: operations["getObservation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -253,9 +296,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                organizationId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         /** Organization details; requires ACTIVE membership (tenant isolation) */
@@ -268,138 +309,11 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organizationId}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-            };
-            cookie?: never;
-        };
-        /** ADMIN lists members of their own organization */
-        get: operations["listMembers"];
-        put?: never;
-        /** ADMIN creates a user and/or ACTIVE membership (test-phase bootstrap, no mail) */
-        post: operations["createMember"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/members/{membershipId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                membershipId: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** ADMIN changes role or activates/disables a membership */
-        patch: operations["updateMember"];
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/feeding-sites": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-            };
-            cookie?: never;
-        };
-        /** List feeding sites of an organization (requires ACTIVE membership) */
-        get: operations["listFeedingSites"];
-        put?: never;
-        /** ADMIN creates a feeding site in their own organization */
-        post: operations["createFeedingSite"];
-        /** ADMIN deletes a feeding site (blocked while deployments reference it) */
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/feeding-sites/{siteId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                siteId: string;
-            };
-            cookie?: never;
-        };
-        /** Feeding site details; never readable across organizations */
-        get: operations["getFeedingSite"];
-        put?: never;
-        post?: never;
-        /** ADMIN deletes a feeding site (blocked while deployments reference it) */
-        delete: operations["deleteFeedingSite"];
-        options?: never;
-        head?: never;
-        /** ADMIN updates a feeding site of their own organization */
-        patch: operations["updateFeedingSite"];
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/deployments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-            };
-            cookie?: never;
-        };
-        /** List deployments of an organization, optionally filtered by node */
-        get: operations["listDeployments"];
-        put?: never;
-        /** ADMIN assigns a node to a feeding site for a validity range */
-        post: operations["createDeployment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/deployments/{deploymentId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                deploymentId: string;
-            };
-            cookie?: never;
-        };
-        /** Deployment details; never readable across organizations */
-        get: operations["getDeployment"];
-        put?: never;
-        post?: never;
-        /** ADMIN deletes a deployment (stored observation attributions are kept) */
-        delete: operations["deleteDeployment"];
-        options?: never;
-        head?: never;
-        /** ADMIN closes or reopens a deployment by setting validUntil */
-        patch: operations["closeDeployment"];
-        trace?: never;
-    };
     "/api/v1/organizations/{organizationId}/cats": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                organizationId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         /** List cats of an organization (requires ACTIVE membership) */
@@ -417,10 +331,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                organizationId: string;
-                catId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         /** Cat details; never readable across organizations */
@@ -435,7 +346,99 @@ export interface paths {
         patch: operations["updateCat"];
         trace?: never;
     };
-    "/api/v1/observations/ingest": {
+    "/api/v1/organizations/{organizationId}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List deployments of an organization, optionally filtered by node */
+        get: operations["listDeployments"];
+        put?: never;
+        /** ADMIN assigns a node to a feeding site for a validity range */
+        post: operations["createDeployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/deployments/{deploymentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deployment details; never readable across organizations */
+        get: operations["getDeployment"];
+        put?: never;
+        post?: never;
+        /** ADMIN deletes a deployment (stored observation attributions are kept) */
+        delete: operations["deleteDeployment"];
+        options?: never;
+        head?: never;
+        /** ADMIN closes or reopens a deployment by setting validUntil */
+        patch: operations["closeDeployment"];
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/feeding-sites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List feeding sites of an organization (requires ACTIVE membership) */
+        get: operations["listFeedingSites"];
+        put?: never;
+        /** ADMIN creates a feeding site in their own organization */
+        post: operations["createFeedingSite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/feeding-sites/{siteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Feeding site details; never readable across organizations */
+        get: operations["getFeedingSite"];
+        put?: never;
+        post?: never;
+        /** ADMIN deletes a feeding site (blocked while deployments reference it) */
+        delete: operations["deleteFeedingSite"];
+        options?: never;
+        head?: never;
+        /** ADMIN updates a feeding site of their own organization */
+        patch: operations["updateFeedingSite"];
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ADMIN lists members of their own organization */
+        get: operations["listMembers"];
+        put?: never;
+        /** ADMIN creates a user and/or ACTIVE membership (test-phase bootstrap, no mail) */
+        post: operations["createMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/members/{membershipId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -444,58 +447,19 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Idempotent batch ingest of raw observations (ACTIVE membership; per-item results) */
-        post: operations["ingestObservations"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/observations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List raw observations with organization, node, site, chip and time filters */
-        get: operations["listObservations"];
-        put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/observations/{observationId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                observationId: string;
-            };
-            cookie?: never;
-        };
-        /** Raw observation details; never readable across organizations */
-        get: operations["getObservation"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        /** ADMIN changes role or activates/disables a membership */
+        patch: operations["updateMember"];
         trace?: never;
     };
     "/api/v1/organizations/{organizationId}/nodes/{nodeId}/observations": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                organizationId: string;
-                nodeId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         /** List one node's observations within an explicit organization context */
@@ -530,14 +494,14 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         CatView: {
+            chipId?: string;
+            createdAt?: string;
             /** Format: uuid */
             id?: string;
-            organizationId?: string;
-            chipId?: string;
             name?: string;
-            status?: string;
             notes?: string;
-            createdAt?: string;
+            organizationId?: string;
+            status?: string;
             updatedAt?: string;
         };
         ClaimNodeRequest: {
@@ -566,8 +530,8 @@ export interface components {
         CreateCatRequest: {
             chipId: string;
             name?: string;
-            status?: string;
             notes?: string;
+            status?: string;
         };
         CreateDeploymentRequest: {
             /** Format: uuid */
@@ -582,7 +546,9 @@ export interface components {
         CreateFeedingSiteRequest: {
             description?: string;
             locationLabel?: string;
+            /** Format: double */
             locationLat?: number;
+            /** Format: double */
             locationLng?: number;
             name: string;
         };
@@ -614,15 +580,12 @@ export interface components {
         };
         DeploymentView: {
             createdAt?: string;
-            /** Format: uuid */
             feedingSiteId?: string;
             /** Format: uuid */
             id?: string;
-            organizationId?: string;
             nodeId?: string;
-            /** Format: date-time */
+            organizationId?: string;
             validFrom?: string;
-            /** Format: date-time */
             validUntil?: string;
         };
         DeviceView: {
@@ -640,7 +603,9 @@ export interface components {
             /** Format: uuid */
             id?: string;
             locationLabel?: string;
+            /** Format: double */
             locationLat?: number;
+            /** Format: double */
             locationLng?: number;
             name?: string;
             organizationId?: string;
@@ -650,38 +615,40 @@ export interface components {
             status: string;
         };
         IngestBatchRequest: {
+            observations?: components["schemas"]["IngestObservationRequest"][];
             /** Format: uuid */
             organizationId: string;
-            observations: components["schemas"]["IngestObservationRequest"][];
         };
         IngestBatchResponse: {
+            /** Format: int32 */
             conflicts?: number;
+            /** Format: int32 */
             duplicates?: number;
+            /** Format: int32 */
             inserted?: number;
+            /** Format: int32 */
             rejected?: number;
             results?: components["schemas"]["IngestItemResult"][];
         };
         IngestItemResult: {
+            message?: string;
             /** Format: uuid */
             nodeId?: string;
-            /** Format: int64 */
-            sequence?: number;
+            sequence?: string;
             status?: string;
-            message?: string;
         };
         IngestObservationRequest: {
+            /** Format: int32 */
             bootCounter?: number;
             chipId?: string;
             clockStatus?: string;
             incarnation?: string;
-            /** Format: int64 */
-            monotonicMs?: number;
+            monotonicMs?: string;
             /** Format: uuid */
             nodeId: string;
-            /** Format: int64 */
-            observedAtMillis?: number;
-            /** Format: int64 */
-            sequence: number;
+            observedAtMillis?: string;
+            /** @example 9007199254740993 */
+            sequence: string;
         };
         IssueCredentialRequest: {
             organizationId: string;
@@ -701,6 +668,15 @@ export interface components {
             email: string;
             password: string;
         };
+        MemberView: {
+            email?: string;
+            /** Format: uuid */
+            membershipId?: string;
+            role?: string;
+            status?: string;
+            /** Format: uuid */
+            userId?: string;
+        };
         MembershipView: {
             /** Format: uuid */
             membershipId?: string;
@@ -710,15 +686,6 @@ export interface components {
             organizationSlug?: string;
             role?: string;
             status?: string;
-        };
-        MemberView: {
-            email?: string;
-            /** Format: uuid */
-            membershipId?: string;
-            role?: string;
-            status?: string;
-            /** Format: uuid */
-            userId?: string;
         };
         NodeOwnerView: {
             /** Format: uuid */
@@ -733,6 +700,7 @@ export interface components {
             claimedAt?: string;
             fingerprint?: string;
             firmwareVersion?: string;
+            lastContactAt?: string;
             /** Format: uuid */
             nodeId?: string;
             organizationId?: string;
@@ -741,7 +709,6 @@ export interface components {
             publicKeyY?: string;
             state?: string;
             statusNote?: string;
-            lastContactAt?: string;
         };
         OrganizationView: {
             displayName?: string;
@@ -752,6 +719,7 @@ export interface components {
             status?: string;
         };
         RawObservationView: {
+            /** Format: int32 */
             bootCounter?: number;
             chipId?: string;
             clockStatus?: string;
@@ -760,15 +728,12 @@ export interface components {
             /** Format: uuid */
             id?: string;
             incarnation?: string;
-            /** Format: int64 */
-            monotonicMs?: number;
+            monotonicMs?: string;
             nodeId?: string;
-            /** Format: int64 */
-            observedAtMillis?: number;
+            observedAtMillis?: string;
             organizationId?: string;
-            /** Format: int64 */
-            sequence?: number;
             receivedAt?: string;
+            sequence?: string;
         };
         RegisterDeviceRequest: {
             label?: string;
@@ -791,7 +756,9 @@ export interface components {
             clearLocation?: boolean;
             description?: string;
             locationLabel?: string;
+            /** Format: double */
             locationLat?: number;
+            /** Format: double */
             locationLng?: number;
             name?: string;
         };
@@ -1101,28 +1068,6 @@ export interface operations {
             };
         };
     };
-    getNodeOwner: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                nodeId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NodeOwnerView"];
-                };
-            };
-        };
-    };
     updateNode: {
         parameters: {
             query?: never;
@@ -1145,6 +1090,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeView"];
+                };
+            };
+        };
+    };
+    getNodeOwner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                nodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeOwnerView"];
+                };
+            };
+        };
+    };
+    listObservations: {
+        parameters: {
+            query: {
+                organizationId: string;
+                nodeId?: string;
+                feedingSiteId?: string;
+                chipId?: string;
+                fromMillis?: number;
+                toMillis?: number;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawObservationView"][];
+                };
+            };
+        };
+    };
+    ingestObservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IngestBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestBatchResponse"];
+                };
+            };
+        };
+    };
+    getObservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                observationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawObservationView"];
                 };
             };
         };
@@ -1215,7 +1257,7 @@ export interface operations {
             };
         };
     };
-    listMembers: {
+    listCats: {
         parameters: {
             query?: never;
             header?: never;
@@ -1232,12 +1274,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MemberView"][];
+                    "application/json": components["schemas"]["CatView"][];
                 };
             };
         };
     };
-    createMember: {
+    createCat: {
         parameters: {
             query?: never;
             header?: never;
@@ -1248,7 +1290,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateMemberRequest"];
+                "application/json": components["schemas"]["CreateCatRequest"];
             };
         };
         responses: {
@@ -1258,44 +1300,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MemberView"];
+                    "application/json": components["schemas"]["CatView"];
                 };
             };
         };
     };
-    updateMember: {
+    getCat: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-                membershipId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateMemberRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberView"];
-                };
-            };
-        };
-    };
-    listFeedingSites: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
+                catId: string;
             };
             cookie?: never;
         };
@@ -1307,67 +1323,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedingSiteView"][];
+                    "application/json": components["schemas"]["CatView"];
                 };
             };
         };
     };
-    createFeedingSite: {
+    deleteCat: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateFeedingSiteRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeedingSiteView"];
-                };
-            };
-        };
-    };
-    getFeedingSite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                siteId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeedingSiteView"];
-                };
-            };
-        };
-    };
-    deleteFeedingSite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                siteId: string;
+                catId: string;
             };
             cookie?: never;
         };
@@ -1382,19 +1349,19 @@ export interface operations {
             };
         };
     };
-    updateFeedingSite: {
+    updateCat: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-                siteId: string;
+                catId: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateFeedingSiteRequest"];
+                "application/json": components["schemas"]["UpdateCatRequest"];
             };
         };
         responses: {
@@ -1404,7 +1371,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedingSiteView"];
+                    "application/json": components["schemas"]["CatView"];
                 };
             };
         };
@@ -1530,7 +1497,7 @@ export interface operations {
             };
         };
     };
-    listCats: {
+    listFeedingSites: {
         parameters: {
             query?: never;
             header?: never;
@@ -1547,12 +1514,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatView"][];
+                    "application/json": components["schemas"]["FeedingSiteView"][];
                 };
             };
         };
     };
-    createCat: {
+    createFeedingSite: {
         parameters: {
             query?: never;
             header?: never;
@@ -1563,7 +1530,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateCatRequest"];
+                "application/json": components["schemas"]["CreateFeedingSiteRequest"];
             };
         };
         responses: {
@@ -1573,18 +1540,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatView"];
+                    "application/json": components["schemas"]["FeedingSiteView"];
                 };
             };
         };
     };
-    getCat: {
+    getFeedingSite: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-                catId: string;
+                siteId: string;
             };
             cookie?: never;
         };
@@ -1596,18 +1563,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatView"];
+                    "application/json": components["schemas"]["FeedingSiteView"];
                 };
             };
         };
     };
-    deleteCat: {
+    deleteFeedingSite: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-                catId: string;
+                siteId: string;
             };
             cookie?: never;
         };
@@ -1622,19 +1589,19 @@ export interface operations {
             };
         };
     };
-    updateCat: {
+    updateFeedingSite: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-                catId: string;
+                siteId: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateCatRequest"];
+                "application/json": components["schemas"]["UpdateFeedingSiteRequest"];
             };
         };
         responses: {
@@ -1644,72 +1611,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatView"];
+                    "application/json": components["schemas"]["FeedingSiteView"];
                 };
             };
         };
     };
-    ingestObservations: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["IngestBatchRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IngestBatchResponse"];
-                };
-            };
-        };
-    };
-    listObservations: {
-        parameters: {
-            query: {
-                organizationId: string;
-                nodeId?: string;
-                feedingSiteId?: string;
-                chipId?: string;
-                /** Format: int64 */
-                fromMillis?: number;
-                /** Format: int64 */
-                toMillis?: number;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RawObservationView"][];
-                };
-            };
-        };
-    };
-    getObservation: {
+    listMembers: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                observationId: string;
+                organizationId: string;
             };
             cookie?: never;
         };
@@ -1721,7 +1633,60 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RawObservationView"];
+                    "application/json": components["schemas"]["MemberView"][];
+                };
+            };
+        };
+    };
+    createMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberView"];
+                };
+            };
+        };
+    };
+    updateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberView"];
                 };
             };
         };

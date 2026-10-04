@@ -77,10 +77,10 @@ public class FeedingSiteController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "locationLat and locationLng must be set together");
         }
-        if (lat != null && (lat < -90 || lat > 90)) {
+        if (lat != null && (!Double.isFinite(lat) || lat < -90 || lat > 90)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "locationLat out of range");
         }
-        if (lng != null && (lng < -180 || lng > 180)) {
+        if (lng != null && (!Double.isFinite(lng) || lng < -180 || lng > 180)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "locationLng out of range");
         }
     }
