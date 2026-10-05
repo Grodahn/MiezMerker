@@ -8,7 +8,7 @@ beforeEach(() => get.mockReset());
 test('loads the node key from the tenant-authorized backend record', async () => {
   get.mockResolvedValue({ data: { nodeId, state: 'CLAIMED', publicKeyX: 'x', publicKeyY: 'y' } });
   expect(await loadTrustedNodeIdentity(nodeId)).toEqual({ nodeId, publicKeyX: 'x', publicKeyY: 'y' });
-  expect(get).toHaveBeenCalledWith('/api/v1/nodes/{nodeId}', { params: { path: { nodeId } } });
+  expect(get).toHaveBeenCalledWith('/api/v1/nodes/{nodeId}', expect.objectContaining({ params: { path: { nodeId } }, signal: expect.any(AbortSignal) }));
 });
 test('rejects denied, incomplete, unclaimed and mismatched backend records', async () => {
   for (const response of [

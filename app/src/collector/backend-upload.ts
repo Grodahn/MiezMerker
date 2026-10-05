@@ -155,7 +155,9 @@ export class BackendUploader {
         for (let i = 0; i < batch.length; i++) {
           const item = batch[i];
           const result = results[i];
-          const status = result?.status;
+          const identityMatches = result && (result.nodeId === undefined || result.nodeId === item.nodeId) &&
+            (result.sequence === undefined || String(result.sequence) === item.sequence);
+          const status = identityMatches ? result?.status : undefined;
           const key = { nodeId: item.nodeId, incarnation: item.incarnation, sequence: item.sequence };
           if (status === 'CREATED') {
             await this.store.markUploadResult(key, true, null);

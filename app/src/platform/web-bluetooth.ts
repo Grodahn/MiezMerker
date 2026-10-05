@@ -22,6 +22,8 @@ export const BLE_CHAR_UUIDS = {
   batch: '6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b07',
   ack: '6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b08',
   time: '6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b09',
+  claimAdvertisement: '6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b0a',
+  claimReceipt: '6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b0b',
 } as const;
 
 export type BluetoothCapability =
@@ -141,13 +143,15 @@ export function characteristicForRequest(opcode: Opcode): string {
     case Opcode.AckRequest:
     case Opcode.CompactRequest: return BLE_CHAR_UUIDS.ack;
     case Opcode.TimeRequest: return BLE_CHAR_UUIDS.time;
+    case Opcode.ClaimAdvertisementRequest: return BLE_CHAR_UUIDS.claimAdvertisement;
+    case Opcode.ClaimReceiptRequest: return BLE_CHAR_UUIDS.claimReceipt;
     default: throw new BluetoothTransportError('protocol', `Unbekannte Protokoll-Operation (${opcode}).`);
   }
 }
 
 function isReadOnlyRequest(opcode: Opcode): boolean {
   return opcode === Opcode.HelloRequest || opcode === Opcode.OwnerRequest ||
-    opcode === Opcode.ChallengeRequest || opcode === Opcode.StatusRequest;
+    opcode === Opcode.ChallengeRequest || opcode === Opcode.StatusRequest || opcode === Opcode.ClaimAdvertisementRequest;
 }
 
 const GATT_OP_TIMEOUT_MS = 10_000;
@@ -237,7 +241,8 @@ export class WebBluetoothTransport implements NodeTransport {
           // Discovery must expose every v1 characteristic; fail fast below.
         }
       }
-      const missing = Object.values(BLE_CHAR_UUIDS).filter(u => !this.characteristics.has(u));
+      const missing = Object.entries(BLE_CHAR_UUIDS).filter(([name, uuid]) =>
+        name !== 'claimAdvertisement' && name !== 'claimReceipt' && !this.characteristics.has(uuid));
       if (missing.length > 0) {
         throw new BluetoothTransportError('protocol',
           `Node meldet inkompatible Protokoll-Version (fehlende Characteristics: ${missing.length}).`);
@@ -313,7 +318,8 @@ export class WebBluetoothTransport implements NodeTransport {
     if (!char) throw new BluetoothTransportError('protocol', 'Protokollfehler: Characteristic nicht gefunden.');
     // Web Bluetooth rejects attribute values above 512 bytes. Auth uses the
     // v1 transport envelope documented in messages.md, never a truncated JWT.
-    const chunks = uuid === BLE_CHAR_UUIDS.auth ? authWriteChunks(frame) : [frame];
+    const chunks = uuid === BLE_CHAR_UUIDS.auth ? authWriteChunks(frame)
+      : uuid === BLE_CHAR_UUIDS.claimReceipt ? transportWriteChunks(frame, 0x4e, 4102) : [frame];
     for (const chunk of chunks) {
       await withTimeout(char.writeValueWithResponse(new Uint8Array(chunk)), GATT_OP_TIMEOUT_MS, 'Schreiben zeitüberschritten.');
     }
@@ -343,13 +349,16 @@ export class WebBluetoothTransport implements NodeTransport {
 }
 
 export function authWriteChunks(frame: Uint8Array): Uint8Array[] {
+  return transportWriteChunks(frame, 0x4d, 2118);
+}
+function transportWriteChunks(frame: Uint8Array, marker: number, maxLength: number): Uint8Array[] {
   if (frame.length <= 20) return [frame];
-  if (frame.length > 2118) throw new BluetoothTransportError('protocol', 'Auth-Frame zu groß.');
+  if (frame.length > maxLength) throw new BluetoothTransportError('protocol', 'Protokoll-Frame zu groß.');
   const chunks: Uint8Array[] = [];
   for (let offset = 0; offset < frame.length; offset += 12) {
     const part = frame.slice(offset, offset + 12);
     const chunk = new Uint8Array(8 + part.length);
-    chunk.set([0x4d, 0x4d, 1, offset === 0 ? 1 : 0]);
+    chunk.set([marker, 0x4d, 1, offset === 0 ? 1 : 0]);
     const view = new DataView(chunk.buffer);
     view.setUint16(4, frame.length, true);
     view.setUint16(6, offset, true);

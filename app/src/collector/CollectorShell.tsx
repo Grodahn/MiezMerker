@@ -8,7 +8,8 @@ import {
 } from '../platform/web-bluetooth';
 import type { NodeTransport } from '../platform/node-transport';
 import { initialCollectorView, runFieldSync, type CollectorViewState } from './collector-sync';
-import { claimNode, ClaimError } from './claim-node';
+import { ClaimError } from './claim-node';
+import { provisionNode } from './provision-node';
 import { BackendUploader } from './backend-upload';
 import { CollectorObservationStore } from './observation-store';
 
@@ -22,18 +23,23 @@ export function CollectorShell(props: {
   const [storage, setStorage] = useState('Lokaler Speicher wird geöffnet …');
   const [authVersion, setAuthVersion] = useState(0);
   const [connectivityVersion, setConnectivityVersion] = useState(0);
+  const [uploadContextVersion, setUploadContextVersion] = useState(0);
   const [credential, setCredential] = useState('Offline-Credential wird geprüft …');
   const [view, setView] = useState<CollectorViewState>(initialCollectorView);
   const [running, setRunning] = useState(false);
   const uploadBusy = useRef(false);
   const [knownDevices, setKnownDevices] = useState<Array<{ id: string; name: string; device: unknown }>>([]);
-  const [claimMode, setClaimMode] = useState(false);
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
   const [claimReceipt, setClaimReceipt] = useState('');
-  const [claimForm, setClaimForm] = useState({ publicKeyX: '', publicKeyY: '', claimSignature: '', timestampMillis: '' });
+  const selectedTransport = useRef<NodeTransport | null>(null);
 
   const auth = getAuthState();
+  const contextKey = () => `${getAuthState().user?.userId ?? ''}/${getAuthState().activeOrganizationId ?? ''}`;
+  const updateNodeView = useCallback((next: CollectorViewState) => setView(previous => ({
+    ...next, backendState: previous.backendState, backendMessage: previous.backendMessage,
+    pendingUploads: previous.pendingUploads, uploadedCount: previous.uploadedCount,
+  })), []);
 
   useEffect(() => {
     const database = new CollectorDatabase();
@@ -46,6 +52,9 @@ export function CollectorShell(props: {
   }, []);
 
   useEffect(() => subscribeAuth(() => setAuthVersion(v => v + 1)), []);
+  useEffect(() => {
+    setView({ ...initialCollectorView }); setClaimMessage(''); selectedTransport.current = null;
+  }, [auth.user?.userId, auth.activeOrganizationId]);
 
   useEffect(() => {
     const onChange = () => setConnectivityVersion(v => v + 1);
@@ -107,37 +116,49 @@ export function CollectorShell(props: {
   }, [props]);
 
   const startSync = useCallback(() => {
-    if (running || uploadBusy.current) return;
+    if (running) return;
     setRunning(true);
     setClaimMessage('');
-    setView({ ...initialCollectorView, nodeState: 'connecting', nodeMessage: 'Node auswählen …' });
+    const startedContext = contextKey();
+    setView(previous => ({ ...initialCollectorView, backendState: previous.backendState,
+      backendMessage: previous.backendMessage, pendingUploads: previous.pendingUploads,
+      uploadedCount: previous.uploadedCount, nodeState: 'connecting', nodeMessage: 'Node auswählen …' }));
     // Invoke requestDevice synchronously in the click handler, before any IDB,
     // permission or network await can consume transient user activation.
-    void createTransport().then(transport => runFieldSync({
-      onUpdate: setView,
-      createTransport: () => transport,
-      trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
-    })).catch((e: unknown) => {
-      setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
+    void createTransport().then(transport => {
+      if (contextKey() !== startedContext) return;
+      selectedTransport.current = transport;
+      return runFieldSync({
+        onUpdate: next => { if (contextKey() === startedContext) updateNodeView(next); },
+        createTransport: () => transport,
+        trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
+      });
+    }).catch((e: unknown) => {
+      if (contextKey() === startedContext) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
     }).finally(() => setRunning(false));
   }, [running, createTransport, props]);
 
   const connectKnownDevice = useCallback((device: unknown) => {
-    if (running || uploadBusy.current) return;
+    if (running) return;
     setRunning(true);
     setClaimMessage('');
+    const startedContext = contextKey();
+    const transport = new WebBluetoothTransport(device as never);
+    selectedTransport.current = transport;
     void runFieldSync({
-      onUpdate: setView,
-      createTransport: async () => new WebBluetoothTransport(device as never),
+      onUpdate: next => { if (contextKey() === startedContext) updateNodeView(next); },
+      createTransport: () => transport,
       trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
     }).catch((e: unknown) => {
-      setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
+      if (contextKey() === startedContext) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
     }).finally(() => setRunning(false));
   }, [running, props]);
 
   const retryUpload = useCallback(() => {
     const state = getAuthState();
-    if (!state.activeOrganizationId || running || uploadBusy.current) return;
+    if (!state.activeOrganizationId || uploadBusy.current) return;
+    const contextStillActive = () => getAuthState().user?.userId === state.user?.userId &&
+      getAuthState().activeOrganizationId === state.activeOrganizationId;
     uploadBusy.current = true;
     setView(v => ({ ...v, backendState: 'uploading', backendMessage: 'Backend-Upload läuft …' }));
     const db = new CollectorDatabase();
@@ -147,41 +168,39 @@ export function CollectorShell(props: {
         await store.open();
         const uploader = new BackendUploader(store);
         const result = await uploader.upload(state.activeOrganizationId as string);
-        const rows = await store.pendingUploads(state.activeOrganizationId as string);
-        setView(v => ({ ...v, backendState: result.state, backendMessage: result.message,
-          pendingUploads: rows.length, uploadedCount: v.uploadedCount + result.uploaded + result.duplicates }));
+        const stats = await store.organizationUploadStats(state.activeOrganizationId as string);
+        if (contextStillActive()) setView(v => ({ ...v, backendState: result.state, backendMessage: result.message,
+          pendingUploads: stats.pending + stats.failed, uploadedCount: stats.uploaded }));
       } catch (e) {
-        setView(v => ({ ...v, backendState: 'failed',
+        if (contextStillActive()) setView(v => ({ ...v, backendState: 'failed',
           backendMessage: `Backend-Upload fehlgeschlagen (${e instanceof Error ? e.message : 'unbekannt'}). Vor-Ort-Sync bleibt gültig.` }));
       } finally {
         uploadBusy.current = false;
+        if (!contextStillActive()) setUploadContextVersion(v => v + 1);
         db.close();
       }
     })();
   }, [running]);
 
-  useEffect(() => { retryUpload(); }, [auth.user?.userId, auth.activeOrganizationId, connectivityVersion, running]);
+  useEffect(() => { if (!running) retryUpload(); }, [auth.user?.userId, auth.activeOrganizationId, connectivityVersion, running, uploadContextVersion]);
 
   const submitClaim = useCallback(() => {
     const state = getAuthState();
     const nodeId = view.owner?.nodeId;
     const organizationId = state.activeOrganizationId;
-    if (!nodeId || !organizationId) return;
+    const transport = selectedTransport.current;
+    if (!nodeId || !organizationId || !transport || claimBusy || running) return;
     setClaimBusy(true);
     setClaimMessage('');
-    void claimNode(organizationId, {
-      nodeId,
-      publicKeyX: claimForm.publicKeyX.trim(),
-      publicKeyY: claimForm.publicKeyY.trim(),
-      claimSignature: claimForm.claimSignature.trim(),
-      timestampMillis: Number(claimForm.timestampMillis),
-    }, { claimModeConfirmed: claimMode }).then(outcome => {
-      setClaimReceipt(outcome.receipt ?? '');
-      setClaimMessage(`Backend-Provisionierung für ${outcome.nodeId} gespeichert. Receipt muss noch am Node angewendet werden.`);
+    const startedContext = contextKey();
+    void provisionNode(transport, nodeId, organizationId).then(() => {
+      if (contextKey() !== startedContext) return;
+      setClaimMessage(`Node ${nodeId} geclaimt und am Gerät bestätigt. Sync kann jetzt starten.`);
+      setView(v => ({ ...v, unclaimed: false, nodeState: 'idle', nodeMessage: '' }));
     }).catch((e: unknown) => {
-      setClaimMessage(e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.');
+      if (contextKey() === startedContext) setClaimMessage(e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.');
     }).finally(() => setClaimBusy(false));
-  }, [view.owner, claimForm, claimMode]);
+  }, [view.owner, claimBusy, running]);
 
   useEffect(() => {
     let active = true;
@@ -211,11 +230,11 @@ export function CollectorShell(props: {
 
     {knownDevices.length > 0 && <div><p>Bekannte Nodes (Browser-freigegeben, optional):</p><ul>
       {knownDevices.map(d => <li key={d.id}>{d.name}
-        <button type="button" disabled={running || view.backendState === 'uploading'} onClick={() => connectKnownDevice(d.device)}>Verbinden</button>
+        <button type="button" disabled={running || claimBusy} onClick={() => connectKnownDevice(d.device)}>Verbinden</button>
       </li>)}
     </ul><p>Explizite Auswahl bleibt jederzeit möglich.</p></div>}
 
-    <button type="button" disabled={running || view.backendState === 'uploading' || capability !== 'supported' || !auth.user || !auth.activeOrganizationId} onClick={startSync}>
+    <button type="button" disabled={running || claimBusy || capability !== 'supported' || !auth.user || !auth.activeOrganizationId} onClick={startSync}>
       {running ? 'Synchronisiere …' : 'Node auswählen & synchronisieren'}
     </button>
 
@@ -235,18 +254,13 @@ export function CollectorShell(props: {
       {!isAdmin
         ? <p>Nur ADMIN kann einen UNCLAIMED Node claimen. MEMBER hat keinen Zugriff.</p>
         : <div>
-          <label><input type="checkbox" checked={claimMode} onChange={e => setClaimMode(e.target.checked)} />
-            Physischer Claim-Modus am Node bestätigt (Taste/Power-On-Geste).</label>
-          <label>Device Public Key X<input value={claimForm.publicKeyX} onChange={e => setClaimForm({ ...claimForm, publicKeyX: e.target.value })} /></label>
-          <label>Device Public Key Y<input value={claimForm.publicKeyY} onChange={e => setClaimForm({ ...claimForm, publicKeyY: e.target.value })} /></label>
-          <label>Claim-Signatur (base64url)<input value={claimForm.claimSignature} onChange={e => setClaimForm({ ...claimForm, claimSignature: e.target.value })} /></label>
-          <label>Timestamp (ms)<input value={claimForm.timestampMillis} onChange={e => setClaimForm({ ...claimForm, timestampMillis: e.target.value })} /></label>
-          <button type="button" disabled={claimBusy || !claimMode} onClick={submitClaim}>Backend-Provisionierung anfordern (ADMIN)</button>
-          <p>Die automatische Provisionierung am Node ist noch nicht verfügbar. Das Receipt muss über die Provisionierungsschnittstelle des Nodes angewendet werden, bevor Sync möglich ist.</p>
-          {claimReceipt && <label>Gespeichertes Claim-Receipt<textarea readOnly value={claimReceipt} /></label>}
+          <p>Physischen Claim-Modus am Node aktivieren (Taste/Power-On-Geste), dann claimen. Der Node liefert den signierten Nachweis selbst.</p>
+          <button type="button" disabled={claimBusy || running} onClick={submitClaim}>Node claimen (ADMIN)</button>
+          {claimReceipt && <p>Gespeichertes Receipt vorhanden; ein abgebrochener Claim wird sicher erneut zugestellt.</p>}
         </div>}
       {claimMessage && <p>{claimMessage}</p>}
     </div>}
+    {!view.unclaimed && claimMessage && <p role="status">{claimMessage}</p>}
 
     <div><p>Backend-Upload (separat, retrybar): {backendStateLabel(view.backendState)}</p>
       {view.backendMessage && <p>{view.backendMessage}</p>}

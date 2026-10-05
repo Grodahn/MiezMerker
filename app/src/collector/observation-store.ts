@@ -206,6 +206,13 @@ export class CollectorObservationStore implements DurableObservationStore {
     };
   }
 
+  async organizationUploadStats(organizationId: string): Promise<{ uploaded: number; pending: number; failed: number }> {
+    const rows = (await this.db.observations.toArray()).filter(r => r.organizationId === organizationId);
+    return { uploaded: rows.filter(r => r.uploadState === 'uploaded').length,
+      pending: rows.filter(r => r.uploadState === 'pending' || r.uploadState === 'uploading').length,
+      failed: rows.filter(r => r.uploadState === 'failed').length };
+  }
+
   async session(nodeId: string) {
     return this.db.syncSessions.get(nodeId);
   }

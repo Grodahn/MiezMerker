@@ -18,43 +18,48 @@ GattRouter::GattRouter(ble::SyncServer& server, OwnerMetadata& owner)
 void GattRouter::disconnect() {
     auth_fragments_.clear();
     auth_total_ = 0;
+    receipt_fragments_.clear();
+    receipt_total_ = 0;
     server_->disconnect();
 }
 
 std::vector<std::uint8_t> GattRouter::advertisement_bytes() const {
-    Advertisement adv = server_->advertisement(claim_mode_);
+    Advertisement adv = server_->advertisement(identity_ ? identity_->in_claim_mode() : claim_mode_);
     return encode_advertisement(adv);
 }
 
 std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_t>& request,
                                                    ble::TrustedEpochSeconds now_s) {
-    // Auth-only transport envelope. Empty response means a partial write was
-    // accepted; the board retains the final AuthResponse for the following read.
-    if (!request.empty() && request[0] == 0x4d) {
+    // Auth/receipt transport envelopes. An empty response accepts a partial
+    // write; the board retains the final response for the following read.
+    if (!request.empty() && (request[0] == 0x4d || request[0] == 0x4e)) {
+        const bool receipt = request[0] == 0x4e;
+        auto& fragments = receipt ? receipt_fragments_ : auth_fragments_;
+        auto& expected_total = receipt ? receipt_total_ : auth_total_;
         auto reject = [&]() {
-            auth_fragments_.clear();
-            auth_total_ = 0;
-            return error_frame(SyncError::InvalidFrame, "bad auth fragment");
+            fragments.clear();
+            expected_total = 0;
+            return error_frame(SyncError::InvalidFrame, "bad transport fragment");
         };
         if (request.size() < 9 || request.size() > 20 || request[1] != 0x4d ||
             request[2] != 1 || request[3] > 1) return reject();
         const std::size_t total = request[4] | (static_cast<std::size_t>(request[5]) << 8);
         const std::size_t offset = request[6] | (static_cast<std::size_t>(request[7]) << 8);
-        if (total < 70 || total > 2118) return reject();
+        if (total < (receipt ? 7U : 70U) || total > (receipt ? 4102U : 2118U)) return reject();
         if (request[3] == 1) {
-            auth_fragments_.clear();
-            auth_total_ = total;
+            fragments.clear();
+            expected_total = total;
             if (offset != 0) return reject();
         }
-        if (auth_total_ != total || offset != auth_fragments_.size() ||
+        if (expected_total != total || offset != fragments.size() ||
             offset + request.size() - 8 > total) return reject();
-        auth_fragments_.insert(auth_fragments_.end(), request.begin() + 8, request.end());
-        if (auth_fragments_.size() != total) return {};
-        auto assembled = std::move(auth_fragments_);
-        auth_fragments_.clear();
-        auth_total_ = 0;
+        fragments.insert(fragments.end(), request.begin() + 8, request.end());
+        if (fragments.size() != total) return {};
+        auto assembled = std::move(fragments);
+        fragments.clear();
+        expected_total = 0;
         auto decoded = decode_frame(assembled);
-        if (!decoded || decoded->opcode != Opcode::AuthRequest) return reject();
+        if (!decoded || decoded->opcode != (receipt ? Opcode::ClaimReceiptRequest : Opcode::AuthRequest)) return reject();
         return handle_frame(assembled, now_s);
     }
     auto frame = decode_frame(request);
@@ -63,6 +68,32 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         return error_frame(SyncError::UnknownVersion, "unsupported version");
     }
     switch (frame->opcode) {
+        case Opcode::ClaimAdvertisementRequest: {
+            ClaimAdvertisement advertisement;
+            if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad claim request");
+            if (!identity_ || !identity_->sign_claim(advertisement)) return error_frame(SyncError::InvalidState, "physical claim mode required");
+            ClaimAdvertisementPayload payload;
+            const auto& node = identity_->identity();
+            for (std::size_t i = 0; i < 16; ++i) payload.node_id.bytes[i] = std::to_integer<std::uint8_t>(node.node_id[i]);
+            for (std::size_t i = 0; i < 65; ++i) payload.public_key[i] = std::to_integer<std::uint8_t>(node.public_key[i]);
+            for (std::size_t i = 0; i < 64; ++i) payload.signature[i] = std::to_integer<std::uint8_t>(advertisement.signature[i]);
+            payload.timestamp_ms = advertisement.timestamp_ms;
+            return encode_frame(Frame{1, Opcode::ClaimAdvertisementResponse, encode_claim_advertisement(payload)});
+        }
+        case Opcode::ClaimReceiptRequest: {
+            auto receipt = decode_claim_receipt(frame->payload);
+            if (!receipt) return error_frame(SyncError::InvalidFrame, "bad receipt");
+            if (!identity_ || !identity_->apply_claim(*receipt)) return error_frame(SyncError::InvalidState, "claim rejected");
+            const auto& node = identity_->identity();
+            owner_->organization_id = node.organization_id;
+            owner_->organization_name = node.organization_name;
+            owner_->public_contact = node.public_contact;
+            owner_->organization_slug.clear();
+            // Reload capture state so subsequent public Hello/Owner reflect the
+            // same atomic ownership record before a collector can start sync.
+            if (!server_->refresh_identity()) return error_frame(SyncError::Internal, "claim refresh failed");
+            return encode_frame(Frame{1, Opcode::ClaimReceiptResponse, {0}});
+        }
         case Opcode::HelloRequest: {
             auto req = decode_hello_request(frame->payload);
             if (!req) return error_frame(SyncError::InvalidFrame, "bad hello");

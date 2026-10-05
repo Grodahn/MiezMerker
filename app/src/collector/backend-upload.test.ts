@@ -98,6 +98,13 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
     expect(await store.pendingUploads('org-a')).toEqual([]);
   });
 
+  test('a response for a different event never marks the local record uploaded', async () => {
+    await store.putObservations([rec(1)], 'org-a');
+    post.mockResolvedValue({ data: { results: [{ nodeId: NODE, sequence: '2', status: 'CREATED' }] } });
+    const result = await new BackendUploader(store).upload('org-a');
+    expect(result.state).toBe('failed'); expect((await store.uploadStats(NODE)).uploaded).toBe(0);
+  });
+
   test('outboxes exceeding 5000 records are fully drained', async () => {
     const rows = Array.from({ length: 5001 }, (_, i) => ({ ...rec(i + 1),
       sequence: String(i + 1), epochMs: String(1790899200000 + i + 1), monotonicMs: String(i + 1),

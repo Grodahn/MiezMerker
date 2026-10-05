@@ -24,6 +24,7 @@ export class NodeIdentityError extends Error {
 
 export async function loadTrustedNodeIdentity(nodeId: string): Promise<TrustedNodeIdentity> {
   const { data, error, response } = await api.GET('/api/v1/nodes/{nodeId}', {
+    signal: AbortSignal.timeout(5_000),
     params: { path: { nodeId } },
   });
   if (error || !data || data.nodeId?.toLowerCase() !== nodeId.toLowerCase()

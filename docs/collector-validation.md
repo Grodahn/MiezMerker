@@ -58,10 +58,10 @@ Perform on current Android + current Chrome/Chromium, PWA installed:
    starten” message; online renewal path.
 10. Foreign organization node: verify only public owner metadata
     (“Dieser MiezMerker gehört …”) and no observation reads.
-11. UNCLAIMED node: verify MEMBER blocked and ADMIN backend provisioning with
-    physical claim-mode confirmation and idempotent retry. Backend issuance
-    alone is not a successful node claim: apply the stored receipt through the
-    board provisioning interface and verify the node reports CLAIMED afterwards.
+11. UNCLAIMED node: verify MEMBER blocked and ADMIN provisioning with the physical
+    claim mode active. The PWA reads the node-signed advertisement, requests a
+    backend receipt, persists it, delivers it over BLE and verifies CLAIMED owner
+    metadata. Interrupt receipt delivery and retry using the saved receipt.
 
 Record Android version, Chrome version, node firmware version, record counts,
 and any deviations. Do not claim robustness that was not practically observed.
@@ -100,26 +100,39 @@ Bluetooth's 512-byte attribute-write limit.
   public owner metadata stops the flow before credential/protected requests.
 - Empty terminal batches cannot hide records described by Status. Optional session
   metadata failure after durable persistence and ACK does not invalidate the copy.
-- Claim receipts are retained in IndexedDB and exposed for provisioning/retry;
-  the UI no longer claims that backend receipt issuance completed the node claim.
+- Claim receipts are retained in IndexedDB before BLE delivery. Optional v1
+  characteristics `…5b0a/0b` carry the manager-signed advertisement and fragmented
+  receipt. The PWA verifies the resulting CLAIMED owner metadata; no manual
+  signature/key fields or peer-supplied timestamps are required.
+- Pending HTTP uploads do not disable BLE visits. Completions from previous
+  user/organization contexts cannot overwrite the current UI, and backend counts
+  are recomputed from the selected organization's durable rows.
+- Upload results with a mismatched event identity cannot mark records uploaded.
+  Backend node-key lookups have a timeout so cached identity fallback also works
+  on a network that reports online but does not deliver responses.
 
 ### Remaining acceptance blockers
 
-The repository does not yet define or implement the board-facing GATT claim
-advertisement/receipt-delivery interface. ADMIN backend provisioning is available,
-but automatic end-to-end UNCLAIMED-node claiming remains incomplete. Do not mark
-that acceptance criterion complete until the board applies the receipt and the
-collector verifies CLAIMED. Physical Android/Chrome validation (including the new
-Auth fragment handling in the actual board shim) also remains required. Host
-router tests and browser mocks cannot prove either integration.
+The claim advertisement/receipt interface is now specified and implemented in
+the shared codec, PWA and host-testable GATT router. The actual board shim must
+expose both optional claim characteristics, bind the same NodeIdentityManager
+used by Core and configure authorization from committed ownership on reconnect
+as described in `protocol/ble/messages.md`. Physical Android/Chrome validation
+(including Auth/receipt fragments on the actual board shim) remains required.
+Host router tests and browser mocks cannot prove that physical integration.
 
-### Review validation (2026-10-04)
+### Review validation (2026-10-05)
 
-- PWA: 131 Vitest tests passed; TypeScript/Vite production build passed.
+- PWA: 139 Vitest tests passed; TypeScript/Vite production build passed.
 - Generated API client: `api:check` passed without drift.
 - Playwright: both browser integration tests passed against the local backend,
   including offline shell/outbox reload and restoration of cached account context.
 - Firmware/simulator: all 54 CTest tests passed on the merged branch, including
   fragmented Auth handling and main's claim power-loss, node-isolation and expiry
   regressions. Simulator conflicts with main were resolved using its reviewed code.
-- Physical Android/BLE validation and board claim transport remain pending as above.
+- Claim tests cover persisted receipt delivery/retry, MEMBER rejection, physical
+  mode rejection, atomic ownership refresh without a boot-counter increment,
+  same-owner redelivery and foreign-owner rejection.
+- Both codec implementations round-trip the same frozen claim advertisement
+  vector from `protocol/fixtures/claim-advertisement-v1.hex`.
+- Physical Android/BLE validation and actual board-shim wiring remain pending.

@@ -39,6 +39,10 @@ Opcodes (v1):
 | `0x12` | StatusResponse | S→C | `pending u32 LE, ack u64, store u8, clock u8, epoch u64 (0 if unknown), next_seq u64` |
 | `0x13` | CompactRequest | C→S | empty |
 | `0x14` | CompactResponse | S→C | `freed u32 LE, remaining u32 LE, ack u64, error u8` |
+| `0x15` | ClaimAdvertisementRequest | C→S | empty (read trigger, physical claim mode only) |
+| `0x16` | ClaimAdvertisementResponse | S→C | `node_id 16 B, public_key 65 B (0x04\|x\|y), timestamp_ms u64 LE, signature 64 B` |
+| `0x17` | ClaimReceiptRequest | C→S | `receipt str` (nonempty, <=4096 B) |
+| `0x18` | ClaimReceiptResponse | S→C | `error u8` (`0` only after atomic claim commit and capture-state refresh) |
 | `0xFF` | Error | S→C | `code u8, msg str` |
 
 Enums: `claim`: `0 UNCLAIMED, 1 CLAIMED`. `clock`: `0 UNKNOWN, 1 RTC_ONLY,
@@ -83,6 +87,28 @@ Service UUID `6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b6c`.
 | Batch | `…5b07` | write + notify/read (authorized) | `BatchRequest` → `BatchResponse` (notify pages) |
 | Ack | `…5b08` | write + read (authorized) | `AckRequest` → `AckResponse`; `CompactRequest` → `CompactResponse` multiplexed by opcode |
 | Time | `…5b09` | write + read (authorized) | `TimeCorrectRequest` → `TimeCorrectResponse` |
+| ClaimAdvertisement | `…5b0a` | read (physical claim mode) | `ClaimAdvertisementResponse` or `Error` |
+| ClaimReceipt | `…5b0b` | write + read | `ClaimReceiptRequest` → `ClaimReceiptResponse` or `Error` |
+
+The two provisioning characteristics extend v1 without changing existing sync
+frames or capability bits. Older nodes may omit them and still synchronize;
+claiming requires firmware exposing both. The board supplies the same persistent
+`NodeIdentityManager` used by Core through `GattRouter::set_node_identity` and
+routes the new characteristic reads/writes to these opcodes. Never substitute a
+peer-supplied timestamp or public key for the manager's signed advertisement.
+Receipt verification uses the existing pinned issuer and `apply_claim`: initial
+claim requires physical mode, same-owner redelivery is idempotent, and a different
+owner is rejected. On reconnect, configure the authorizer from the newly persisted
+organization/issuer context. Do not retain an unclaimed-session authorizer after
+provisioning. Public Owner strings come from that same committed identity.
+
+Claim receipts use the fragment envelope below with first marker `0x4e` instead
+of `0x4d`, total length 7..4102, and final opcode ClaimReceiptRequest only. The
+second marker remains `0x4d`. Auth and receipt assemblies are separate and both
+are cleared on disconnect. Shims accept receipt envelopes only on ClaimReceipt.
+Incomplete fragments produce no application response; retain the final response
+for the subsequent characteristic read. The collector stores the backend receipt
+before its first write and verifies matching CLAIMED Hello/Owner after delivery.
 
 Security properties: unencrypted (no OS pairing requirement), authorization
 is application-layer via #17. Unauthorized reads of authorized chars return
