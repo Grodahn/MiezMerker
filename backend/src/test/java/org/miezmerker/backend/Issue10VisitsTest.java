@@ -498,6 +498,29 @@ class Issue10VisitsTest {
     }
 
     @Test
+    void knownClockAliasParticipatesLikeSynced() throws Exception {
+        Seed s = seed();
+        login("a10-admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = claimNode(s.orgA().getId());
+        UUID site = createSite(s.orgA().getId(), "Site");
+        createDeployment(s.orgA().getId(), n.nodeId(), site,
+                Instant.now().minus(Duration.ofDays(30)), null);
+        long base = Instant.now().minus(Duration.ofDays(1)).toEpochMilli();
+        // KNOWN is the stored BLE wire alias for a trustworthy clock (#9);
+        // visit-gap-v1 treats it exactly like SYNCED/RTC_ONLY.
+        ingest(s.orgA().getId(), List.of(
+                item(n.nodeId(), 1, "chip-K", base, "KNOWN"),
+                item(n.nodeId(), 2, "chip-K", base + 10_000, "RTC_ONLY"),
+                item(n.nodeId(), 3, "chip-K", base + 20_000, "SYNCED")));
+        JsonNode out = recompute(s.orgA().getId(), 60, null);
+        assertEquals(3, out.get("usableObservations").asInt());
+        assertEquals(0, out.get("excludedUnknownClock").asInt());
+        assertEquals(1, out.get("visitCount").asInt());
+        assertEquals(3, listVisits(s.orgA().getId()).get(0)
+                .get("observationCount").asInt());
+    }
+
+    @Test
     void unknownClockIsExcludedAndVisible() throws Exception {
         Seed s = seed();
         login("a10-admin-a@example.org", "supersecret-password-a");

@@ -60,6 +60,9 @@ public class VisitAggregationService {
     public static final String ALGORITHM_VISIT_GAP_V1 = "visit-gap-v1";
 
     static final Set<String> TRUSTED_CLOCKS = Set.of("SYNCED", "RTC_ONLY", "KNOWN");
+    // Same finite PostgreSQL bound as ObservationIngestService ingestion
+    // validation; rows outside cannot exist via the API but are still
+    // excluded here so aggregation never trusts implausible time.
     static final long MAX_OBSERVED_AT_MS_EXCLUSIVE = 9_224_318_016_000_000L;
     static final int MIN_GAP_SECONDS = 1;
     static final int MAX_GAP_SECONDS = 86_400;
@@ -121,14 +124,12 @@ public class VisitAggregationService {
     static List<VisitDraft> aggregate(List<RawObservation> all, long thresholdMs) {
         record Key(UUID siteId, String chip) {}
         Map<Key, List<RawObservation>> groups = new HashMap<>();
-        Map<Key, FeedingSite> sites = new HashMap<>();
         for (RawObservation o : all) {
             if (!isUsable(o)) {
                 continue;
             }
             Key key = new Key(o.getFeedingSite().getId(), o.getChipId());
             groups.computeIfAbsent(key, k -> new ArrayList<>()).add(o);
-            sites.putIfAbsent(key, o.getFeedingSite());
         }
         List<VisitDraft> drafts = new ArrayList<>();
         for (Map.Entry<Key, List<RawObservation>> entry : groups.entrySet()) {
@@ -142,14 +143,14 @@ public class VisitAggregationService {
             for (RawObservation o : rows) {
                 if (prev != null
                         && o.getObservedAtMs() - prev.getObservedAtMs() > thresholdMs) {
-                    drafts.add(toDraft(sites.get(entry.getKey()), current));
+                    drafts.add(toDraft(current));
                     current = new ArrayList<>();
                 }
                 current.add(o);
                 prev = o;
             }
             if (!current.isEmpty()) {
-                drafts.add(toDraft(sites.get(entry.getKey()), current));
+                drafts.add(toDraft(current));
             }
         }
         // Deterministic insert order across groups.
@@ -159,9 +160,12 @@ public class VisitAggregationService {
         return drafts;
     }
 
-    private static VisitDraft toDraft(FeedingSite site, List<RawObservation> current) {
+    private static VisitDraft toDraft(List<RawObservation> current) {
         RawObservation first = current.get(0);
         RawObservation last = current.get(current.size() - 1);
+        // All rows share the frozen feeding site by grouping key; take the
+        // site from the deterministically first row, not input order.
+        FeedingSite site = first.getFeedingSite();
         return new VisitDraft(site, first.getChipId(), first.getObservedAtMs(),
                 last.getObservedAtMs(), current.size(), first, last);
     }
