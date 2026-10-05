@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const get = vi.hoisted(() => vi.fn());
 vi.mock('../api/client', () => ({ api: { GET: get } }));
-vi.mock('../platform/auth', () => ({ getAuthState: vi.fn() }));
+vi.mock('../platform/auth', () => ({ getAuthState: vi.fn(), subscribeAuth: () => () => {} }));
 vi.mock('../platform/node-identity', () => ({
   loadTrustedNodeIdentity: vi.fn(),
   NodeIdentityError: class NodeIdentityError extends Error {

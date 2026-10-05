@@ -173,3 +173,39 @@ drift check, both Playwright tests against the local PostgreSQL-backed packaged
 backend, and all 54 existing firmware/simulator CTest tests passed. CTest requires
 access to the local LLVM runtime DLLs; running it outside the filesystem sandbox
 resolved the initial Windows loader failures. This review changed no C++ sources.
+
+### Second review fixes (2026-10-05)
+
+- **P2: A timed-out connection attempt escaped cleanup.** The adapter now retains
+  the GATT server before awaiting `connect()` and calls `disconnect()` even when
+  `connected` is false, cancelling the browser's pending connection algorithm.
+  A stalled-connect regression checks cancellation and listener cleanup.
+- **P2: Discovery swallowed transport failures.** Characteristic discovery now
+  stops immediately on network errors and timeouts, preserving the error kind.
+  Only `NotFoundError` for the two optional claim characteristics is tolerated;
+  missing required characteristics remain an incompatibility error. Tests use
+  actual DOMException objects to cover browser error handling.
+- **P2: Stale visits and claims continued after context changes or UI closure.**
+  Each operation is bound to its initiating account, ACTIVE organization and
+  UI cancellation signal; claims additionally require the ADMIN role throughout.
+  Context changes disconnect the transport, prohibit subsequent authorization,
+  ACK and receipt writes, and prevent reconnect retries. Returning to the same
+  context cannot resurrect an old chooser or operation. Late results cannot
+  overwrite the new view, clear its busy state or disconnect a replacement
+  visit. A backend-issued receipt remains durably available for a later retry
+  in the initiating organization. Regressions cover context changes, cancelled
+  pending browser reads, cancellation after persistence but before ACK, receipt
+  reservation races, stale UI completions and replacement-visit cleanup.
+- **P2: Retry/failure results discarded durable progress.** Received counts now
+  track unique persisted event identities across one visit's retries, so a lost
+  ACK followed by an empty retry still reports the copied records without
+  double-counting retransmissions. Failed visits retain partial durable counts
+  and the last authenticated/confirmed watermark, including failed reconnects.
+  A new visit resets both counters. Interrupted-transfer and lost-ACK regressions
+  verify these results against the durable store.
+
+Validation: 169 Vitest tests, TypeScript/Vite production build, generated API
+drift check and both Playwright browser integration tests passed against the
+local PostgreSQL-backed packaged backend. The previous firmware validation
+(54 passing CTest tests) remains applicable; this review changed no C++ sources.
+Physical Android/BLE validation and actual board-shim wiring remain pending.

@@ -19,6 +19,7 @@ import {
 import type { NodeTransport } from '../platform/node-transport';
 import type { AppDeviceKeys } from '../platform/device-keys';
 import { beginNodeAuthentication, type TrustedNodeIdentity } from '../platform/node-identity';
+import { NodeOperationCancelledError } from './node-operation';
 
 export type SyncPhase =
   | 'idle'
@@ -164,7 +165,8 @@ export type SyncFailureKind =
   | 'storage'
   | 'connection'
   | 'protocol'
-  | 'incomplete';
+  | 'incomplete'
+  | 'cancelled';
 
 export class SyncFailedError extends Error {
   constructor(
@@ -196,6 +198,8 @@ export class SyncEngine {
   private owner: OwnerInfo | null = null;
   private status: StatusResponse | null = null;
   private received = 0;
+  private receivedEvents = new Set<string>();
+  private confirmedWatermark = 0n;
 
   constructor(
     private transport: NodeTransport,
@@ -210,6 +214,9 @@ export class SyncEngine {
   get currentReceived(): number { return this.received; }
 
   async sync(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
+    this.received = 0;
+    this.receivedEvents.clear();
+    this.confirmedWatermark = 0n;
     const maxRetries = this.options.maxRetries ?? 3;
     const retryDelay = this.options.retryDelayMs ?? 500;
     let lastError = '';
@@ -219,14 +226,14 @@ export class SyncEngine {
         return await this.syncOnce(credential, trustedNowS, organizationId);
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
-        lastKind = e instanceof SyncFailedError ? e.kind : null;
+        lastKind = e instanceof NodeOperationCancelledError ? 'cancelled' : e instanceof SyncFailedError ? e.kind : null;
         this.phase = 'failed';
         // Never retry states that cannot succeed without user action:
         // UNCLAIMED/foreign/incompatible/auth/storage. Connection/protocol
         // errors (incl. lost ACK, mid-batch abort, reboot) retry with a fresh
         // challenge as usual.
         if (lastKind === 'unclaimed' || lastKind === 'foreign' || lastKind === 'incompatible' ||
-            lastKind === 'unauthorized' || lastKind === 'storage' || lastKind === 'incomplete') {
+            lastKind === 'unauthorized' || lastKind === 'storage' || lastKind === 'incomplete' || lastKind === 'cancelled') {
           break;
         }
         if (attempt < maxRetries) {
@@ -235,7 +242,7 @@ export class SyncEngine {
       }
     }
     const error = lastKind ? `${lastKind}: ${lastError}` : lastError;
-    return { ok: false, error, recordsReceived: 0, watermark: 0n };
+    return { ok: false, error, recordsReceived: this.received, watermark: this.confirmedWatermark };
   }
 
   private async syncOnce(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
@@ -246,6 +253,7 @@ export class SyncEngine {
     try {
       await this.transport.connect();
     } catch (e) {
+      if (e instanceof NodeOperationCancelledError) throw e;
       throw new SyncFailedError('connection', e instanceof Error ? e.message : 'BLE-Verbindung fehlgeschlagen.', null, e);
     }
     try {
@@ -374,9 +382,9 @@ export class SyncEngine {
       // The authenticated node's durable ACK is the shared baseline. Another
       // collector may have acknowledged records absent from this local store.
       const base = this.status.ackWatermark;
+      this.confirmedWatermark = base;
       this.session.watermark = base.toString();
 
-      let totalReceived = 0;
       let cursor = this.status.ackWatermark + 1n;
       const maxBatch = this.options.maxBatchRecords ?? 16;
       if (!Number.isInteger(maxBatch) || maxBatch < 1 || maxBatch > 64) {
@@ -419,8 +427,10 @@ export class SyncEngine {
             throw new SyncFailedError('storage',
               e instanceof Error ? e.message : 'Lokale Speicherung fehlgeschlagen.', this.owner, e);
           }
-          totalReceived += batch.records.length;
-          this.received = totalReceived;
+          for (const record of batch.records) {
+            this.receivedEvents.add(`${record.nodeId}/${record.incarnation}/${record.sequence}`);
+          }
+          this.received = this.receivedEvents.size;
         }
 
         if (!batch.more) break;
@@ -449,6 +459,7 @@ export class SyncEngine {
         }
       }
       this.session.watermark = watermark.toString();
+      this.confirmedWatermark = watermark;
       // Once observations and ACK are durable, optional progress metadata must
       // not turn the completed copy into a failed field visit.
       try { await this.store.saveSession?.(this.session); } catch { /* best effort */ }
@@ -478,7 +489,7 @@ export class SyncEngine {
       }
 
       this.phase = 'complete';
-      return { ok: true, recordsReceived: totalReceived, watermark, maintenanceWarning };
+      return { ok: true, recordsReceived: this.received, watermark, maintenanceWarning };
     } finally {
       await this.transport.disconnect();
     }
@@ -490,6 +501,7 @@ export class SyncEngine {
       await this.transport.write(frame);
       response = await this.transport.read();
     } catch (e) {
+      if (e instanceof NodeOperationCancelledError) throw e;
       throw new SyncFailedError('connection',
         e instanceof Error ? e.message : 'BLE-Verbindung abgebrochen.', this.owner, e);
     }

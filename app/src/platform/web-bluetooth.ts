@@ -231,21 +231,22 @@ export class WebBluetoothTransport implements NodeTransport {
       }
       this.device.addEventListener?.('gattserverdisconnected', this.handleDisconnect);
       this.disconnectHandler = this.handleDisconnect;
-      this.server = await withTimeout(this.device.gatt.connect(), GATT_OP_TIMEOUT_MS, 'Verbinden zeitüberschritten.');
+      // Retain the server before awaiting connect: disconnect() must cancel
+      // pending browser algorithms even while connected is still false.
+      this.server = this.device.gatt;
+      await withTimeout(this.server.connect(), GATT_OP_TIMEOUT_MS, 'Verbinden zeitüberschritten.');
       const service: AnyBluetooth = await withTimeout(this.server.getPrimaryService(BLE_SERVICE_UUID), GATT_OP_TIMEOUT_MS, 'Service-Suche zeitüberschritten.');
       this.characteristics.clear();
-      for (const uuid of Object.values(BLE_CHAR_UUIDS)) {
+      for (const [name, uuid] of Object.entries(BLE_CHAR_UUIDS)) {
         try {
           this.characteristics.set(uuid, await withTimeout(service.getCharacteristic(uuid), GATT_OP_TIMEOUT_MS, 'Characteristic-Suche zeitüberschritten.'));
-        } catch {
-          // Discovery must expose every v1 characteristic; fail fast below.
+        } catch (error) {
+          if (!error || typeof error !== 'object' || !('name' in error) || error.name !== 'NotFoundError') throw error;
+          if (name !== 'claimAdvertisement' && name !== 'claimReceipt') {
+            throw new BluetoothTransportError('protocol', `Node meldet inkompatible Protokoll-Version (fehlende Characteristic: ${name}).`);
+          }
+          // Older nodes may omit only the two optional claim characteristics.
         }
-      }
-      const missing = Object.entries(BLE_CHAR_UUIDS).filter(([name, uuid]) =>
-        name !== 'claimAdvertisement' && name !== 'claimReceipt' && !this.characteristics.has(uuid));
-      if (missing.length > 0) {
-        throw new BluetoothTransportError('protocol',
-          `Node meldet inkompatible Protokoll-Version (fehlende Characteristics: ${missing.length}).`);
       }
       const ops: GattOperations = {
         read: async (uuid) => this.readValue(uuid),
@@ -270,7 +271,7 @@ export class WebBluetoothTransport implements NodeTransport {
       // Ignore cleanup failures.
     }
     try {
-      if (this.server?.connected) this.server.disconnect();
+      this.server?.disconnect();
     } catch {
       // Disconnect is best-effort.
     }

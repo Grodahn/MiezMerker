@@ -34,6 +34,7 @@ export function CollectorShell(props: {
   const [claimMessage, setClaimMessage] = useState('');
   const [claimReceipt, setClaimReceipt] = useState('');
   const selectedTransport = useRef<NodeTransport | null>(null);
+  const nodeOperation = useRef<AbortController | null>(null);
 
   const auth = getAuthState();
   const contextKey = () => `${getAuthState().user?.userId ?? ''}/${getAuthState().activeOrganizationId ?? ''}`;
@@ -52,9 +53,23 @@ export function CollectorShell(props: {
     return () => { active = false; database.close(); };
   }, []);
 
-  useEffect(() => subscribeAuth(() => setAuthVersion(v => v + 1)), []);
+  useEffect(() => {
+    let previousContext = contextKey();
+    return subscribeAuth(() => {
+      const nextContext = contextKey();
+      if (nextContext !== previousContext) {
+        nodeOperation.current?.abort(); nodeOperation.current = null;
+        selectedTransport.current = null;
+        setRunning(false); setClaimBusy(false); setClaimMessage(''); setView({ ...initialCollectorView });
+        previousContext = nextContext;
+      }
+      setAuthVersion(v => v + 1);
+    });
+  }, []);
   useEffect(() => {
     setView({ ...initialCollectorView }); setClaimMessage(''); selectedTransport.current = null;
+    setRunning(false); setClaimBusy(false);
+    return () => { nodeOperation.current?.abort(); nodeOperation.current = null; };
   }, [auth.user?.userId, auth.activeOrganizationId]);
 
   useEffect(() => {
@@ -117,43 +132,51 @@ export function CollectorShell(props: {
   }, [props]);
 
   const startSync = useCallback(() => {
-    if (running) return;
+    if (running || claimBusy) return;
+    const operation = new AbortController();
+    nodeOperation.current = operation;
     setRunning(true);
     setClaimMessage('');
     const startedContext = contextKey();
+    const stillActive = () => nodeOperation.current === operation && !operation.signal.aborted && contextKey() === startedContext;
     setView(previous => ({ ...initialCollectorView, backendState: previous.backendState,
       backendMessage: previous.backendMessage, pendingUploads: previous.pendingUploads,
       uploadedCount: previous.uploadedCount, nodeState: 'connecting', nodeMessage: 'Node auswählen …' }));
     // Invoke requestDevice synchronously in the click handler, before any IDB,
     // permission or network await can consume transient user activation.
     void createTransport().then(transport => {
-      if (contextKey() !== startedContext) return;
+      if (!stillActive()) return;
       selectedTransport.current = transport;
       return runFieldSync({
-        onUpdate: next => { if (contextKey() === startedContext) updateNodeView(next); },
+        onUpdate: next => { if (stillActive()) updateNodeView(next); },
+        signal: operation.signal,
         createTransport: () => transport,
         trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
       });
     }).catch((e: unknown) => {
-      if (contextKey() === startedContext) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
-    }).finally(() => setRunning(false));
-  }, [running, createTransport, props]);
+      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
+    }).finally(() => { if (nodeOperation.current === operation) { nodeOperation.current = null; setRunning(false); } });
+  }, [running, claimBusy, createTransport, props]);
 
   const connectKnownDevice = useCallback((device: unknown) => {
-    if (running) return;
+    if (running || claimBusy) return;
+    const operation = new AbortController();
+    nodeOperation.current = operation;
     setRunning(true);
     setClaimMessage('');
     const startedContext = contextKey();
+    const stillActive = () => nodeOperation.current === operation && !operation.signal.aborted && contextKey() === startedContext;
     const transport = new WebBluetoothTransport(device as never);
     selectedTransport.current = transport;
     void runFieldSync({
-      onUpdate: next => { if (contextKey() === startedContext) updateNodeView(next); },
+      onUpdate: next => { if (stillActive()) updateNodeView(next); },
+      signal: operation.signal,
       createTransport: () => transport,
       trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
     }).catch((e: unknown) => {
-      if (contextKey() === startedContext) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
-    }).finally(() => setRunning(false));
-  }, [running, props]);
+      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
+    }).finally(() => { if (nodeOperation.current === operation) { nodeOperation.current = null; setRunning(false); } });
+  }, [running, claimBusy, props]);
 
   const retryUpload = useCallback(() => {
     const state = getAuthState();
@@ -193,16 +216,19 @@ export function CollectorShell(props: {
     const organizationId = state.activeOrganizationId;
     const transport = selectedTransport.current;
     if (!nodeId || !organizationId || !transport || claimBusy || running) return;
+    const operation = new AbortController();
+    nodeOperation.current = operation;
     setClaimBusy(true);
     setClaimMessage('');
     const startedContext = contextKey();
-    void provisionNode(transport, nodeId, organizationId).then(() => {
-      if (contextKey() !== startedContext) return;
+    const stillActive = () => nodeOperation.current === operation && !operation.signal.aborted && contextKey() === startedContext;
+    void provisionNode(transport, nodeId, organizationId, operation.signal).then(() => {
+      if (!stillActive()) return;
       setClaimMessage(`Node ${nodeId} geclaimt und am Gerät bestätigt. Sync kann jetzt starten.`);
       setView(v => ({ ...v, unclaimed: false, nodeState: 'idle', nodeMessage: '' }));
     }).catch((e: unknown) => {
-      if (contextKey() === startedContext) setClaimMessage(e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.');
-    }).finally(() => setClaimBusy(false));
+      if (stillActive()) setClaimMessage(e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.');
+    }).finally(() => { if (nodeOperation.current === operation) { nodeOperation.current = null; setClaimBusy(false); } });
   }, [view.owner, claimBusy, running]);
 
   useEffect(() => {

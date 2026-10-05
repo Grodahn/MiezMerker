@@ -78,3 +78,39 @@ test('a visit finishing during an existing upload queues another outbox drain', 
   await screen.findByText('Visit records uploaded');
   expect(upload).toHaveBeenCalledTimes(2);
 });
+
+test('a chooser started before switching away and back cannot start an obsolete visit', async () => {
+  let choose!: (device: unknown) => void;
+  requestDevice.mockReturnValue(new Promise(resolve => { choose = resolve; }));
+  render(<CollectorShell />);
+  const button = await screen.findByRole('button', { name: 'Node auswählen & synchronisieren' });
+  fireEvent.click(button);
+  act(() => {
+    session.activeOrganizationId = 'org-b'; for (const listener of listeners) listener();
+    session.activeOrganizationId = 'org'; for (const listener of listeners) listener();
+  });
+  await act(async () => { choose({}); });
+  expect(runFieldSync).not.toHaveBeenCalled();
+  expect(button.hasAttribute('disabled')).toBe(false);
+});
+
+test('cancelling an old visit allows another visit without old updates or completion disabling it', async () => {
+  let finish!: () => void;
+  requestDevice.mockResolvedValue({});
+  runFieldSync.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  runFieldSync.mockImplementationOnce(() => new Promise(() => {}));
+  render(<CollectorShell />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Node auswählen & synchronisieren' }));
+  await vi.waitFor(() => expect(runFieldSync).toHaveBeenCalledTimes(1));
+  const oldCallbacks = runFieldSync.mock.calls[0][0];
+  act(() => { session.activeOrganizationId = 'org-b'; for (const listener of listeners) listener(); });
+  expect(oldCallbacks.signal.aborted).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Node auswählen & synchronisieren' }));
+  await vi.waitFor(() => expect(runFieldSync).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    oldCallbacks.onUpdate({ fertig: true, nodeMessage: 'Obsolete success', nodeState: 'complete' });
+    finish();
+  });
+  expect(screen.queryByText('Obsolete success')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Synchronisiere …' }).hasAttribute('disabled')).toBe(true);
+});

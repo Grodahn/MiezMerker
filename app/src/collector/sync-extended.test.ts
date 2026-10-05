@@ -1,6 +1,11 @@
 // @vitest-environment node
 import 'fake-indexeddb/auto';
-import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+vi.mock('../platform/auth', () => ({
+  getAuthState: () => ({ user: { userId: 'user', memberships: [{ organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' }] }, activeOrganizationId: 'org-a' }),
+  subscribeAuth: () => () => {},
+}));
+import { bindNodeOperation } from './node-operation';
 import { SyncDatabase, SyncEngine, SyncStore } from './sync-engine';
 import { CollectorDatabase } from '../platform/offline-store';
 import { CollectorObservationStore } from './observation-store';
@@ -152,6 +157,7 @@ describe('SyncEngine extended field scenarios (issue #8)', () => {
     const result = await engine.sync('cred', () => 1790899200);
     expect(result.ok).toBe(true);
     expect(result.watermark).toBe(4n);
+    expect(result.recordsReceived).toBe(4);
     expect(await store.sequences(NODE_ID, INCARNATION)).toHaveLength(4);
     expect(node.opcodes.filter(o => o === Opcode.ChallengeRequest).length).toBeGreaterThanOrEqual(2);
   });
@@ -259,6 +265,40 @@ describe('SyncEngine extended field scenarios (issue #8)', () => {
       expect(node.getAcked()).toBe(1n);
       expect(await collectorStore.pendingUploads('org-a')).toHaveLength(2);
     } finally { collectorDb.close(); await collectorDb.delete(); }
+  });
+
+  test('an unrecovered mid-batch disconnect reports the observations already safely persisted', async () => {
+    const node = nodeHandler([makeRecord(1), makeRecord(2)], { failBatchOnce: true });
+    const result = await new SyncEngine(new MockTransport(node.handler), store, mockKeys, identity,
+      { maxBatchRecords: 1, maxRetries: 0 }).sync('cred', () => 1790899200);
+    expect(result.ok).toBe(false);
+    expect(result.recordsReceived).toBe(1);
+    expect(result.watermark).toBe(0n);
+    expect(await store.sequences(NODE_ID, INCARNATION)).toEqual([1n]);
+  });
+
+  test('cancellation after durable persistence sends no ACK and does not reconnect', async () => {
+    const collectorDb = new CollectorDatabase(`cancelled-visit-${Math.random()}`);
+    const collectorStore = new CollectorObservationStore(collectorDb);
+    const controller = new AbortController();
+    const put = collectorStore.putObservations.bind(collectorStore);
+    collectorStore.putObservations = async (records, organizationId) => {
+      await put(records, organizationId);
+      controller.abort();
+    };
+    const node = nodeHandler([makeRecord(1)]);
+    const raw = new MockTransport(node.handler);
+    const operation = bindNodeOperation(raw, 'user', 'org-a', controller.signal);
+    try {
+      const result = await new SyncEngine(operation.transport, collectorStore, mockKeys, identity,
+        { maxRetries: 3, retryDelayMs: 0 }).sync('cred', () => 1790899200, 'org-a');
+      expect(result.ok).toBe(false); expect(result.error).toContain('cancelled');
+      expect(result.recordsReceived).toBe(1);
+      expect(await collectorStore.pendingUploads('org-a')).toHaveLength(1);
+      expect(node.opcodes).not.toContain(Opcode.AckRequest);
+      expect(node.opcodes.filter(op => op === Opcode.ChallengeRequest)).toHaveLength(1);
+      expect(raw.connected).toBe(false);
+    } finally { await operation.close(); collectorDb.close(); await collectorDb.delete(); }
   });
 
   test('lost compaction response after durable ACK leaves the visit complete with a warning', async () => {

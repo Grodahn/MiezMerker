@@ -189,6 +189,24 @@ describe('SyncEngine', () => {
     expect(session?.watermark).toBe('3');
   });
 
+  test('failed reconnect preserves the last authenticated watermark and a new visit resets it', async () => {
+    const node = makeMockNode([makeRecord(6, 'chip')], { initialAck: 5n });
+    const transport = new MockNodeTransport(async frame => {
+      if (decodeFrame(frame)?.opcode === Opcode.BatchRequest) throw new Error('connection lost');
+      return node.handler(frame);
+    });
+    let connections = 0;
+    transport.connect = async () => {
+      if (++connections > 1) throw new Error('reconnect failed');
+    };
+    const engine = new SyncEngine(transport, store, mockKeys, identity, { maxRetries: 1, retryDelayMs: 0 });
+    const result = await engine.sync('cred', () => 1790899200);
+    expect(result.ok).toBe(false);
+    expect(result.watermark).toBe(5n);
+    expect(result.recordsReceived).toBe(0);
+    expect((await engine.sync('cred', () => 1790899200)).watermark).toBe(0n);
+  });
+
   test('idempotent retransmission: same records do not duplicate', async () => {
     const records = [makeRecord(1, 'chip-a'), makeRecord(2, 'chip-b')];
     const node = makeMockNode(records);
@@ -232,9 +250,12 @@ describe('SyncEngine', () => {
     const result = await engine.sync('valid-credential', () => 1790899200);
     expect(result.ok).toBe(true);
     expect(connectCount).toBe(2);
+    expect(result.recordsReceived).toBe(2);
+    expect(engine.currentReceived).toBe(2);
     expect(node.opcodes.filter(op => op === Opcode.ChallengeRequest)).toHaveLength(2);
     expect((await store.session(NODE_ID))?.incarnation).toBe(INCARNATION);
     expect((await store.session(NODE_ID))?.watermark).toBe('2');
+    expect((await engine.sync('valid-credential', () => 1790899200)).recordsReceived).toBe(0);
   });
 
   test('ack failure: watermark not advanced, retry re-sends', async () => {
@@ -277,6 +298,8 @@ describe('SyncEngine', () => {
     const result = await engine.sync('credential', () => 1790899200);
     expect(result.ok).toBe(false);
     expect(result.error).toContain('sequence gap');
+    expect(result.recordsReceived).toBe(2);
+    expect(result.watermark).toBe(1n);
     expect(node.getAcked()).toBe(1n);
     expect(await store.sequences(NODE_ID, INCARNATION)).toEqual([1n, 3n]);
   });

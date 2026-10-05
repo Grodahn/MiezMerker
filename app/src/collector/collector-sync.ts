@@ -24,6 +24,7 @@ import { CollectorDatabase, requestPersistentStorage } from '../platform/offline
 import type { BackendSyncState } from './backend-upload';
 import { resolveCredential, CredentialError } from './authorization';
 import { PublicProbeTransport, type PublicNodeInfo } from './public-probe';
+import { bindNodeOperation } from './node-operation';
 
 export type NodeSyncState =
   | 'idle'
@@ -78,6 +79,7 @@ export interface SyncCallbacks {
   onUpdate: (view: CollectorViewState) => void;
   createTransport: () => NodeTransport | Promise<NodeTransport>;
   trustedNowS?: () => number;
+  signal?: AbortSignal;
 }
 
 function toNodeState(phase: string): NodeSyncState {
@@ -120,6 +122,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
 
   const collectorDb = new CollectorDatabase();
   const observations = new CollectorObservationStore(collectorDb);
+  let operation: ReturnType<typeof bindNodeOperation> | undefined;
   try {
     let transport: NodeTransport;
     try {
@@ -128,6 +131,8 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       emit({ nodeState: 'failed', nodeMessage: e instanceof Error ? e.message : 'Kein Node ausgewählt.' });
       return view;
     }
+    operation = bindNodeOperation(transport, auth.user.userId, organizationId, callbacks.signal);
+    transport = operation.transport;
     // Public discovery needs no credential or device key. In particular an
     // ADMIN can discover an unclaimed node before initial credential issuance.
     emit({ nodeState: 'connecting', nodeMessage: 'Verbinde mit Node …' });
@@ -146,6 +151,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     }
     await observations.open();
     await requestPersistentStorage();
+    operation.assertActive();
 
     // Credential state for the /sync header (login/org/offline-credential).
     const identityDb = new OfflineIdentityDatabase();
@@ -154,6 +160,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     try {
       const resolved = await resolveCredential(identity, organizationId);
       credential = resolved.credential;
+      operation.assertActive();
       emit({ credentialState: resolved.renewed ? 'Offline-Credential erneuert.' : 'Offline-Credential gültig.' });
     } catch (e) {
       const message = e instanceof CredentialError ? e.message
@@ -170,6 +177,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     // run and sync stops with a clear message.
     emit({ nodeState: 'connecting', nodeMessage: 'Verbinde mit Node …' });
     const deviceKeys = await deviceKeysForUser(auth.user.userId);
+    operation.assertActive();
     const engineResult = await runEngineWithDiscovery(
       transport, observations, deviceKeys, credential, organizationId, trustedNowS,
       (phase, received) => emit({
@@ -195,7 +203,8 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       return view;
     }
     if (!engineResult.ok) {
-      emit({ nodeState: 'failed', owner: engineResult.owner, nodeMessage: engineResult.message });
+      emit({ nodeState: 'failed', owner: engineResult.owner, nodeMessage: engineResult.message,
+        recordsReceived: engineResult.received, watermark: engineResult.watermark });
       return view;
     }
 
@@ -239,6 +248,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       backendMessage: 'Beobachtungen lokal gespeichert. Backend-Upload steht separat aus.' });
     return view;
   } finally {
+    await operation?.close();
     collectorDb.close();
   }
 }
@@ -364,19 +374,18 @@ export async function runEngineWithDiscovery(
         maintenanceWarning: result.maintenanceWarning,
         publicKeyX: pinned.publicKeyX, publicKeyY: pinned.publicKeyY };
     }
-    const activeOrg = getAuthState().activeOrganizationId;
     const errorText = result.error ?? 'Sync fehlgeschlagen.';
     const kind = errorText.split(':')[0];
     if (kind === 'unclaimed') {
       return { ok: false, message: errorText, owner, unclaimed: true, foreign: false,
         nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
     }
-    if (kind === 'foreign' || (owner && activeOrg && owner.organizationId.toLowerCase() !== activeOrg.toLowerCase())) {
+    if (kind === 'foreign' || (owner && owner.organizationId.toLowerCase() !== organizationId.toLowerCase())) {
       return { ok: false, message: errorText, owner, unclaimed: false, foreign: true,
         nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
     }
     return { ok: false, message: humanSyncError(errorText), owner, unclaimed: false, foreign: false,
-      nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
+      nodeId: hello.nodeId, incarnation: hello.incarnation, received: result.recordsReceived, watermark: result.watermark.toString() };
   } catch (e) {
     if (e instanceof SyncFailedError && (e.kind === 'unclaimed')) {
       return { ok: false, message: e.message, owner: e.owner ?? hello.owner, unclaimed: true, foreign: false,

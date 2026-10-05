@@ -2,9 +2,10 @@
 import 'fake-indexeddb/auto';
 import claimVector from '../../../protocol/fixtures/claim-advertisement-v1.hex?raw';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-const { post, auth } = vi.hoisted(() => ({ post: vi.fn(), auth: vi.fn() }));
+const { post, auth, listeners } = vi.hoisted(() => ({ post: vi.fn(), auth: vi.fn(), listeners: new Set<() => void>() }));
 vi.mock('../api/client', () => ({ api: { POST: post } }));
-vi.mock('../platform/auth', () => ({ getAuthState: auth }));
+vi.mock('../platform/auth', () => ({ getAuthState: auth,
+  subscribeAuth: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); } }));
 import { CollectorDatabase } from '../platform/offline-store';
 import { provisionNode } from './provision-node';
 import { decodeFrame, encodeFrame, encodeHelloPublic, encodeOwnerResponse, encodeClaimAdvertisement, decodeClaimAdvertisement, Opcode } from './ble-codec';
@@ -21,7 +22,8 @@ test('claim codec matches the frozen firmware/PWA advertisement vector', () => {
 });
 beforeEach(async () => {
   await new CollectorDatabase().delete(); post.mockReset();
-  auth.mockReturnValue({ user: { memberships: [{ organizationId: 'org-a', status: 'ACTIVE', role: 'ADMIN' }] }, csrfToken: 'csrf' });
+  auth.mockReturnValue({ user: { userId: 'admin', memberships: [{ organizationId: 'org-a', status: 'ACTIVE', role: 'ADMIN' }] },
+    activeOrganizationId: 'org-a', csrfToken: 'csrf' });
   Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
   post.mockResolvedValue({ data: { nodeId: NODE, organizationId: 'org-a', receipt: 'signed-receipt' } });
 });
@@ -75,4 +77,23 @@ test('MEMBER cannot read or deliver claim material', async () => {
 test('inactive physical claim mode never requests a backend receipt', async () => {
   const transport = new ClaimTransport(); transport.physicalMode = false;
   await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('Claiming abgelehnt'); expect(post).not.toHaveBeenCalled();
+});
+
+test('a claim response received after switching organization is saved but never delivered to BLE', async () => {
+  const initiatingAuth = auth();
+  post.mockImplementationOnce(async () => {
+    auth.mockReturnValue({ ...initiatingAuth, activeOrganizationId: 'org-b' });
+    for (const listener of listeners) listener();
+    return { data: { nodeId: NODE, organizationId: 'org-a', receipt: 'signed-receipt' } };
+  });
+  const transport = new ClaimTransport();
+  await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('abgebrochen');
+  expect(transport.operations).not.toContain(Opcode.ClaimReceiptRequest);
+  expect(transport.claimed).toBe(false);
+  const db = new CollectorDatabase();
+  expect((await db.nodeMeta.get(NODE))?.claimReceipt).toBe('signed-receipt'); db.close();
+  auth.mockReturnValue(initiatingAuth);
+  await provisionNode(transport, NODE, 'org-a');
+  expect(transport.claimed).toBe(true); expect(post).toHaveBeenCalledTimes(1);
+  expect(listeners.size).toBe(0);
 });
