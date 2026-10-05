@@ -29,6 +29,9 @@ export function CollectorShell(props: {
   const [running, setRunning] = useState(false);
   const uploadBusy = useRef(false);
   const uploadRequested = useRef(false);
+  const contextGeneration = useRef(0);
+  const mounted = useRef(true);
+  const credentialCheckGeneration = useRef(0);
   const [knownDevices, setKnownDevices] = useState<Array<{ id: string; name: string; device: unknown }>>([]);
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
@@ -38,10 +41,17 @@ export function CollectorShell(props: {
 
   const auth = getAuthState();
   const contextKey = () => `${getAuthState().user?.userId ?? ''}/${getAuthState().activeOrganizationId ?? ''}`;
-  const updateNodeView = useCallback((next: CollectorViewState) => setView(previous => ({
-    ...next, backendState: previous.backendState, backendMessage: previous.backendMessage,
-    pendingUploads: previous.pendingUploads, uploadedCount: previous.uploadedCount,
-  })), []);
+  const updateNodeView = useCallback((next: CollectorViewState) => {
+    if (next.credentialState) {
+      // A pre-renewal IDB lookup must not overwrite the visit's newer result.
+      credentialCheckGeneration.current++;
+      setCredential(next.credentialState);
+    }
+    setView(previous => ({
+      ...next, backendState: previous.backendState, backendMessage: previous.backendMessage,
+      pendingUploads: previous.pendingUploads, uploadedCount: previous.uploadedCount,
+    }));
+  }, []);
 
   useEffect(() => {
     const database = new CollectorDatabase();
@@ -54,10 +64,12 @@ export function CollectorShell(props: {
   }, []);
 
   useEffect(() => {
+    mounted.current = true;
     let previousContext = contextKey();
-    return subscribeAuth(() => {
+    const unsubscribe = subscribeAuth(() => {
       const nextContext = contextKey();
       if (nextContext !== previousContext) {
+        contextGeneration.current++;
         nodeOperation.current?.abort(); nodeOperation.current = null;
         selectedTransport.current = null;
         setRunning(false); setClaimBusy(false); setClaimMessage(''); setView({ ...initialCollectorView });
@@ -65,6 +77,7 @@ export function CollectorShell(props: {
       }
       setAuthVersion(v => v + 1);
     });
+    return () => { mounted.current = false; contextGeneration.current++; unsubscribe(); };
   }, []);
   useEffect(() => {
     setView({ ...initialCollectorView }); setClaimMessage(''); selectedTransport.current = null;
@@ -84,6 +97,7 @@ export function CollectorShell(props: {
 
   useEffect(() => {
     let active = true;
+    const generation = ++credentialCheckGeneration.current;
     (async () => {
       const state = getAuthState();
       if (!state.user || !state.activeOrganizationId) {
@@ -93,7 +107,7 @@ export function CollectorShell(props: {
       const db = new OfflineIdentityDatabase();
       try {
         const cached = await new OfflineIdentity(db).credential(state.user.userId, state.activeOrganizationId);
-        if (active) {
+        if (active && generation === credentialCheckGeneration.current) {
           setCredential(cached
             ? 'Offline-Credential gültig (offline Sync möglich).'
             : navigator.onLine
@@ -101,7 +115,7 @@ export function CollectorShell(props: {
               : 'Kein gültiges Offline-Credential und offline. Node-Sync kann nicht starten — bitte einmal mit Internet anmelden.');
         }
       } catch {
-        if (active) setCredential('Offline-Credential konnte nicht geprüft werden.');
+        if (active && generation === credentialCheckGeneration.current) setCredential('Offline-Credential konnte nicht geprüft werden.');
       } finally {
         db.close();
       }
@@ -183,7 +197,9 @@ export function CollectorShell(props: {
     if (!state.activeOrganizationId) return;
     if (uploadBusy.current) { uploadRequested.current = true; return; }
     uploadRequested.current = false;
-    const contextStillActive = () => getAuthState().user?.userId === state.user?.userId &&
+    const generation = contextGeneration.current;
+    const contextStillActive = () => mounted.current && contextGeneration.current === generation &&
+      getAuthState().user?.userId === state.user?.userId &&
       getAuthState().activeOrganizationId === state.activeOrganizationId;
     uploadBusy.current = true;
     setView(v => ({ ...v, backendState: 'uploading', backendMessage: 'Backend-Upload läuft …' }));
@@ -202,7 +218,7 @@ export function CollectorShell(props: {
           backendMessage: `Backend-Upload fehlgeschlagen (${e instanceof Error ? e.message : 'unbekannt'}). Vor-Ort-Sync bleibt gültig.` }));
       } finally {
         uploadBusy.current = false;
-        if (uploadRequested.current || !contextStillActive()) setUploadContextVersion(v => v + 1);
+        if (mounted.current && (uploadRequested.current || !contextStillActive())) setUploadContextVersion(v => v + 1);
         db.close();
       }
     })();

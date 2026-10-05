@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-const { requestDevice, runFieldSync, upload, session, listeners } = vi.hoisted(() => ({
+const { requestDevice, runFieldSync, upload, cachedCredential, session, listeners } = vi.hoisted(() => ({
   requestDevice: vi.fn(), runFieldSync: vi.fn(), upload: vi.fn(),
+  cachedCredential: vi.fn(),
   session: { user: { userId: 'user', email: 'field@example.org', memberships: [] }, activeOrganizationId: 'org' },
   listeners: new Set<() => void>(),
 }));
@@ -16,7 +17,7 @@ vi.mock('../platform/offline-store', () => ({
   CollectorDatabase: class { async open() {} close() {} }, requestPersistentStorage: async () => false,
 }));
 vi.mock('../platform/offline-identity', () => ({
-  OfflineIdentityDatabase: class { close() {} }, OfflineIdentity: class { async credential() { return 'credential'; } },
+  OfflineIdentityDatabase: class { close() {} }, OfflineIdentity: class { credential = cachedCredential; },
 }));
 vi.mock('./backend-upload', () => ({ BackendUploader: class { upload = upload; } }));
 vi.mock('./observation-store', () => ({ CollectorObservationStore: class { async open() {} async organizationUploadStats() { return { pending: 0, uploaded: 0, failed: 0 }; } } }));
@@ -28,6 +29,7 @@ import { CollectorShell } from './CollectorShell';
 afterEach(cleanup);
 beforeEach(() => {
   session.activeOrganizationId = 'org'; requestDevice.mockReset(); runFieldSync.mockReset(); upload.mockReset();
+  cachedCredential.mockReset(); cachedCredential.mockResolvedValue('credential');
   upload.mockResolvedValue({ state: 'complete', message: '', uploaded: 0, duplicates: 0 });
 });
 
@@ -60,6 +62,36 @@ test('old upload completion cannot overwrite a newly selected organization', asy
   await screen.findByText('New organization upload');
   expect(screen.queryByText('Old organization failure')).toBeNull();
   expect(upload).toHaveBeenLastCalledWith('org-b');
+});
+
+test('switching away and back invalidates an earlier upload completion', async () => {
+  let finish!: (value: unknown) => void;
+  upload.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  upload.mockResolvedValue({ state: 'complete', message: 'Current context upload', uploaded: 0, duplicates: 0 });
+  render(<CollectorShell />); await screen.findByText('Backend-Upload läuft …');
+  act(() => {
+    session.activeOrganizationId = 'org-b'; for (const listener of listeners) listener();
+    session.activeOrganizationId = 'org'; for (const listener of listeners) listener();
+  });
+  await act(async () => { finish({ state: 'failed', message: 'Obsolete upload failure', uploaded: 0, duplicates: 0 }); });
+  await screen.findByText('Current context upload');
+  expect(screen.queryByText('Obsolete upload failure')).toBeNull();
+  expect(upload).toHaveBeenCalledTimes(2);
+});
+
+test('a credential renewed during a visit updates the credential header', async () => {
+  let finishCheck!: (credential: string | null) => void;
+  cachedCredential.mockImplementationOnce(() => new Promise(resolve => { finishCheck = resolve; }));
+  requestDevice.mockResolvedValue({});
+  runFieldSync.mockImplementationOnce(async ({ onUpdate }) => {
+    onUpdate({ nodeState: 'connecting', credentialState: 'Offline-Credential erneuert.' });
+  });
+  render(<CollectorShell />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Node auswählen & synchronisieren' }));
+  await screen.findByText('Offline-Credential erneuert.');
+  await act(async () => { finishCheck(null); });
+  expect(screen.getByText('Offline-Credential erneuert.')).toBeTruthy();
+  expect(screen.queryByText(/Kein gültiges Offline-Credential/)).toBeNull();
 });
 
 test('a visit finishing during an existing upload queues another outbox drain', async () => {
