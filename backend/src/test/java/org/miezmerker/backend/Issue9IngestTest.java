@@ -68,6 +68,7 @@ class Issue9IngestTest {
     @Autowired CatRepository cats;
     @Autowired NodeDeploymentRepository deployments;
     @Autowired RawObservationRepository observations;
+    @Autowired org.miezmerker.backend.repo.DerivedVisitRepository derivedVisits;
     @Autowired PasswordEncoder passwords;
 
     final ObjectMapper mapper = new ObjectMapper();
@@ -131,6 +132,7 @@ class Issue9IngestTest {
     record Seed(Organization orgA, Organization orgB) {}
 
     Seed seed() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
         deployments.deleteAll();
         cats.deleteAll();

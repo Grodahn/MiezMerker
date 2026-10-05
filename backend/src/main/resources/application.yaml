@@ -31,6 +31,11 @@ springdoc:
     path: /api/v1/openapi
   paths-to-match: /api/v1/**
 miezmerker:
+  visits:
+    # Default gap for visit-gap-v1 in seconds. Explicit hypothesis, not a hard
+    # business rule; every recompute may override it per request and the used
+    # value is stored on each DerivedVisit for auditability.
+    default-gap-seconds: ${VISITS_DEFAULT_GAP_SECONDS:60}
   credential:
     ttl-hours: ${CREDENTIAL_TTL_HOURS:168}
   issuer:

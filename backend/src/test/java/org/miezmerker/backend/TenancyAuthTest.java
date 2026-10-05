@@ -21,6 +21,10 @@ import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.domain.UserStatus;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.AppDeviceRepository;
+import org.miezmerker.backend.repo.CatRepository;
+import org.miezmerker.backend.repo.DerivedVisitRepository;
+import org.miezmerker.backend.repo.FeedingSiteRepository;
+import org.miezmerker.backend.repo.NodeDeploymentRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
@@ -56,6 +60,10 @@ class TenancyAuthTest {
     @Autowired AppDeviceRepository devices;
     @Autowired NodeRepository nodes;
     @Autowired RawObservationRepository observations;
+    @Autowired DerivedVisitRepository derivedVisits;
+    @Autowired NodeDeploymentRepository deployments;
+    @Autowired CatRepository cats;
+    @Autowired FeedingSiteRepository sites;
     @Autowired PasswordEncoder passwords;
 
     final ObjectMapper mapper = new ObjectMapper();
@@ -116,7 +124,11 @@ class TenancyAuthTest {
             AppUser adminB, AppUser pendingA, AppUser disabledA, AppUser multi) {}
 
     Fixture seed() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
+        deployments.deleteAll();
+        cats.deleteAll();
+        sites.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();

@@ -1,5 +1,6 @@
 package org.miezmerker.backend.repo;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.miezmerker.backend.domain.RawObservation;
@@ -17,4 +18,10 @@ public interface RawObservationRepository extends JpaRepository<RawObservation, 
 
     @Query("select count(o) from RawObservation o where o.organization.id = :organizationId")
     long countByOrganizationId(@Param("organizationId") UUID organizationId);
+
+    @Query("select distinct o from RawObservation o join fetch o.node n "
+            + "left join fetch o.feedingSite left join fetch o.deployment "
+            + "where o.organization.id = :organizationId")
+    List<RawObservation> findByOrganizationIdWithRefs(
+            @Param("organizationId") UUID organizationId);
 }
