@@ -163,7 +163,8 @@ npm run test:e2e
 Linux benötigt für Chromium ggf. `npx playwright install --with-deps chromium`.
 Playwright startet selbst die Production-Preview auf Port 4173; diesen Port
 freihalten. Geprüft werden echter Same-Origin-Proxy, Offline-Neuladen der
-Collector-App-Shell und persistente Outbox. Der Vite-Dev-Modus aktiviert keinen
+Collector-App-Shell und persistente Outbox sowie die #11-Verwaltungsabläufe
+bei Desktop- und Mobilbreite. Der Vite-Dev-Modus aktiviert keinen
 Service Worker. Zum manuellen Offline-Test `npm run build` und `npm run preview`
 verwenden, `/sync` einmal online öffnen, Worker-Aktivierung abwarten, dann offline
 neu laden. Verwaltung muss nicht vollständig offline gespiegelt werden.
@@ -185,7 +186,13 @@ Node-Identität (UUIDv4 + P-256-Keypair) mit Claim-Modus-Port, atomicem Claiming
 idempotentem Retry, öffentliche Owner-Metadaten für fremde Organisationen, sowie
 determinische Interop-Vektoren unter `protocol/fixtures/`.
 
-Offen: #19 (Invite-per-E-Mail), BLE-Transport/GATT-Codec (#6), Collector (#8),
-Verwaltungsoberflächen (#11), echte Uploads, Visit-Ableitung (#10)
-und Hardware-Adapter. Kein gemeinsames Organisations-Secret; sofortige Offline-
+Implementiert (#9/#10/#11): organisationsgebundene Stammdaten, idempotenter
+Upload unveränderter Rohbeobachtungen, historisierte Node-Zuordnungen,
+Backend-Visit-Ableitung und kleine Verwaltungsseiten in derselben PWA.
+Bedienung und API-Ergänzungen: [docs/issue11-management.md](docs/issue11-management.md).
+Der gemergte Collector (#8) unterstützt Offline-BLE und getrennten Backend-Upload;
+physische Abnahme und Board-Anbindung stehen weiter aus (siehe Collector-Dokumentation).
+
+Offen: #19 (Invite-per-E-Mail), physische BLE-Validierung und Hardware-Adapter.
+Kein gemeinsames Organisations-Secret; sofortige Offline-
 Revocation gibt es bewusst nicht (ADR-0012).

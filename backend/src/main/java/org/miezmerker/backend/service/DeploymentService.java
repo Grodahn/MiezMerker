@@ -49,7 +49,7 @@ public class DeploymentService {
     @Transactional
     public NodeDeployment create(UUID userId, UUID organizationId, UUID nodeId,
             UUID feedingSiteId, Instant validFrom, Instant validUntil) {
-        tenants.requireAdmin(userId, organizationId);
+        tenants.requireActive(userId, organizationId);
         Organization org = organizations.findById(organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (validFrom == null) {
@@ -92,7 +92,7 @@ public class DeploymentService {
     @Transactional
     public NodeDeployment close(UUID userId, UUID organizationId, UUID deploymentId,
             Instant validUntil) {
-        tenants.requireAdmin(userId, organizationId);
+        tenants.requireActive(userId, organizationId);
         NodeDeployment deployment = deployments.findByIdAndOrganizationId(deploymentId,
                 organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -120,6 +120,50 @@ public class DeploymentService {
         }
         deployment.setValidUntil(validUntil);
         return deployments.save(deployment);
+    }
+
+    @Transactional
+    public NodeDeployment move(UUID userId, UUID organizationId, UUID nodeId,
+            UUID feedingSiteId, Instant validFrom) {
+        tenants.requireActive(userId, organizationId);
+        if (validFrom == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "validFrom is required");
+        }
+        validFrom = validFrom.truncatedTo(ChronoUnit.MILLIS);
+        NodeDevice node = nodes.findByIdLocked(nodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (node.getOrganization() == null
+                || !node.getOrganization().getId().equals(organizationId)
+                || node.getState() != NodeState.CLAIMED) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        // Validate every reference and interval before changing existing history.
+        sites.findByIdAndOrganizationId(feedingSiteId, organizationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        List<NodeDeployment> history = deployments.findByNodeIdLocked(nodeId);
+        NodeDeployment open = null;
+        for (NodeDeployment other : history) {
+            if (other.getValidUntil() == null) {
+                if (!validFrom.isAfter(other.getValidFrom())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "move must be after the open deployment start");
+                }
+                open = other;
+            } else if (overlaps(other.getValidFrom(), other.getValidUntil(), validFrom, null)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "move overlaps existing deployment history");
+            }
+        }
+        if (open != null) {
+            if (open.getFeedingSite().getId().equals(feedingSiteId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "node is already assigned to this feeding site");
+            }
+            open.setValidUntil(validFrom);
+            deployments.save(open);
+        }
+        // Joins the same transaction; failures roll back the closed interval too.
+        return create(userId, organizationId, nodeId, feedingSiteId, validFrom, null);
     }
 
     @Transactional

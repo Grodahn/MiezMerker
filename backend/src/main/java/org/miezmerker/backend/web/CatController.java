@@ -98,7 +98,7 @@ public class CatController {
 
     @PostMapping(consumes = "application/json", produces = "application/json")
     @Operation(operationId = "createCat",
-            summary = "ADMIN creates a cat in their own organization")
+            summary = "ACTIVE member creates a cat in their own organization")
     @Transactional
     public CatView create(@PathVariable UUID organizationId,
             @Valid @RequestBody CreateCatRequest request,
@@ -106,7 +106,7 @@ public class CatController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireAdmin(principal.getId(), organizationId);
+        tenants.requireActive(principal.getId(), organizationId);
         var org = organizations.findById(organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         String chip = Cat.normalizeChipId(request.chipId());
@@ -131,7 +131,7 @@ public class CatController {
     @PatchMapping(value = "/{catId}", consumes = "application/json",
             produces = "application/json")
     @Operation(operationId = "updateCat",
-            summary = "ADMIN updates a cat of their own organization")
+            summary = "ACTIVE member updates a cat of their own organization")
     @Transactional
     public CatView update(@PathVariable UUID organizationId, @PathVariable UUID catId,
             @Valid @RequestBody UpdateCatRequest request,
@@ -139,7 +139,7 @@ public class CatController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireAdmin(principal.getId(), organizationId);
+        tenants.requireActive(principal.getId(), organizationId);
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }

@@ -242,7 +242,7 @@ public class NodeController {
     @PatchMapping(value = "/{nodeId}", consumes = "application/json",
             produces = "application/json")
     @Operation(operationId = "updateNode",
-            summary = "ADMIN updates node metadata (firmware/protocol version, status note)")
+            summary = "ACTIVE member updates node metadata (firmware/protocol version, status note)")
     @Transactional
     public NodeView update(@PathVariable UUID nodeId,
             @Valid @RequestBody UpdateNodeRequest request,
@@ -262,7 +262,6 @@ public class NodeController {
             if (e.getStatusCode() != HttpStatus.FORBIDDEN) throw e;
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        tenants.requireAdmin(principal.getId(), node.getOrganization().getId());
         if (request != null) {
             if (request.firmwareVersion() != null) {
                 node.setFirmwareVersion(

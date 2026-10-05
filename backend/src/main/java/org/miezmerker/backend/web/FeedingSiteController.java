@@ -27,7 +27,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Organization-scoped feeding sites (#9). Reads require an ACTIVE membership;
- * writes require ADMIN. The organization is always taken from the server-side
+ * normal care requires ACTIVE membership; deletion requires ADMIN.
+ * The organization is always taken from the server-side
  * membership check, never trusted from the client alone.
  */
 @RestController
@@ -115,7 +116,7 @@ public class FeedingSiteController {
 
     @PostMapping(consumes = "application/json", produces = "application/json")
     @Operation(operationId = "createFeedingSite",
-            summary = "ADMIN creates a feeding site in their own organization")
+            summary = "ACTIVE member creates a feeding site in their own organization")
     @Transactional
     public FeedingSiteView create(@PathVariable UUID organizationId,
             @Valid @RequestBody CreateFeedingSiteRequest request,
@@ -123,7 +124,7 @@ public class FeedingSiteController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireAdmin(principal.getId(), organizationId);
+        tenants.requireActive(principal.getId(), organizationId);
         var org = organizations.findById(organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         checkLocation(request.locationLat(), request.locationLng());
@@ -136,7 +137,7 @@ public class FeedingSiteController {
     @PatchMapping(value = "/{siteId}", consumes = "application/json",
             produces = "application/json")
     @Operation(operationId = "updateFeedingSite",
-            summary = "ADMIN updates a feeding site of their own organization")
+            summary = "ACTIVE member updates a feeding site of their own organization")
     @Transactional
     public FeedingSiteView update(@PathVariable UUID organizationId, @PathVariable UUID siteId,
             @Valid @RequestBody UpdateFeedingSiteRequest request,
@@ -144,7 +145,7 @@ public class FeedingSiteController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireAdmin(principal.getId(), organizationId);
+        tenants.requireActive(principal.getId(), organizationId);
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }

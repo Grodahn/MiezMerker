@@ -28,7 +28,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Historical node deployments (#9). Reads require ACTIVE membership; every
- * mutation requires ADMIN and serializes on the node row so concurrent moves
+ * care requires ACTIVE membership; deletion requires ADMIN.
+ * Writes serialize on the node row so concurrent moves
  * cannot create overlapping history. Moving a node never rewrites stored
  * observation attributions.
  */
@@ -59,6 +60,10 @@ public class DeploymentController {
 
     @Schema(name = "CloseDeploymentRequest")
     public record CloseDeploymentRequest(Instant validUntil) {}
+
+    @Schema(name = "MoveDeploymentRequest")
+    public record MoveDeploymentRequest(@NotNull UUID nodeId,
+            @NotNull UUID feedingSiteId, @NotNull Instant validFrom) {}
 
     static DeploymentView toView(NodeDeployment d) {
         return new DeploymentView(d.getId(), d.getOrganization().getId().toString(),
@@ -104,7 +109,7 @@ public class DeploymentController {
 
     @PostMapping(consumes = "application/json", produces = "application/json")
     @Operation(operationId = "createDeployment",
-            summary = "ADMIN assigns a node to a feeding site for a validity range")
+            summary = "ACTIVE member assigns a node to a feeding site for a validity range")
     public DeploymentView create(@PathVariable UUID organizationId,
             @Valid @RequestBody CreateDeploymentRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
@@ -118,7 +123,7 @@ public class DeploymentController {
     @PatchMapping(value = "/{deploymentId}", consumes = "application/json",
             produces = "application/json")
     @Operation(operationId = "closeDeployment",
-            summary = "ADMIN closes or reopens a deployment by setting validUntil")
+            summary = "ACTIVE member closes or reopens a deployment by setting validUntil")
     public DeploymentView close(@PathVariable UUID organizationId,
             @PathVariable UUID deploymentId,
             @RequestBody CloseDeploymentRequest request,
@@ -139,5 +144,15 @@ public class DeploymentController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         service.delete(principal.getId(), organizationId, deploymentId);
+    }
+
+    @PostMapping(value = "/move", consumes = "application/json", produces = "application/json")
+    @Operation(operationId = "moveDeployment",
+            summary = "ACTIVE member atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged")
+    public DeploymentView move(@PathVariable UUID organizationId,
+            @Valid @RequestBody MoveDeploymentRequest request,
+            @AuthenticationPrincipal AppUserDetails principal) {
+        return toView(service.move(TenantService.currentUserId(principal), organizationId,
+                request.nodeId(), request.feedingSiteId(), request.validFrom()));
     }
 }

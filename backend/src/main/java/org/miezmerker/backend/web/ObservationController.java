@@ -160,6 +160,7 @@ public class ObservationController {
             @RequestParam(required = false) Long toMillis,
             @RequestParam(required = false, defaultValue = "100") int limit,
             @RequestParam(required = false, defaultValue = "0") int offset,
+            @RequestParam(required = false, defaultValue = "false") boolean newestFirst,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
@@ -183,7 +184,8 @@ public class ObservationController {
                 + (normalizedChip != null ? " and o.chipId = :chip" : "")
                 + (fromMillis != null ? " and o.observedAtMs >= :from" : "")
                 + (toMillis != null ? " and o.observedAtMs < :to" : "")
-                + " order by o.receivedAt asc, o.sequence asc, o.id asc";
+                + (newestFirst ? " order by o.receivedAt desc, o.sequence desc, o.id desc"
+                        : " order by o.receivedAt asc, o.sequence asc, o.id asc");
         var query = entities.createQuery(jpql, RawObservation.class)
                 .setParameter("org", organizationId)
                 .setFirstResult(offset)
