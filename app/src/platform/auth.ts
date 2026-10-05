@@ -104,7 +104,7 @@ export function selectOrganization(organizationId: string): void {
 }
 
 export async function fetchCsrfToken(): Promise<string> {
-  const { data, error } = await api.GET('/api/v1/auth/csrf');
+  const { data, error } = await api.GET('/api/v1/auth/csrf', { signal: AbortSignal.timeout(10_000) });
   if (error || !data || !data.token) throw new Error('CSRF token unavailable');
   state = { ...state, csrfToken: data.token };
   emit();

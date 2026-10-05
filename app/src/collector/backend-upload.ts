@@ -115,9 +115,10 @@ export class BackendUploader {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
+        const csrfToken = await fetchCsrfToken();
         const { data, error, response } = await api.POST('/api/v1/observations/ingest', {
           signal: AbortSignal.timeout(10_000),
-          headers: { 'X-XSRF-TOKEN': await fetchCsrfToken() },
+          headers: { 'X-XSRF-TOKEN': csrfToken },
           body: {
             organizationId,
             observations: batch.map(r => ({
@@ -155,8 +156,7 @@ export class BackendUploader {
         for (let i = 0; i < batch.length; i++) {
           const item = batch[i];
           const result = results[i];
-          const identityMatches = result && (result.nodeId === undefined || result.nodeId === item.nodeId) &&
-            (result.sequence === undefined || String(result.sequence) === item.sequence);
+          const identityMatches = result && result.nodeId === item.nodeId && result.sequence === item.sequence;
           const status = identityMatches ? result?.status : undefined;
           const key = { nodeId: item.nodeId, incarnation: item.incarnation, sequence: item.sequence };
           if (status === 'CREATED') {

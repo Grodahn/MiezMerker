@@ -61,3 +61,20 @@ test('old upload completion cannot overwrite a newly selected organization', asy
   expect(screen.queryByText('Old organization failure')).toBeNull();
   expect(upload).toHaveBeenLastCalledWith('org-b');
 });
+
+test('a visit finishing during an existing upload queues another outbox drain', async () => {
+  let finish!: (value: unknown) => void;
+  upload.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  upload.mockResolvedValue({ state: 'complete', message: 'Visit records uploaded', uploaded: 1, duplicates: 0 });
+  requestDevice.mockResolvedValue({});
+  runFieldSync.mockResolvedValue(undefined);
+  render(<CollectorShell />);
+  await screen.findByText('Backend-Upload läuft …');
+  fireEvent.click(screen.getByRole('button', { name: 'Node auswählen & synchronisieren' }));
+  await vi.waitFor(() => expect(runFieldSync).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Node auswählen & synchronisieren' }).hasAttribute('disabled')).toBe(false));
+  expect(upload).toHaveBeenCalledTimes(1);
+  await act(async () => { finish({ state: 'complete', message: 'Old snapshot uploaded', uploaded: 0, duplicates: 0 }); });
+  await screen.findByText('Visit records uploaded');
+  expect(upload).toHaveBeenCalledTimes(2);
+});

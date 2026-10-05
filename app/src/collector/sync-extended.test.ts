@@ -2,6 +2,8 @@
 import 'fake-indexeddb/auto';
 import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { SyncDatabase, SyncEngine, SyncStore } from './sync-engine';
+import { CollectorDatabase } from '../platform/offline-store';
+import { CollectorObservationStore } from './observation-store';
 import {
   decodeBatchRequest, decodeFrame, encodeFrame, encodeHelloPublic, encodeOwnerResponse,
   encodeAuthResponse, encodeStatusResponse, encodeBatchResponse, encodeAckResponse,
@@ -242,5 +244,37 @@ describe('SyncEngine extended field scenarios (issue #8)', () => {
       { maxRetries: 0 }).sync('cred', () => 1790899200);
     expect(result.ok).toBe(true);
     expect(node.getAcked()).toBe(1n);
+  });
+
+  test.each([null, 'org-b'])('cached row bound to %s cannot bridge an authenticated ACK gap', async cachedOrganization => {
+    const collectorDb = new CollectorDatabase(`ack-gap-${Math.random()}`);
+    const collectorStore = new CollectorObservationStore(collectorDb);
+    try {
+      await collectorStore.putObservations([makeRecord(2)], cachedOrganization);
+      const node = nodeHandler([makeRecord(1), makeRecord(3)]);
+      const result = await new SyncEngine(new MockTransport(node.handler), collectorStore, mockKeys, identity,
+        { maxRetries: 0 }).sync('cred', () => 1790899200, 'org-a');
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('incomplete');
+      expect(node.getAcked()).toBe(1n);
+      expect(await collectorStore.pendingUploads('org-a')).toHaveLength(2);
+    } finally { collectorDb.close(); await collectorDb.delete(); }
+  });
+
+  test('lost compaction response after durable ACK leaves the visit complete with a warning', async () => {
+    const node = nodeHandler([makeRecord(1)]);
+    const transport = new MockTransport(async frame => {
+      if (decodeFrame(frame)?.opcode === Opcode.CompactRequest) throw new Error('BLE disconnected after ACK');
+      return node.handler(frame);
+    });
+    const result = await new SyncEngine(transport, store, mockKeys, identity,
+      { maxRetries: 3, retryDelayMs: 0 }).sync('cred', () => 1790899200);
+    expect(result.ok).toBe(true);
+    expect(result.watermark).toBe(1n);
+    expect(result.maintenanceWarning).toContain('Speicherbereinigung');
+    expect(node.getAcked()).toBe(1n);
+    expect(node.opcodes.filter(opcode => opcode === Opcode.ChallengeRequest)).toHaveLength(1);
+    expect(await store.sequences(NODE_ID, INCARNATION)).toEqual([1n]);
+    expect(transport.connected).toBe(false);
   });
 });

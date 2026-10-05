@@ -30,8 +30,8 @@ background BLE in the MVP.
 - Authorization (`authorization.test.ts`): valid credential reuse, online
   renewal, offline expiry with a clear “Node-Sync kann nicht starten” message.
 - Transport (`web-bluetooth.test.ts`): exact GATT UUIDs, opcode→characteristic
-  routing, read-only vs write characteristics, notify-with-read-fallback for
-  Batch, German capability/permission errors.
+  routing, read-only vs write characteristics, direct response reads for Batch,
+  German capability/permission errors.
 - PWA shell: production build precaches the app shell; `/sync` reloads offline
   with durable IndexedDB (Playwright foundation spec).
 
@@ -123,7 +123,7 @@ Host router tests and browser mocks cannot prove that physical integration.
 
 ### Review validation (2026-10-05)
 
-- PWA: 139 Vitest tests passed; TypeScript/Vite production build passed.
+- PWA: 152 Vitest tests passed; TypeScript/Vite production build passed.
 - Generated API client: `api:check` passed without drift.
 - Playwright: both browser integration tests passed against the local backend,
   including offline shell/outbox reload and restoration of cached account context.
@@ -136,3 +136,40 @@ Host router tests and browser mocks cannot prove that physical integration.
 - Both codec implementations round-trip the same frozen claim advertisement
   vector from `protocol/fixtures/claim-advertisement-v1.hex`.
 - Physical Android/BLE validation and actual board-shim wiring remain pending.
+
+### Additional review fixes (2026-10-05)
+
+- **P1: ACK inputs included unassigned/foreign cached rows.** A cached sequence
+  could bridge a gap without belonging to the authenticated organization's
+  upload queue. The production store now scopes watermark inputs to that
+  organization. Regression cases seed unassigned/foreign sequence 2, receive
+  sequences 1 and 3, and verify ACK stops at 1 with an incomplete result.
+- **P2: Upload acknowledgements accepted missing event identities.** CREATED or
+  DUPLICATE_IDENTICAL without nodeId/sequence could remove a row from retry.
+  Both identifiers must now exactly match the submitted event. Three malformed
+  success responses remain locally retryable; normal mocks use real identities.
+- **P2: Credential resolution blocked public discovery.** An expired/missing
+  credential prevented foreign owner display and discovering UNCLAIMED nodes for
+  ADMIN provisioning. Public Hello/Owner now precedes credential and key work.
+  Regressions verify both outcomes without any protected request or credential
+  lookup; same-organization observations still require authorization.
+- **P2: An in-flight upload swallowed a post-visit retry.** Its snapshot could
+  omit freshly collected records while the completion effect returned early.
+  Retry requests now queue one subsequent drain after the active upload finishes.
+  A UI regression completes a BLE visit during an older upload and verifies the
+  second upload runs without another visit, reconnect or manual retry.
+- **P2: Collector HTTP prerequisites could hang indefinitely.** CSRF, device
+  registration, credential issuance and claim reservation now abort after ten
+  seconds. Ingest and claim deadlines start after CSRF resolves, preserving their
+  full request window. Abort-aware tests stall each prerequisite and verify
+  termination, retained outbox data and absence of a newly cached credential.
+- **P2: Compaction failure undid an already successful visit in the UI.** After
+  contiguous durable storage and confirmed ACK, a missing/invalid compact response
+  now produces a maintenance warning alongside Fertig. Tests verify the durable
+  watermark remains confirmed, the transport closes and the copy is not retried.
+
+Validation: 152 Vitest tests, TypeScript/Vite production build, generated API
+drift check, both Playwright tests against the local PostgreSQL-backed packaged
+backend, and all 54 existing firmware/simulator CTest tests passed. CTest requires
+access to the local LLVM runtime DLLs; running it outside the filesystem sandbox
+resolved the initial Windows loader failures. This review changed no C++ sources.

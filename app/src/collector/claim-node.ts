@@ -82,7 +82,9 @@ export async function claimNode(
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new ClaimError('offline', 'Claiming benötigt Internet (Backend-Provisionierung). Bitte online erneut versuchen.');
   }
+  const headers = await csrfHeaders();
   const { data, error, response } = await api.POST('/api/v1/nodes/claim', {
+    signal: AbortSignal.timeout(10_000),
     body: {
       nodeId: input.nodeId,
       publicKeyX: input.publicKeyX,
@@ -92,7 +94,7 @@ export async function claimNode(
       timestampMillis: input.timestampMillis,
       claimSignature: input.claimSignature,
     },
-    headers: await csrfHeaders(),
+    headers,
   });
   if (error || !data) {
     const status = (response as Response | undefined)?.status;

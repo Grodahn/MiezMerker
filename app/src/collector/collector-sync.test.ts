@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const get = vi.hoisted(() => vi.fn());
 vi.mock('../api/client', () => ({ api: { GET: get } }));
@@ -19,7 +19,8 @@ import { getAuthState } from '../platform/auth';
 import { loadTrustedNodeIdentity } from '../platform/node-identity';
 import { CollectorDatabase } from '../platform/offline-store';
 import { CollectorObservationStore } from './observation-store';
-import { runEngineWithDiscovery } from './collector-sync';
+import { runEngineWithDiscovery, runFieldSync } from './collector-sync';
+import { OfflineIdentity } from '../platform/offline-identity';
 import type { NodeTransport } from '../platform/node-transport';
 import { decodeFrame, encodeFrame, encodeHelloPublic, encodeOwnerResponse, Opcode } from './ble-codec';
 
@@ -41,7 +42,8 @@ function authAs(org: string | null) {
 }
 
 class ProbeOnlyTransport implements NodeTransport {
-  constructor(private organizationId = 'org-a') {}
+  constructor(private organizationId = 'org-a', private claimState = 1) {}
+  opcodes: Opcode[] = [];
   lastResponse: Uint8Array = new Uint8Array();
   async connect() {}
   async disconnect() {}
@@ -49,14 +51,15 @@ class ProbeOnlyTransport implements NodeTransport {
   async write(message: Uint8Array) {
     const frame = decodeFrame(message);
     if (!frame) throw new Error('bad frame');
+    this.opcodes.push(frame.opcode);
     if (frame.opcode === Opcode.HelloRequest) {
       this.lastResponse = encodeFrame({ version: 1, opcode: Opcode.HelloPublic, payload: encodeHelloPublic({
         serverVer: 1, caps: 0x1f, nodeId: NODE_ID, incarnation: INCARNATION,
-        firmwareVersion: 'test', claimState: 1, clockStatus: 2,
+        firmwareVersion: 'test', claimState: this.claimState, clockStatus: 2,
       }) });
     } else if (frame.opcode === Opcode.OwnerRequest) {
       this.lastResponse = encodeFrame({ version: 1, opcode: Opcode.OwnerResponse, payload: encodeOwnerResponse({
-        nodeId: NODE_ID, claimState: 1, organizationId: this.organizationId,
+        nodeId: NODE_ID, claimState: this.claimState, organizationId: this.organizationId,
         organizationSlug: 'org', organizationName: 'Org', publicContact: '',
       }) });
     }
@@ -66,6 +69,7 @@ class ProbeOnlyTransport implements NodeTransport {
 describe('runEngineWithDiscovery node identity resolution', () => {
   let db: CollectorDatabase;
   let store: CollectorObservationStore;
+  afterEach(() => { db.close(); vi.restoreAllMocks(); });
 
   beforeEach(async () => {
     get.mockReset();
@@ -116,5 +120,30 @@ describe('runEngineWithDiscovery node identity resolution', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.foreign).toBe(true);
     expect(outcome.message).not.toContain('offline unbekannt');
+  });
+
+  test('foreign public owner is shown offline without a credential or protected reads', async () => {
+    authAs('org-a');
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+    const credential = vi.spyOn(OfflineIdentity.prototype, 'credential').mockResolvedValue(null);
+    const transport = new ProbeOnlyTransport('org-b');
+    const outcome = await runFieldSync({ createTransport: () => transport, onUpdate: () => {} });
+    expect(outcome.foreign?.organizationName).toBe('Org');
+    expect(credential).not.toHaveBeenCalled();
+    expect(transport.opcodes).toEqual([Opcode.HelloRequest, Opcode.OwnerRequest]);
+  });
+
+  test('ADMIN discovers an unclaimed node before first credential issuance', async () => {
+    authAs('org-a');
+    mockedAuth.mockReturnValue({ ...getAuthState(), user: { ...getAuthState().user!, memberships: [
+      { organizationId: 'org-a', status: 'ACTIVE', role: 'ADMIN' },
+    ] } });
+    const credential = vi.spyOn(OfflineIdentity.prototype, 'credential').mockResolvedValue(null);
+    const transport = new ProbeOnlyTransport('org-a', 0);
+    const outcome = await runFieldSync({ createTransport: () => transport, onUpdate: () => {} });
+    expect(outcome.unclaimed).toBe(true);
+    expect(outcome.owner?.nodeId).toBe(NODE_ID);
+    expect(credential).not.toHaveBeenCalled();
+    expect(transport.opcodes).toEqual([Opcode.HelloRequest, Opcode.OwnerRequest]);
   });
 });

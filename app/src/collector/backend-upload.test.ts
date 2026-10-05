@@ -35,7 +35,10 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
 
   test('later upload: pending records batch to #9 ingest with decimal strings', async () => {
     await store.putObservations([rec(1), rec(2)], 'org-a');
-    post.mockResolvedValue({ data: { results: [{ status: 'CREATED' }, { status: 'DUPLICATE_IDENTICAL' }] } });
+    post.mockResolvedValue({ data: { results: [
+      { nodeId: NODE, sequence: '1', status: 'CREATED' },
+      { nodeId: NODE, sequence: '2', status: 'DUPLICATE_IDENTICAL' },
+    ] } });
     const result = await new BackendUploader(store, { batchSize: 200 }).upload('org-a');
     expect(result.state).toBe('complete');
     expect(result.uploaded).toBe(1);
@@ -57,14 +60,15 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
     expect(result.message).toContain('Vor-Ort-Sync bleibt');
     expect((await store.pendingUploads('org-a'))).toHaveLength(1);
     // Retry succeeds later.
-    post.mockResolvedValue({ data: { results: [{ status: 'CREATED' }] } });
+    post.mockResolvedValue({ data: { results: [{ nodeId: NODE, sequence: '1', status: 'CREATED' }] } });
     expect((await uploader.upload('org-a')).state).toBe('complete');
   });
 
   test('conflicting backend items do not block siblings', async () => {
     await store.putObservations([rec(1), rec(2)], 'org-a');
     post.mockResolvedValue({ data: { results: [
-      { status: 'CONFLICT', message: 'conflict' }, { status: 'CREATED' },
+      { nodeId: NODE, sequence: '1', status: 'CONFLICT', message: 'conflict' },
+      { nodeId: NODE, sequence: '2', status: 'CREATED' },
     ] } });
     const result = await new BackendUploader(store).upload('org-a');
     expect(result.state).toBe('failed');
@@ -84,11 +88,11 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
 
   test('failed records are retried and never silently reported complete', async () => {
     await store.putObservations([rec(1)], 'org-a');
-    post.mockResolvedValue({ data: { results: [{ status: 'CONFLICT' }] } });
+    post.mockResolvedValue({ data: { results: [{ nodeId: NODE, sequence: '1', status: 'CONFLICT' }] } });
     const uploader = new BackendUploader(store);
     expect((await uploader.upload('org-a')).state).toBe('failed');
     expect((await uploader.upload('org-a')).state).toBe('failed');
-    post.mockResolvedValue({ data: { results: [{ status: 'CREATED' }] } });
+    post.mockResolvedValue({ data: { results: [{ nodeId: NODE, sequence: '1', status: 'CREATED' }] } });
     expect((await uploader.upload('org-a')).state).toBe('complete');
     expect((await store.uploadStats(NODE)).uploaded).toBe(1);
   });
@@ -105,6 +109,19 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
     expect(result.state).toBe('failed'); expect((await store.uploadStats(NODE)).uploaded).toBe(0);
   });
 
+  test.each([
+    { status: 'CREATED' },
+    { nodeId: NODE, status: 'DUPLICATE_IDENTICAL' },
+    { sequence: '1', status: 'CREATED' },
+  ])('success without a full event identity remains retryable: %j', async response => {
+    await store.putObservations([rec(1)], 'org-a');
+    post.mockResolvedValue({ data: { results: [response] } });
+    const result = await new BackendUploader(store).upload('org-a');
+    expect(result.state).toBe('failed');
+    expect(await store.pendingUploads('org-a')).toHaveLength(1);
+    expect((await store.uploadStats(NODE)).uploaded).toBe(0);
+  });
+
   test('outboxes exceeding 5000 records are fully drained', async () => {
     const rows = Array.from({ length: 5001 }, (_, i) => ({ ...rec(i + 1),
       sequence: String(i + 1), epochMs: String(1790899200000 + i + 1), monotonicMs: String(i + 1),
@@ -114,8 +131,8 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
       pendingUploads: async (_org: string, limit = rows.length) => rows.slice(0, limit),
       markUploadResult: vi.fn(async () => {}),
     } as unknown as CollectorObservationStore;
-    post.mockImplementation(async (_p: unknown, opts: { body: { observations: unknown[] } }) => ({
-      data: { results: opts.body.observations.map(() => ({ status: 'CREATED' })) },
+    post.mockImplementation(async (_p: unknown, opts: { body: { observations: Array<{ nodeId: string; sequence: string }> } }) => ({
+      data: { results: opts.body.observations.map(r => ({ nodeId: r.nodeId, sequence: r.sequence, status: 'CREATED' })) },
     }));
     expect((await new BackendUploader(repository).upload('org-a')).uploaded).toBe(5001);
     expect(repository.markUploadResult).toHaveBeenCalledTimes(5001);
@@ -124,8 +141,8 @@ describe('BackendUploader (PWA→Backend independent state machine)', () => {
   test('batching splits large outboxes', async () => {
     const records = Array.from({ length: 5 }, (_, i) => rec(i + 1));
     await store.putObservations(records, 'org-a');
-    post.mockImplementation(async (_p: unknown, opts: { body: { observations: unknown[] } }) => ({
-      data: { results: opts.body.observations.map(() => ({ status: 'CREATED' })) },
+    post.mockImplementation(async (_p: unknown, opts: { body: { observations: Array<{ nodeId: string; sequence: string }> } }) => ({
+      data: { results: opts.body.observations.map(r => ({ nodeId: r.nodeId, sequence: r.sequence, status: 'CREATED' })) },
     }));
     const result = await new BackendUploader(store, { batchSize: 2 }).upload('org-a');
     expect(post).toHaveBeenCalledTimes(3);

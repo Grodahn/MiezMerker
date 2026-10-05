@@ -28,6 +28,7 @@ export function CollectorShell(props: {
   const [view, setView] = useState<CollectorViewState>(initialCollectorView);
   const [running, setRunning] = useState(false);
   const uploadBusy = useRef(false);
+  const uploadRequested = useRef(false);
   const [knownDevices, setKnownDevices] = useState<Array<{ id: string; name: string; device: unknown }>>([]);
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
@@ -156,7 +157,9 @@ export function CollectorShell(props: {
 
   const retryUpload = useCallback(() => {
     const state = getAuthState();
-    if (!state.activeOrganizationId || uploadBusy.current) return;
+    if (!state.activeOrganizationId) return;
+    if (uploadBusy.current) { uploadRequested.current = true; return; }
+    uploadRequested.current = false;
     const contextStillActive = () => getAuthState().user?.userId === state.user?.userId &&
       getAuthState().activeOrganizationId === state.activeOrganizationId;
     uploadBusy.current = true;
@@ -176,7 +179,7 @@ export function CollectorShell(props: {
           backendMessage: `Backend-Upload fehlgeschlagen (${e instanceof Error ? e.message : 'unbekannt'}). Vor-Ort-Sync bleibt gültig.` }));
       } finally {
         uploadBusy.current = false;
-        if (!contextStillActive()) setUploadContextVersion(v => v + 1);
+        if (uploadRequested.current || !contextStillActive()) setUploadContextVersion(v => v + 1);
         db.close();
       }
     })();

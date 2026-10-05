@@ -309,7 +309,9 @@ describe('SyncEngine', () => {
       return encodeFrame(frame);
     });
     const engine = new SyncEngine(transport, store, mockKeys, identity, { maxRetries: 0 });
-    expect((await engine.sync('credential', () => 1790899200)).ok).toBe(false);
+    const result = await engine.sync('credential', () => 1790899200);
+    expect(result.ok).toBe(kind === 'compact');
+    if (kind === 'compact') expect(result.maintenanceWarning).toContain('Speicherbereinigung');
     expect(transport.connected).toBe(false);
   });
 });

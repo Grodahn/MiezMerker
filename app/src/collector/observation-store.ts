@@ -62,7 +62,7 @@ function toStored(record: BleRecord, organizationId: string | null): StoredObser
 // Implemented by both the legacy SyncStore (tests) and this production store.
 export interface DurableObservationStore {
   putObservations(records: BleRecord[]): Promise<void>;
-  sequences(nodeId: string, incarnation: string): Promise<bigint[]>;
+  sequences(nodeId: string, incarnation: string, organizationId?: string | null): Promise<bigint[]>;
 }
 
 export class CollectorObservationStore implements DurableObservationStore {
@@ -112,10 +112,11 @@ export class CollectorObservationStore implements DurableObservationStore {
     }
   }
 
-  async sequences(nodeId: string, incarnation: string): Promise<bigint[]> {
+  async sequences(nodeId: string, incarnation: string, organizationId?: string | null): Promise<bigint[]> {
     const rows = await this.db.observations.where('nodeId').equals(nodeId).toArray();
     return rows
-      .filter(r => r.incarnation === incarnation)
+      .filter(r => r.incarnation === incarnation &&
+        (organizationId == null || r.organizationId === organizationId))
       .map(r => BigInt(r.sequence))
       .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   }

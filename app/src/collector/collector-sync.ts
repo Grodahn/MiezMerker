@@ -23,7 +23,7 @@ import { CollectorObservationStore } from './observation-store';
 import { CollectorDatabase, requestPersistentStorage } from '../platform/offline-store';
 import type { BackendSyncState } from './backend-upload';
 import { resolveCredential, CredentialError } from './authorization';
-import { PublicProbeTransport } from './public-probe';
+import { PublicProbeTransport, type PublicNodeInfo } from './public-probe';
 
 export type NodeSyncState =
   | 'idle'
@@ -121,6 +121,29 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
   const collectorDb = new CollectorDatabase();
   const observations = new CollectorObservationStore(collectorDb);
   try {
+    let transport: NodeTransport;
+    try {
+      transport = await createTransport();
+    } catch (e) {
+      emit({ nodeState: 'failed', nodeMessage: e instanceof Error ? e.message : 'Kein Node ausgewählt.' });
+      return view;
+    }
+    // Public discovery needs no credential or device key. In particular an
+    // ADMIN can discover an unclaimed node before initial credential issuance.
+    emit({ nodeState: 'connecting', nodeMessage: 'Verbinde mit Node …' });
+    const hello = await new PublicProbeTransport(transport).readPublicHello();
+    emit({ owner: hello.owner });
+    if (hello.claimState !== 1) {
+      emit({ nodeState: 'failed', unclaimed: true,
+        nodeMessage: 'Node ist UNCLAIMED. Nur ADMIN kann ihn im physischen Claim-Modus claimen.' });
+      return view;
+    }
+    if (hello.owner && hello.owner.organizationId.toLowerCase() !== organizationId.toLowerCase()) {
+      emit({ nodeState: 'failed', foreign: foreignInfo(hello.owner),
+        nodeMessage: `Dieser MiezMerker gehört ${hello.owner.organizationName}.` +
+          (hello.owner.publicContact ? ` Kontakt: ${hello.owner.publicContact}` : '') });
+      return view;
+    }
     await observations.open();
     await requestPersistentStorage();
 
@@ -141,14 +164,6 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       identityDb.close();
     }
 
-    let transport: NodeTransport;
-    try {
-      transport = await createTransport();
-    } catch (e) {
-      emit({ nodeState: 'failed', nodeMessage: e instanceof Error ? e.message : 'Kein Node ausgewählt.' });
-      return view;
-    }
-
     // Trusted node identity comes from the backend-pinned record, never from
     // the BLE peer. Offline we fall back to the locally stored node key
     // captured during a previous sync/claim; without it the node proof cannot
@@ -163,6 +178,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
         recordsReceived: received,
       }),
       (owner) => emit({ owner }),
+      hello,
     );
 
     if (engineResult.unclaimed) {
@@ -213,7 +229,8 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       pendingUploads: stats.pending + stats.failed,
       uploadedCount: stats.uploaded,
       fertig: true,
-      nodeMessage: `Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).`,
+      nodeMessage: `Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).` +
+        (engineResult.maintenanceWarning ? ` ${engineResult.maintenanceWarning}` : ''),
     });
 
     // Return as soon as the field copy completes. The UI independently drains
@@ -260,6 +277,7 @@ interface EngineOutcome {
   watermark: string;
   publicKeyX?: string;
   publicKeyY?: string;
+  maintenanceWarning?: string;
 }
 
 // Discovers the node id via a public-only probe, resolves the backend-pinned
@@ -274,9 +292,10 @@ export async function runEngineWithDiscovery(
   trustedNowS: () => number,
   onProgress: (phase: string, received: number) => void,
   onOwner: (owner: OwnerInfo | null) => void,
+  discoveredHello?: PublicNodeInfo,
 ): Promise<EngineOutcome> {
   const probe = new PublicProbeTransport(transport);
-  const hello = await probe.readPublicHello();
+  const hello = discoveredHello ?? await probe.readPublicHello();
   onOwner(hello.owner);
   if (hello.claimState !== 1) {
     return { ok: false, message: 'unclaimed', owner: hello.owner, unclaimed: true, foreign: false,
@@ -342,6 +361,7 @@ export async function runEngineWithDiscovery(
       return { ok: true, message: 'Fertig.', owner, unclaimed: false, foreign: false,
         nodeId: hello.nodeId, incarnation: hello.incarnation,
         received: result.recordsReceived, watermark: result.watermark.toString(),
+        maintenanceWarning: result.maintenanceWarning,
         publicKeyX: pinned.publicKeyX, publicKeyY: pinned.publicKeyY };
     }
     const activeOrg = getAuthState().activeOrganizationId;

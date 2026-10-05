@@ -39,6 +39,7 @@ export interface SyncResult {
   error?: string;
   recordsReceived: number;
   watermark: bigint;
+  maintenanceWarning?: string;
 }
 
 interface StoredObservation {
@@ -182,7 +183,7 @@ export class SyncFailedError extends Error {
 // organizationId argument is optional so legacy stores stay compatible.
 export interface SyncPersistence {
   putObservations(records: BleRecord[], organizationId?: string | null): Promise<void>;
-  sequences(nodeId: string, incarnation: string): Promise<bigint[]>;
+  sequences(nodeId: string, incarnation: string, organizationId?: string | null): Promise<bigint[]>;
   session?(nodeId: string): Promise<{ nodeId: string; incarnation: string; watermark: string; phase: string; updatedAt: number } | undefined | null>;
   saveSession?(session: { nodeId: string; incarnation: string; watermark: string; phase: string; updatedAt: number }): Promise<void>;
 }
@@ -427,7 +428,7 @@ export class SyncEngine {
       }
 
       // Compute contiguous watermark from durable store.
-      const stored = await this.store.sequences(nodeId, incarnation);
+      const stored = await this.store.sequences(nodeId, incarnation, organizationId);
       const watermark = contiguousWatermark(base, stored);
 
       // ACK only after durable persist.
@@ -452,26 +453,32 @@ export class SyncEngine {
       // not turn the completed copy into a failed field visit.
       try { await this.store.saveSession?.(this.session); } catch { /* best effort */ }
 
-      // Compact (explicit, after ACK).
-      this.phase = 'compacting';
-      const compactResp = await this.sendFrame(encodeFrame({
-        version: PROTOCOL_VERSION,
-        opcode: Opcode.CompactRequest,
-        payload: new Uint8Array(),
-      }));
-      const compactFrame = decodeFrame(compactResp);
-      const compact = compactFrame?.opcode === Opcode.CompactResponse
-        ? decodeCompactResponse(compactFrame.payload) : null;
-      if (!compact || compact.error !== SyncError.Ok || compact.ackWatermark !== watermark) {
-        throw new Error('compaction failed');
-      }
       if (watermark < this.status.nextSequence - 1n || stored.some(sequence => sequence > watermark)) {
         throw new SyncFailedError('incomplete',
           'sequence gap remains: Sequenzlücke blockiert ACK (spätere Records bleiben unquittiert auf dem Node).', this.owner);
       }
+      // Compaction reclaims node space after the copy and ACK are committed.
+      // Its failure cannot undo a successful field visit.
+      this.phase = 'compacting';
+      let maintenanceWarning: string | undefined;
+      try {
+        const compactResp = await this.sendFrame(encodeFrame({
+          version: PROTOCOL_VERSION,
+          opcode: Opcode.CompactRequest,
+          payload: new Uint8Array(),
+        }));
+        const compactFrame = decodeFrame(compactResp);
+        const compact = compactFrame?.opcode === Opcode.CompactResponse
+          ? decodeCompactResponse(compactFrame.payload) : null;
+        if (!compact || compact.error !== SyncError.Ok || compact.ackWatermark !== watermark) {
+          throw new Error('compaction failed');
+        }
+      } catch {
+        maintenanceWarning = 'Node-Speicherbereinigung ausstehend; beim nächsten Besuch erneut versuchen.';
+      }
 
       this.phase = 'complete';
-      return { ok: true, recordsReceived: totalReceived, watermark };
+      return { ok: true, recordsReceived: totalReceived, watermark, maintenanceWarning };
     } finally {
       await this.transport.disconnect();
     }
