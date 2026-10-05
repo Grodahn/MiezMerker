@@ -209,3 +209,27 @@ drift check and both Playwright browser integration tests passed against the
 local PostgreSQL-backed packaged backend. The previous firmware validation
 (54 passing CTest tests) remains applicable; this review changed no C++ sources.
 Physical Android/BLE validation and actual board-shim wiring remain pending.
+
+### Final merge review fixes (2026-10-05)
+
+- **P2: Returning to an organization resurrected obsolete upload UI results.**
+  The upload completion check compared only the current account/organization
+  identifiers. Switching away and back before completion made an obsolete result
+  appear current and could skip the new context's outbox drain. Every context
+  change now advances a generation; obsolete completions cannot update the UI
+  and schedule a fresh drain when the collector is still mounted. Closing the
+  collector also invalidates pending UI updates.
+- **P2: Credential renewal did not update the collector header.** The visit
+  reported its credential state but the header continued displaying its earlier
+  cache result, including a missing/expired warning after successful renewal.
+  Visit updates now refresh the header and invalidate older in-flight cache
+  lookups. The regression resolves a pre-renewal lookup with no credential after
+  renewal and verifies that it cannot restore the obsolete warning.
+
+Both regressions failed before the corrections and pass afterward. Current main
+(including PR #28) was merged without conflicts. Validation: 171 Vitest tests,
+TypeScript/Vite production build, fresh generated API drift check, both Playwright
+browser tests and all 54 firmware/simulator CTest tests passed. Playwright was
+rerun outside the filesystem sandbox to allow Windows preview-process cleanup.
+Physical Android/BLE validation and actual board-shim wiring remain pending;
+merging this implementation does not complete issue #8's field acceptance.
