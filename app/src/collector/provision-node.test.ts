@@ -23,7 +23,7 @@ test('claim codec matches the frozen firmware/PWA advertisement vector', () => {
 beforeEach(async () => {
   await new CollectorDatabase().delete(); post.mockReset();
   auth.mockReturnValue({ user: { userId: 'admin', memberships: [{ organizationId: 'org-a', status: 'ACTIVE', role: 'ADMIN' }] },
-    activeOrganizationId: 'org-a', csrfToken: 'csrf' });
+    activeOrganizationId: 'org-a', csrfToken: 'csrf', sessionChecked: true, sessionVerified: true });
   Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
   post.mockResolvedValue({ data: { nodeId: NODE, organizationId: 'org-a', receipt: 'signed-receipt' } });
 });

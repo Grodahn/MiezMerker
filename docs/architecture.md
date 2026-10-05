@@ -79,6 +79,11 @@ project, service-worker scope and deployment artifact. Management routes are
 implemented in #11; see `docs/issue11-management.md`. They use transient,
 organization-bound server data without mounting collector storage.
 
+Unauthenticated browsers see only login (#31; see `docs/issue31-auth-gate.md`).
+The centralized app-shell gate renders login-only, offline-sync-only (`/sync`
+with a still-valid offline credential, never anonymous) or the authenticated
+app. It never replaces backend tenant/role checks.
+
 The production Service Worker precaches the shell and collector assets and uses
 an SPA navigation fallback excluding `/api/`. It never caches authenticated HTTP
 business responses. Install/first use needs an online visit; thereafter `/sync`

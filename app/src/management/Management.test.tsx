@@ -12,6 +12,11 @@ vi.mock('../api/client', () => ({ api: { GET: get, POST: post, PATCH: patch } })
 vi.mock('../platform/auth', () => ({ getAuthState: () => auth,
   subscribeAuth: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },
   fetchCsrfToken: csrf,
+  markSessionExpired: () => {
+    (auth as { user: unknown }).user = null;
+    auth.activeOrganizationId = null;
+    for (const listener of listeners) listener();
+  },
 }));
 import { Management } from './Management';
 import { millis } from './common';
@@ -24,8 +29,11 @@ const observation = { id: 'read-1', organizationId: 'org-a', nodeId: 'node-a', s
   clockStatus: 'UNKNOWN', receivedAt: '2026-10-01T10:00:00Z', monotonicMs: '9007199254740995' };
 beforeEach(() => {
   get.mockReset(); post.mockReset(); patch.mockReset(); csrf.mockReset(); csrf.mockResolvedValue('csrf');
-  auth.activeOrganizationId = 'org-a'; auth.user.userId = 'user';
-  auth.user.memberships.forEach(m => { m.role = 'MEMBER'; m.status = 'ACTIVE'; });
+  (auth as { user: unknown }).user = { userId: 'user', email: 'staff@example.org', memberships: [
+    { organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' },
+    { organizationId: 'org-b', status: 'ACTIVE', role: 'MEMBER' },
+  ] };
+  auth.activeOrganizationId = 'org-a';
   changed();
   get.mockImplementation(async () => ok([])); post.mockResolvedValue(ok({})); patch.mockResolvedValue(ok({}));
 });
@@ -224,10 +232,18 @@ test('inactive membership, no selected organization and offline management canno
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
 });
 
-test('session and server failures are actionable without leaking response details', async () => {
+test('expired session clears organization state and shows login without leaking details', async () => {
   get.mockResolvedValue({ error: { detail: 'PRIVATE-CHIP' }, response: { ok: false, status: 401 } });
   render(<Management path="/sites"/>);
-  expect(await screen.findByText('Sitzung abgelaufen. Bitte erneut anmelden.')).toBeTruthy();
+  expect(await screen.findByText('Bitte anmelden, um die Daten Ihrer Organisation zu verwalten.')).toBeTruthy();
+  expect(screen.queryByText('PRIVATE-CHIP')).toBeNull();
+  expect(screen.queryByText('Garten')).toBeNull();
+});
+
+test('server failures are actionable without leaking response details', async () => {
+  get.mockResolvedValue({ error: { detail: 'PRIVATE-CHIP' }, response: { ok: false, status: 500 } });
+  render(<Management path="/sites"/>);
+  expect(await screen.findByText('Server nicht erreichbar. Bitte erneut versuchen.')).toBeTruthy();
   expect(screen.queryByText('PRIVATE-CHIP')).toBeNull();
   get.mockResolvedValue(ok([])); fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }));
   expect(await screen.findByText(/Noch keine Futterstellen/)).toBeTruthy();

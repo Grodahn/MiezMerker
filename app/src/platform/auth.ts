@@ -15,6 +15,12 @@ export interface AuthState {
   user: SessionUser | null;
   csrfToken: string | null;
   activeOrganizationId: string | null;
+  // #31: distinguishes an online-verified backend session from a restored
+  // offline snapshot. `sessionChecked` is true once the initial online check
+  // was attempted (or explicitly marked offline). `sessionVerified` is true
+  // only after the backend confirmed a valid session (fetchSession/login).
+  sessionChecked: boolean;
+  sessionVerified: boolean;
 }
 
 const offlineSessionKey = 'miezmerker-offline-session';
@@ -27,10 +33,11 @@ function restoreOfflineContext(): AuthState {
         m && m.status === 'ACTIVE' && (m.role === 'ADMIN' || m.role === 'MEMBER') && typeof m.organizationId === 'string');
       return { user: { ...saved.user, memberships }, csrfToken: null,
         activeOrganizationId: memberships.some((m: { organizationId: string }) => m.organizationId === saved.activeOrganizationId)
-          ? saved.activeOrganizationId : memberships.length === 1 ? memberships[0].organizationId : null };
+          ? saved.activeOrganizationId : memberships.length === 1 ? memberships[0].organizationId : null,
+        sessionChecked: false, sessionVerified: false };
     }
   } catch { /* Offline context is optional; a valid credential is still required for BLE. */ }
-  return { user: null, csrfToken: null, activeOrganizationId: null };
+  return { user: null, csrfToken: null, activeOrganizationId: null, sessionChecked: false, sessionVerified: false };
 }
 let state: AuthState = restoreOfflineContext();
 const listeners = new Set<(state: AuthState) => void>();
@@ -113,12 +120,31 @@ export async function fetchCsrfToken(): Promise<string> {
 
 export async function fetchSession(): Promise<SessionUser | null> {
   const generation = ++sessionGeneration;
-  const { data, error, response } = await api.GET('/api/v1/auth/session');
+  let outcome: { data?: unknown; error?: unknown; response?: { status?: number } };
+  try {
+    outcome = await api.GET('/api/v1/auth/session');
+  } catch (failure) {
+    // Offline/network failure must not clear a restored snapshot; it only
+    // marks the initial check as done so the #31 gate can fall back to
+    // offline-sync eligibility instead of flashing protected content.
+    if (generation === sessionGeneration && !changingAuthentication && !state.sessionChecked) {
+      state = { ...state, sessionChecked: true, sessionVerified: false };
+      emit();
+    }
+    throw failure;
+  }
+  const { data, error, response } = outcome as { data?: { userId?: string; email?: string; memberships?: SessionUser['memberships'] }; error?: unknown; response?: { status?: number } };
   // Initial restoration and online refreshes can complete after login/logout or each other.
   if (generation !== sessionGeneration || changingAuthentication) return state.user;
   if (error || !data || !data.userId || !data.email) {
-    if (response?.status !== 401) throw new Error('Sitzung konnte nicht geladen werden');
-    state = { ...state, csrfToken: null };
+    if ((response?.status ?? 0) !== 401) {
+      if (!state.sessionChecked) {
+        state = { ...state, sessionChecked: true, sessionVerified: false };
+        emit();
+      }
+      throw new Error('Sitzung konnte nicht geladen werden');
+    }
+    state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: false };
     storeUser(null);
     return null;
   }
@@ -127,8 +153,25 @@ export async function fetchSession(): Promise<SessionUser | null> {
     email: data.email,
     memberships: data.memberships ?? [],
   };
+  state = { ...state, sessionChecked: true, sessionVerified: true };
   storeUser(user);
   return user;
+}
+
+export function markOfflineChecked(): void {
+  if (state.sessionChecked) return;
+  state = { ...state, sessionChecked: true, sessionVerified: false };
+  emit();
+}
+
+export function markSessionExpired(): void {
+  // Central #31 transition for expired/missing backend sessions observed via
+  // 401 on management APIs. Clears organization view-state upstream through
+  // the auth subscription (generation + abort in management context) and
+  // forces the app-shell gate back to login/offline-sync-only.
+  sessionGeneration++;
+  state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: false };
+  storeUser(null);
 }
 
 export async function login(email: string, password: string): Promise<SessionUser> {
@@ -145,7 +188,7 @@ export async function login(email: string, password: string): Promise<SessionUse
       memberships: data.memberships ?? [],
     };
     // The server rotates the CSRF token after authentication.
-    state = { ...state, csrfToken: null };
+    state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: true };
     storeUser(user);
     return user;
   });
@@ -156,7 +199,7 @@ export async function logout(): Promise<void> {
     const token = await fetchCsrfToken();
     const { response } = await api.POST('/api/v1/auth/logout', { headers: { 'X-XSRF-TOKEN': token } });
     if (!response.ok && response.status !== 401) throw new Error('Abmelden fehlgeschlagen');
-    state = { ...state, csrfToken: null };
+    state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: false };
     storeUser(null);
   });
 }

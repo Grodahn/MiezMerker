@@ -12,12 +12,12 @@ const mockedAuth = vi.mocked(getAuthState);
 
 function authAs(role: string | null) {
   mockedAuth.mockReturnValue(role === null
-    ? { user: null, csrfToken: null, activeOrganizationId: null }
+    ? { user: null, csrfToken: null, activeOrganizationId: null, sessionChecked: true, sessionVerified: false }
     : {
         user: { userId: 'u1', email: 'a@b.c', memberships: [
           { organizationId: 'org-a', status: 'ACTIVE', role },
         ] },
-        csrfToken: 'csrf', activeOrganizationId: 'org-a',
+        csrfToken: 'csrf', activeOrganizationId: 'org-a', sessionChecked: true, sessionVerified: true,
       });
 }
 
