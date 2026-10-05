@@ -492,4 +492,33 @@ std::optional<Advertisement> decode_advertisement(const std::vector<std::uint8_t
     return adv;
 }
 
+std::vector<std::uint8_t> encode_claim_advertisement(const ClaimAdvertisementPayload& msg) {
+    std::vector<std::uint8_t> out;
+    put_bytes(out, msg.node_id.bytes.data(), 16);
+    put_bytes(out, msg.public_key.data(), 65);
+    put_u64(out, msg.timestamp_ms);
+    put_bytes(out, msg.signature.data(), 64);
+    return out;
+}
+std::optional<ClaimAdvertisementPayload> decode_claim_advertisement(const std::vector<std::uint8_t>& payload) {
+    Cursor c{payload.data(), payload.size()};
+    ClaimAdvertisementPayload msg;
+    if (!c.take_bytes(msg.node_id.bytes.data(), 16) || !c.take_bytes(msg.public_key.data(), 65) ||
+        !c.take_u64(msg.timestamp_ms) || !c.take_bytes(msg.signature.data(), 64) || !c.empty() ||
+        !msg.node_id.is_set() || msg.public_key[0] != 4 || msg.timestamp_ms == 0) return std::nullopt;
+    return msg;
+}
+std::vector<std::uint8_t> encode_claim_receipt(const std::string& receipt) {
+    std::vector<std::uint8_t> out;
+    if (receipt.empty() || receipt.size() > 4096) return out;
+    put_str16(out, receipt);
+    return out;
+}
+std::optional<std::string> decode_claim_receipt(const std::vector<std::uint8_t>& payload) {
+    Cursor c{payload.data(), payload.size()};
+    std::string receipt;
+    if (!c.take_str16(receipt, 4096) || !c.empty() || receipt.empty()) return std::nullopt;
+    return receipt;
+}
+
 }  // namespace miezmerker::ble

@@ -182,6 +182,7 @@ bool ScenarioRunner::rebuild_ble_session() {
     if (!core_ || !core_->ready()) return true;
     ble_ = std::make_unique<BleSession>(*core_, rtc_);
     ble_->signer.identity = node_manager_.get();
+    ble_->router->set_node_identity(node_manager_.get());
     ble_->owner_meta.organization_id = owner_.organization_id;
     ble_->owner_meta.organization_slug = owner_.organization_slug;
     ble_->owner_meta.organization_name = owner_.organization_name;

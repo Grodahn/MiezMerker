@@ -4,6 +4,15 @@
 #include <span>
 
 namespace miezmerker {
+bool Core::refresh_identity() {
+    IdentityRecord current;
+    if (!ready_ || !identity_store_ || identity_store_->load(current) != IdentityLoadResult::OK ||
+        current.node_id != identity_.node_id || current.incarnation != identity_.incarnation ||
+        current.next_sequence != identity_.next_sequence || current.boot_counter != identity_.boot_counter ||
+        current.reset_pending) { ready_ = false; return false; }
+    identity_ = current;
+    return true;
+}
 
 Core::Core(Clock& clock, Storage& storage, ObservationStore& observations,
            DeviceIdentityStore& identity, RandomSource& random, const CoreConfig& config)

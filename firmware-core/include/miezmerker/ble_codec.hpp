@@ -55,6 +55,10 @@ enum class Opcode : std::uint8_t {
     StatusResponse = 0x12,
     CompactRequest = 0x13,
     CompactResponse = 0x14,
+    ClaimAdvertisementRequest = 0x15,
+    ClaimAdvertisementResponse = 0x16,
+    ClaimReceiptRequest = 0x17,
+    ClaimReceiptResponse = 0x18,
     Error = 0xFF,
 };
 
@@ -104,6 +108,17 @@ struct Frame {
     Opcode opcode{Opcode::Error};
     std::vector<std::uint8_t> payload;
 };
+
+struct ClaimAdvertisementPayload {
+    NodeId node_id{};
+    std::array<std::uint8_t, 65> public_key{};
+    std::uint64_t timestamp_ms{0};
+    std::array<std::uint8_t, 64> signature{};
+};
+std::vector<std::uint8_t> encode_claim_advertisement(const ClaimAdvertisementPayload& msg);
+std::optional<ClaimAdvertisementPayload> decode_claim_advertisement(const std::vector<std::uint8_t>& payload);
+std::vector<std::uint8_t> encode_claim_receipt(const std::string& receipt);
+std::optional<std::string> decode_claim_receipt(const std::vector<std::uint8_t>& payload);
 
 /// Encodes a frame ([ver][opcode][len LE][payload]). Always versioned.
 std::vector<std::uint8_t> encode_frame(const Frame& frame);

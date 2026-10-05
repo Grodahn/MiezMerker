@@ -19,6 +19,7 @@ import {
 import type { NodeTransport } from '../platform/node-transport';
 import type { AppDeviceKeys } from '../platform/device-keys';
 import { beginNodeAuthentication, type TrustedNodeIdentity } from '../platform/node-identity';
+import { NodeOperationCancelledError } from './node-operation';
 
 export type SyncPhase =
   | 'idle'
@@ -39,6 +40,7 @@ export interface SyncResult {
   error?: string;
   recordsReceived: number;
   watermark: bigint;
+  maintenanceWarning?: string;
 }
 
 interface StoredObservation {
@@ -150,6 +152,44 @@ export function contiguousWatermark(base: bigint, stored: bigint[]): bigint {
   return w;
 }
 
+// Typed sync failures so the /sync UI (issue #8) can distinguish UNCLAIMED,
+// foreign organization, incompatible protocol, authorization, storage/quota,
+// connection loss and incomplete (gap) syncs. The owner hint is attached when
+// public info was already read, so foreign/UNCLAIMED branches never probe
+// protected data.
+export type SyncFailureKind =
+  | 'unclaimed'
+  | 'foreign'
+  | 'incompatible'
+  | 'unauthorized'
+  | 'storage'
+  | 'connection'
+  | 'protocol'
+  | 'incomplete'
+  | 'cancelled';
+
+export class SyncFailedError extends Error {
+  constructor(
+    readonly kind: SyncFailureKind,
+    message: string,
+    readonly owner: OwnerInfo | null = null,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'SyncFailedError';
+  }
+}
+
+// Minimal durable persistence consumed by the engine. Both SyncStore (tests)
+// and CollectorObservationStore (production) implement it; the second
+// organizationId argument is optional so legacy stores stay compatible.
+export interface SyncPersistence {
+  putObservations(records: BleRecord[], organizationId?: string | null): Promise<void>;
+  sequences(nodeId: string, incarnation: string, organizationId?: string | null): Promise<bigint[]>;
+  session?(nodeId: string): Promise<{ nodeId: string; incarnation: string; watermark: string; phase: string; updatedAt: number } | undefined | null>;
+  saveSession?(session: { nodeId: string; incarnation: string; watermark: string; phase: string; updatedAt: number }): Promise<void>;
+}
+
 // Full sync engine: connect → auth → batch → persist → ack → compact.
 // Retries after disconnect with fresh challenge; lost ACKs are idempotent.
 export class SyncEngine {
@@ -157,10 +197,13 @@ export class SyncEngine {
   private session: SyncSession | null = null;
   private owner: OwnerInfo | null = null;
   private status: StatusResponse | null = null;
+  private received = 0;
+  private receivedEvents = new Set<string>();
+  private confirmedWatermark = 0n;
 
   constructor(
     private transport: NodeTransport,
-    private store: SyncStore,
+    private store: SyncPersistence,
     private keys: AppDeviceKeys,
     private identity: TrustedNodeIdentity,
     private options: SyncEngineOptions = {},
@@ -168,31 +211,51 @@ export class SyncEngine {
 
   get currentPhase(): SyncPhase { return this.phase; }
   get currentOwner(): OwnerInfo | null { return this.owner; }
+  get currentReceived(): number { return this.received; }
 
-  async sync(credential: string, trustedNowS: () => number): Promise<SyncResult> {
+  async sync(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
+    this.received = 0;
+    this.receivedEvents.clear();
+    this.confirmedWatermark = 0n;
     const maxRetries = this.options.maxRetries ?? 3;
     const retryDelay = this.options.retryDelayMs ?? 500;
     let lastError = '';
+    let lastKind: SyncFailureKind | null = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await this.syncOnce(credential, trustedNowS);
+        return await this.syncOnce(credential, trustedNowS, organizationId);
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
+        lastKind = e instanceof NodeOperationCancelledError ? 'cancelled' : e instanceof SyncFailedError ? e.kind : null;
         this.phase = 'failed';
+        // Never retry states that cannot succeed without user action:
+        // UNCLAIMED/foreign/incompatible/auth/storage. Connection/protocol
+        // errors (incl. lost ACK, mid-batch abort, reboot) retry with a fresh
+        // challenge as usual.
+        if (lastKind === 'unclaimed' || lastKind === 'foreign' || lastKind === 'incompatible' ||
+            lastKind === 'unauthorized' || lastKind === 'storage' || lastKind === 'incomplete' || lastKind === 'cancelled') {
+          break;
+        }
         if (attempt < maxRetries) {
           await new Promise(r => setTimeout(r, retryDelay * (attempt + 1)));
         }
       }
     }
-    return { ok: false, error: lastError, recordsReceived: 0, watermark: 0n };
+    const error = lastKind ? `${lastKind}: ${lastError}` : lastError;
+    return { ok: false, error, recordsReceived: this.received, watermark: this.confirmedWatermark };
   }
 
-  private async syncOnce(credential: string, trustedNowS: () => number): Promise<SyncResult> {
+  private async syncOnce(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
     this.owner = null;
     this.status = null;
     this.session = null;
     this.phase = 'connecting';
-    await this.transport.connect();
+    try {
+      await this.transport.connect();
+    } catch (e) {
+      if (e instanceof NodeOperationCancelledError) throw e;
+      throw new SyncFailedError('connection', e instanceof Error ? e.message : 'BLE-Verbindung fehlgeschlagen.', null, e);
+    }
     try {
       // Public hello.
       this.phase = 'public-info';
@@ -203,13 +266,24 @@ export class SyncEngine {
       }));
       const helloFrame = decodeFrame(helloResp);
       if (!helloFrame || helloFrame.opcode !== Opcode.HelloPublic) {
-        throw new Error('hello failed');
+        throw new SyncFailedError('protocol', 'hello failed', null);
       }
       const hello = decodeHelloPublic(helloFrame.payload);
-      if (!hello || hello.serverVer !== PROTOCOL_VERSION || hello.claimState !== 1 ||
-          hello.nodeId !== this.identity.nodeId.toLowerCase() ||
-          (hello.caps & CAP_ALL_V1) !== CAP_ALL_V1) {
-        throw new Error('unsupported or unexpected node identity');
+      if (!hello) {
+        throw new SyncFailedError('protocol', 'hello failed', null);
+      }
+      if (hello.claimState !== 1) {
+        throw new SyncFailedError('unclaimed', 'Node ist UNCLAIMED. Nur ADMIN kann ihn im physischen Claim-Modus claimen.', null);
+      }
+      if (hello.nodeId.toLowerCase() !== this.identity.nodeId.toLowerCase()) {
+        throw new SyncFailedError('unauthorized', 'Node identity changed after discovery.', null);
+      }
+      if (hello.serverVer !== PROTOCOL_VERSION || (hello.caps & CAP_ALL_V1) !== CAP_ALL_V1) {
+        throw new SyncFailedError('incompatible',
+          `Inkompatible Protokoll-Version (Node: v${hello.serverVer}, caps 0x${hello.caps.toString(16)}).`, null);
+      }
+      if (hello.nodeId !== this.identity.nodeId.toLowerCase()) {
+        throw new SyncFailedError('protocol', 'unsupported or unexpected node identity', null);
       }
       // Owner (public).
       const ownerResp = await this.sendFrame(encodeFrame({
@@ -219,11 +293,14 @@ export class SyncEngine {
       }));
       const ownerFrame = decodeFrame(ownerResp);
       if (!ownerFrame || ownerFrame.opcode !== Opcode.OwnerResponse) {
-        throw new Error('owner failed');
+        throw new SyncFailedError('protocol', 'owner failed', null);
       }
       this.owner = decodeOwnerResponse(ownerFrame.payload);
       if (!this.owner || this.owner.nodeId !== hello.nodeId || this.owner.claimState !== 1) {
-        throw new Error('bad owner identity');
+        throw new SyncFailedError('protocol', 'bad owner identity', this.owner);
+      }
+      if (organizationId && this.owner.organizationId.toLowerCase() !== organizationId.toLowerCase()) {
+        throw new SyncFailedError('foreign', 'Node gehört einer anderen Organisation.', this.owner);
       }
 
       // Challenge + auth.
@@ -254,7 +331,15 @@ export class SyncEngine {
       const auth = decodeAuthResponse(authFrame.payload);
       if (!auth || !auth.ok || auth.error !== SyncError.Ok ||
           (auth.expiresS !== 0n && BigInt(trustedNowS()) >= auth.expiresS)) {
-        throw new Error('auth denied or expired');
+        const code = auth?.error;
+        // FORBIDDEN_FOREIGN stays unauthorized here; the orchestrator compares
+        // the public owner hint against the active organization and shows only
+        // the allowed public metadata without probing protected data.
+        const kind: SyncFailureKind = code === SyncError.ForbiddenForeign ? 'foreign' : 'unauthorized';
+        const message = code === SyncError.ForbiddenForeign
+          ? 'Node gehört einer anderen Organisation. Nur öffentliche Owner-Metadaten werden angezeigt.'
+          : 'Autorisierung abgelehnt oder Credential abgelaufen.';
+        throw new SyncFailedError(kind, message, this.owner);
       }
       // Trust comes from the cached backend identity, never the BLE peer's key.
       const nodeAuth = await beginNodeAuthentication(this.identity);
@@ -265,7 +350,7 @@ export class SyncEngine {
       const signature = proofFrame?.opcode === Opcode.NodeProofResponse
         ? decodeNodeProofResponse(proofFrame.payload) : null;
       if (!signature || !await nodeAuth.verify(signature)) {
-        throw new Error('node proof invalid');
+        throw new SyncFailedError('unauthorized', 'Node-Authentizität konnte nicht bestätigt werden (Fake-Node möglich).', this.owner);
       }
       this.phase = 'authorized';
 
@@ -297,9 +382,9 @@ export class SyncEngine {
       // The authenticated node's durable ACK is the shared baseline. Another
       // collector may have acknowledged records absent from this local store.
       const base = this.status.ackWatermark;
+      this.confirmedWatermark = base;
       this.session.watermark = base.toString();
 
-      let totalReceived = 0;
       let cursor = this.status.ackWatermark + 1n;
       const maxBatch = this.options.maxBatchRecords ?? 16;
       if (!Number.isInteger(maxBatch) || maxBatch < 1 || maxBatch > 64) {
@@ -336,8 +421,16 @@ export class SyncEngine {
         if (batch.records.length > 0) {
           // Durable persist BEFORE ACK.
           this.phase = 'persisting';
-          await this.store.putObservations(batch.records);
-          totalReceived += batch.records.length;
+          try {
+            await this.store.putObservations(batch.records, organizationId);
+          } catch (e) {
+            throw new SyncFailedError('storage',
+              e instanceof Error ? e.message : 'Lokale Speicherung fehlgeschlagen.', this.owner, e);
+          }
+          for (const record of batch.records) {
+            this.receivedEvents.add(`${record.nodeId}/${record.incarnation}/${record.sequence}`);
+          }
+          this.received = this.receivedEvents.size;
         }
 
         if (!batch.more) break;
@@ -345,7 +438,7 @@ export class SyncEngine {
       }
 
       // Compute contiguous watermark from durable store.
-      const stored = await this.store.sequences(nodeId, incarnation);
+      const stored = await this.store.sequences(nodeId, incarnation, organizationId);
       const watermark = contiguousWatermark(base, stored);
 
       // ACK only after durable persist.
@@ -366,35 +459,61 @@ export class SyncEngine {
         }
       }
       this.session.watermark = watermark.toString();
-      await this.store.saveSession(this.session);
+      this.confirmedWatermark = watermark;
+      // Once observations and ACK are durable, optional progress metadata must
+      // not turn the completed copy into a failed field visit.
+      try { await this.store.saveSession?.(this.session); } catch { /* best effort */ }
 
-      // Compact (explicit, after ACK).
-      this.phase = 'compacting';
-      const compactResp = await this.sendFrame(encodeFrame({
-        version: PROTOCOL_VERSION,
-        opcode: Opcode.CompactRequest,
-        payload: new Uint8Array(),
-      }));
-      const compactFrame = decodeFrame(compactResp);
-      const compact = compactFrame?.opcode === Opcode.CompactResponse
-        ? decodeCompactResponse(compactFrame.payload) : null;
-      if (!compact || compact.error !== SyncError.Ok || compact.ackWatermark !== watermark) {
-        throw new Error('compaction failed');
+      if (watermark < this.status.nextSequence - 1n || stored.some(sequence => sequence > watermark)) {
+        throw new SyncFailedError('incomplete',
+          'sequence gap remains: Sequenzlücke blockiert ACK (spätere Records bleiben unquittiert auf dem Node).', this.owner);
       }
-      if (stored.some(sequence => sequence > watermark)) throw new Error('sequence gap remains');
+      // Compaction reclaims node space after the copy and ACK are committed.
+      // Its failure cannot undo a successful field visit.
+      this.phase = 'compacting';
+      let maintenanceWarning: string | undefined;
+      try {
+        const compactResp = await this.sendFrame(encodeFrame({
+          version: PROTOCOL_VERSION,
+          opcode: Opcode.CompactRequest,
+          payload: new Uint8Array(),
+        }));
+        const compactFrame = decodeFrame(compactResp);
+        const compact = compactFrame?.opcode === Opcode.CompactResponse
+          ? decodeCompactResponse(compactFrame.payload) : null;
+        if (!compact || compact.error !== SyncError.Ok || compact.ackWatermark !== watermark) {
+          throw new Error('compaction failed');
+        }
+      } catch {
+        maintenanceWarning = 'Node-Speicherbereinigung ausstehend; beim nächsten Besuch erneut versuchen.';
+      }
 
       this.phase = 'complete';
-      return { ok: true, recordsReceived: totalReceived, watermark };
+      return { ok: true, recordsReceived: this.received, watermark, maintenanceWarning };
     } finally {
       await this.transport.disconnect();
     }
   }
 
   private async sendFrame(frame: Uint8Array): Promise<Uint8Array> {
-    await this.transport.write(frame);
-    const response = await this.transport.read();
+    let response: Uint8Array;
+    try {
+      await this.transport.write(frame);
+      response = await this.transport.read();
+    } catch (e) {
+      if (e instanceof NodeOperationCancelledError) throw e;
+      throw new SyncFailedError('connection',
+        e instanceof Error ? e.message : 'BLE-Verbindung abgebrochen.', this.owner, e);
+    }
     const decoded = decodeFrame(response);
-    if (!decoded || decoded.version !== PROTOCOL_VERSION) throw new Error('invalid response version or frame');
+    if (!decoded) throw new SyncFailedError('protocol', 'Ungültige Node-Antwort.', this.owner);
+    if (decoded.version !== PROTOCOL_VERSION) {
+      throw new SyncFailedError('incompatible',
+        `Inkompatible Protokoll-Version in Node-Antwort (v${decoded.version}).`, this.owner);
+    }
+    if (decoded.opcode === Opcode.Error) {
+      throw new SyncFailedError('protocol', 'Node meldet Protokollfehler.', this.owner);
+    }
     return response;
   }
 }

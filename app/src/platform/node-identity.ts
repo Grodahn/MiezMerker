@@ -9,13 +9,33 @@ export interface TrustedNodeIdentity {
   publicKeyY: string;
 }
 
+export type NodeIdentityErrorKind = 'forbidden' | 'unavailable';
+
+export class NodeIdentityError extends Error {
+  constructor(
+    readonly kind: NodeIdentityErrorKind,
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'NodeIdentityError';
+  }
+}
+
 export async function loadTrustedNodeIdentity(nodeId: string): Promise<TrustedNodeIdentity> {
-  const { data, error } = await api.GET('/api/v1/nodes/{nodeId}', {
+  const { data, error, response } = await api.GET('/api/v1/nodes/{nodeId}', {
+    signal: AbortSignal.timeout(5_000),
     params: { path: { nodeId } },
   });
   if (error || !data || data.nodeId?.toLowerCase() !== nodeId.toLowerCase()
       || data.state !== 'CLAIMED' || !data.publicKeyX || !data.publicKeyY) {
-    throw new Error('Trusted node identity unavailable');
+    const status = (response as Response | undefined)?.status;
+    // 403/404 means the node exists but is not visible to this tenant (foreign
+    // organization) — distinct from a network/offline failure.
+    if (status === 403 || status === 404) {
+      throw new NodeIdentityError('forbidden', 'Node belongs to another organization', status);
+    }
+    throw new NodeIdentityError('unavailable', 'Trusted node identity unavailable', status);
   }
   return { nodeId: data.nodeId, publicKeyX: data.publicKeyX, publicKeyY: data.publicKeyY };
 }

@@ -34,6 +34,10 @@ export enum Opcode {
   StatusResponse = 0x12,
   CompactRequest = 0x13,
   CompactResponse = 0x14,
+  ClaimAdvertisementRequest = 0x15,
+  ClaimAdvertisementResponse = 0x16,
+  ClaimReceiptRequest = 0x17,
+  ClaimReceiptResponse = 0x18,
   Error = 0xff,
 }
 
@@ -563,4 +567,24 @@ function uuidToBytes(uuid: string): Uint8Array {
 function bytesToUuid(b: Uint8Array): string {
   const hex = Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export interface ClaimAdvertisementPayload {
+  nodeId: string; publicKey: Uint8Array; timestampMillis: bigint; signature: Uint8Array;
+}
+export function decodeClaimAdvertisement(payload: Uint8Array): ClaimAdvertisementPayload | null {
+  const r = new Reader(payload);
+  const nodeId = r.bytes(16), publicKey = r.bytes(65), timestampMillis = r.u64(), signature = r.bytes(64);
+  if (!nodeId || !publicKey || publicKey[0] !== 4 || !timestampMillis || !signature || r.remaining ||
+      nodeId.every(b => b === 0)) return null;
+  return { nodeId: bytesToUuid(nodeId), publicKey, timestampMillis, signature };
+}
+export function encodeClaimAdvertisement(m: ClaimAdvertisementPayload): Uint8Array {
+  const w = new Writer();
+  w.bytes(uuidToBytes(m.nodeId)); w.bytes(m.publicKey); w.u64(m.timestampMillis); w.bytes(m.signature);
+  return w.toBytes();
+}
+export function encodeClaimReceipt(receipt: string): Uint8Array {
+  if (!receipt || new TextEncoder().encode(receipt).length > 4096) throw new Error('Invalid claim receipt');
+  const w = new Writer(); w.str16(receipt); return w.toBytes();
 }

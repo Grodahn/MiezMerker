@@ -83,6 +83,7 @@ public:
                const SyncConfig& config = SyncConfig{});
 
     void disconnect();
+    bool refresh_identity() { disconnect(); return core_->refresh_identity(); }
 
     // --- Public (no authorization) ---
     HelloPublic public_hello() const;

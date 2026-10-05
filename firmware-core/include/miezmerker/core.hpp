@@ -93,6 +93,9 @@ public:
     /// the core ready. Increments and persists the boot counter on normal
     /// reboots. Returns false when durable state is unavailable.
     bool initialize();
+    // Reload a claim committed through the shared NodeIdentityManager without
+    // simulating a reboot or changing capture counters.
+    bool refresh_identity();
 
     bool ready() const { return ready_; }
     std::uint64_t started_at_ms() const { return started_at_ms_; }

@@ -22,8 +22,14 @@ test('collector reloads offline with durable IndexedDB outbox', async ({ page, c
     db.close();
   });
   await context.setOffline(true);
+  await page.evaluate(() => localStorage.setItem('miezmerker-offline-session', JSON.stringify({
+    user: { userId: 'offline-user', email: 'field@example.org', memberships: [
+      { organizationId: 'org-test', organizationName: 'Field Org', role: 'MEMBER', status: 'ACTIVE' },
+    ] }, activeOrganizationId: 'org-test',
+  })));
   await page.reload();
   await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Benutzerkonto' }).getByText('Angemeldet als field@example.org')).toBeVisible();
   const persisted = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>(resolve => {
       const request = indexedDB.open('miezmerker-collector'); request.onsuccess = () => resolve(request.result);

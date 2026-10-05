@@ -8,6 +8,8 @@
 #include <array>
 #include <cassert>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
@@ -64,7 +66,7 @@ struct FakeAuthorizer final : miezmerker::ble::SyncAuthorizer {
         expires = 0;
         if (!was_pending || now <= 0) return false;
         if (foreign) return false;
-        if (cred != "valid-credential") return false;
+        if (cred != "valid-credential" && cred != std::string(900, 'c')) return false;
         for (auto b : proof)
             if (b != 0xAA) return false;
         if (now >= 1917129600 || now < 1790899200) return false;
@@ -353,11 +355,151 @@ void router_foreign_no_leak() {
     std::cout << "PASS router_foreign_no_leak\n";
 }
 
+void router_fragmented_auth() {
+    using namespace miezmerker::ble;
+    Fixture f;
+    auto core = f.make_core();
+    CHECK(core->initialize());
+    miezmerker::IdentityRecord id;
+    CHECK(f.identity.load(id) == miezmerker::IdentityLoadResult::OK);
+    id.claim_state = miezmerker::ClaimState::CLAIMED;
+    CHECK(f.identity.store(id));
+    core = f.make_core();
+    CHECK(core->initialize());
+    SyncServer server(*core, f.auth, f.rtc, f.signer, f.config);
+    miezmerker::ble_gatt::GattRouter router(server, f.owner);
+    constexpr std::int64_t now = 1790899300;
+    std::array<std::uint8_t, 64> proof{};
+    proof.fill(0xAA);
+    const auto frame = encode_frame(Frame{1, Opcode::AuthRequest, encode_auth_request({std::string(900, 'c'), proof})});
+    auto fragment = [&](std::size_t offset) {
+        std::vector<std::uint8_t> part{0x4d, 0x4d, 1, static_cast<std::uint8_t>(offset == 0 ? 1 : 0),
+            static_cast<std::uint8_t>(frame.size()), static_cast<std::uint8_t>(frame.size() >> 8),
+            static_cast<std::uint8_t>(offset), static_cast<std::uint8_t>(offset >> 8)};
+        const auto end = std::min(offset + 12, frame.size());
+        part.insert(part.end(), frame.begin() + offset, frame.begin() + end);
+        return part;
+    };
+    router.handle_frame(encode_frame(Frame{1, Opcode::ChallengeRequest, {}}), now);
+    for (std::size_t offset = 0; offset < frame.size(); offset += 12) {
+        const auto response = router.handle_frame(fragment(offset), now);
+        if (offset + 12 < frame.size()) {
+            CHECK(response.empty());
+            CHECK(!f.auth.authorized);
+        } else {
+            const auto decoded = decode_frame(response);
+            CHECK(decoded && decoded->opcode == Opcode::AuthResponse);
+            const auto auth = decode_auth_response(decoded->payload);
+            CHECK(auth && auth->ok);
+        }
+    }
+    router.disconnect();
+    CHECK(router.handle_frame(fragment(0), now).empty());
+    router.disconnect();
+    auto rejected = decode_frame(router.handle_frame(fragment(12), now));
+    CHECK(rejected && rejected->opcode == Opcode::Error);
+    CHECK(router.handle_frame(fragment(0), now).empty());
+    rejected = decode_frame(router.handle_frame(fragment(24), now));
+    CHECK(rejected && rejected->opcode == Opcode::Error);
+    CHECK(!f.auth.authorized);
+}
+
+// Domain-port fake; ES256 verification is separately covered by the shared
+// simulator/backend fixtures. This tests GATT delivery through the real manager.
+struct ClaimCell final : miezmerker::NodeIdentityStore {
+    std::optional<miezmerker::NodeIdentity> saved;
+    miezmerker::NodeIdentityLoadResult load(miezmerker::NodeIdentity& out) override {
+        if (!saved) return miezmerker::NodeIdentityLoadResult::missing;
+        out = *saved; return miezmerker::NodeIdentityLoadResult::loaded;
+    }
+    bool save(const miezmerker::NodeIdentity& value) override { saved = value; return true; }
+    bool clear() override { saved.reset(); return true; }
+};
+struct PhysicalMode final : miezmerker::ClaimMode {
+    bool enabled{false}; bool active() const override { return enabled; }
+};
+struct ClaimTime final : miezmerker::ClaimClock {
+    std::uint64_t epoch_ms() const override { return 1790899300000ULL; }
+};
+struct ClaimCrypto final : miezmerker::NodeCrypto {
+    miezmerker::VerifiedClaim claim;
+    bool generate_keypair(std::span<std::byte, 65> pub, std::span<std::byte, 32> priv) override {
+        std::fill(pub.begin(), pub.end(), std::byte{1}); pub[0] = std::byte{4};
+        std::fill(priv.begin(), priv.end(), std::byte{1}); return true;
+    }
+    bool sign(std::span<const std::byte, 32>, std::span<const std::byte>, std::span<std::byte, 64> sig) override {
+        std::fill(sig.begin(), sig.end(), std::byte{1}); return true;
+    }
+    bool verify_claim(const std::string& receipt, miezmerker::VerifiedClaim& out) override {
+        if (receipt != std::string(900, 'r')) return false;
+        out = claim; return true;
+    }
+};
+void router_claim_round_trip() {
+    using namespace miezmerker;
+    using namespace miezmerker::ble;
+    Fixture f; ClaimCell cell; PhysicalMode mode; ClaimTime time; ClaimCrypto crypto;
+    NodeIdentityManager manager(cell, mode, f.random, crypto, time);
+    Core core(f.clock, f.storage, f.observations, manager, f.random, CoreConfig{});
+    CHECK(core.initialize());
+    const auto boot = core.boot_counter();
+    const auto id = manager.identity();
+    crypto.claim = {id.node_id, id.public_key, "org-a", "Org A", "contact"};
+    SyncServer server(core, f.auth, f.rtc, f.signer, f.config);
+    ble_gatt::GattRouter router(server, f.owner); router.set_node_identity(&manager);
+    const auto request = encode_frame(Frame{1, Opcode::ClaimAdvertisementRequest, {}});
+    auto response = decode_frame(router.handle_frame(request, 1790899300));
+    CHECK(response && response->opcode == Opcode::Error);
+    mode.enabled = true;
+    response = decode_frame(router.handle_frame(request, 1790899300));
+    CHECK(response && response->opcode == Opcode::ClaimAdvertisementResponse);
+    auto advertisement = decode_claim_advertisement(response->payload);
+    CHECK(advertisement && advertisement->node_id == core.node_id());
+    CHECK(advertisement->timestamp_ms == time.epoch_ms());
+    const auto receipt = encode_frame(Frame{1, Opcode::ClaimReceiptRequest, encode_claim_receipt(std::string(900, 'r'))});
+    for (std::size_t offset = 0; offset < receipt.size(); offset += 12) {
+        std::vector<std::uint8_t> chunk{0x4e, 0x4d, 1, static_cast<std::uint8_t>(offset == 0),
+            static_cast<std::uint8_t>(receipt.size()), static_cast<std::uint8_t>(receipt.size() >> 8),
+            static_cast<std::uint8_t>(offset), static_cast<std::uint8_t>(offset >> 8)};
+        chunk.insert(chunk.end(), receipt.begin() + offset, receipt.begin() + std::min(offset + 12, receipt.size()));
+        const auto raw = router.handle_frame(chunk, 1790899300);
+        if (offset + 12 < receipt.size()) { CHECK(raw.empty()); CHECK(!manager.claimed()); }
+        else { response = decode_frame(raw); CHECK(response && response->opcode == Opcode::ClaimReceiptResponse && response->payload == std::vector<std::uint8_t>{0}); }
+    }
+    CHECK(manager.claimed()); CHECK(core.claim_state() == ClaimState::CLAIMED);
+    CHECK(core.boot_counter() == boot); CHECK(f.owner.organization_id == "org-a");
+    mode.enabled = false;
+    response = decode_frame(router.handle_frame(receipt, 1790899300));
+    CHECK(response && response->opcode == Opcode::ClaimReceiptResponse); // idempotent retry
+    response = decode_frame(router.handle_frame(request, 1790899300));
+    CHECK(response && response->opcode == Opcode::Error); // no new advertisement when claimed
+    crypto.claim.organization_id = "foreign";
+    response = decode_frame(router.handle_frame(receipt, 1790899300));
+    CHECK(response && response->opcode == Opcode::Error);
+    CHECK(manager.identity().organization_id == "org-a");
+}
+
+void claim_codec_golden() {
+    const auto path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+        "protocol/fixtures/claim-advertisement-v1.hex";
+    std::ifstream input(path);
+    std::string hex; input >> hex;
+    CHECK(hex.size() == 306);
+    const auto bytes = unhex(hex);
+    const auto decoded = miezmerker::ble::decode_claim_advertisement(bytes);
+    CHECK(decoded && decoded->node_id.to_string() == "3a3a3a3a-3a3a-4a3a-8a3a-3a3a3a3a3a3a");
+    CHECK(decoded->timestamp_ms == 1790899200000ULL);
+    CHECK(miezmerker::ble::encode_claim_advertisement(*decoded) == bytes);
+}
+
 }  // namespace
 
 int main() {
     router_public_and_auth();
     router_foreign_no_leak();
+    router_fragmented_auth();
+    router_claim_round_trip();
+    claim_codec_golden();
     std::cout << "All BLE GATT router tests passed (" << checks << " checks)\n";
     return 0;
 }

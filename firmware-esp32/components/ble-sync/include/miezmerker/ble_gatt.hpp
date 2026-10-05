@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "miezmerker/ble_sync.hpp"
+#include "miezmerker/node_identity.hpp"
 
 namespace miezmerker::ble_gatt {
 
@@ -31,6 +32,8 @@ inline constexpr char kStatusUuid[] = "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b06";
 inline constexpr char kBatchUuid[] = "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b07";
 inline constexpr char kAckUuid[] = "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b08";
 inline constexpr char kTimeUuid[] = "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b09";
+inline constexpr char kClaimAdvertisementUuid[] = "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b0a";
+inline constexpr char kClaimReceiptUuid[] = "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b0b";
 
 /// Backend-provisioned public owner hint for CLAIMED nodes. Persisted with
 /// the claim receipt (#18); empty until provisioned. Never contains
@@ -52,6 +55,7 @@ public:
 
     void disconnect();
     void set_claim_mode(bool active) { claim_mode_ = active; }
+    void set_node_identity(NodeIdentityManager* identity) { identity_ = identity; }
 
     /// Handles a raw request frame, returns a raw response frame.
     /// trusted_now_s is trusted UTC seconds (0 = unknown, fails closed).
@@ -65,6 +69,11 @@ private:
     ble::SyncServer* server_;
     OwnerMetadata* owner_;
     bool claim_mode_{false};
+    std::vector<std::uint8_t> auth_fragments_;
+    std::size_t auth_total_{0};
+    NodeIdentityManager* identity_{nullptr};
+    std::vector<std::uint8_t> receipt_fragments_;
+    std::size_t receipt_total_{0};
 };
 
 }  // namespace miezmerker::ble_gatt

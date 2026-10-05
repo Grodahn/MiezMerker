@@ -49,12 +49,14 @@ export class OfflineIdentity {
     const token = await fetchCsrfToken();
     const headers = { 'X-XSRF-TOKEN': token };
     const { data: device, error: registrationError } = await api.POST('/api/v1/devices', {
+      signal: AbortSignal.timeout(10_000),
       body: { publicKeyX: keys.coordinates().x, publicKeyY: keys.coordinates().y }, headers,
     });
     if (registrationError || !device?.id) throw new Error('AppDevice registration denied');
     await this.database.identities.update(userId, { deviceId: device.id });
     const startedAt = Date.now();
     const { data, error } = await api.POST('/api/v1/devices/{deviceId}/credentials', {
+      signal: AbortSignal.timeout(10_000),
       params: { path: { deviceId: device.id } }, body: { organizationId }, headers,
     });
     if (error || !data?.credential || !data.expiresInSeconds

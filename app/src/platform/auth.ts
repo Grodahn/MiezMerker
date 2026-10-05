@@ -17,7 +17,22 @@ export interface AuthState {
   activeOrganizationId: string | null;
 }
 
-let state: AuthState = { user: null, csrfToken: null, activeOrganizationId: null };
+const offlineSessionKey = 'miezmerker-offline-session';
+function restoreOfflineContext(): AuthState {
+  try {
+    const saved = JSON.parse(localStorage.getItem(offlineSessionKey) ?? 'null');
+    if (saved?.user && typeof saved.user.userId === 'string' && typeof saved.user.email === 'string' &&
+        Array.isArray(saved.user.memberships)) {
+      const memberships = saved.user.memberships.filter((m: { status?: string; role?: string; organizationId?: string }) =>
+        m && m.status === 'ACTIVE' && (m.role === 'ADMIN' || m.role === 'MEMBER') && typeof m.organizationId === 'string');
+      return { user: { ...saved.user, memberships }, csrfToken: null,
+        activeOrganizationId: memberships.some((m: { organizationId: string }) => m.organizationId === saved.activeOrganizationId)
+          ? saved.activeOrganizationId : memberships.length === 1 ? memberships[0].organizationId : null };
+    }
+  } catch { /* Offline context is optional; a valid credential is still required for BLE. */ }
+  return { user: null, csrfToken: null, activeOrganizationId: null };
+}
+let state: AuthState = restoreOfflineContext();
 const listeners = new Set<(state: AuthState) => void>();
 const organizationStorageKey = 'miezmerker-active-organization';
 let sessionGeneration = 0;
@@ -45,6 +60,10 @@ function savedOrganization(userId: string): string | null {
 
 function persistOrganization() {
   try {
+    if (state.user) localStorage.setItem(offlineSessionKey, JSON.stringify({
+      user: state.user, activeOrganizationId: state.activeOrganizationId,
+    }));
+    else localStorage.removeItem(offlineSessionKey);
     if (state.user && state.activeOrganizationId) {
       sessionStorage.setItem(organizationStorageKey, JSON.stringify({
         userId: state.user.userId, organizationId: state.activeOrganizationId,
@@ -85,7 +104,7 @@ export function selectOrganization(organizationId: string): void {
 }
 
 export async function fetchCsrfToken(): Promise<string> {
-  const { data, error } = await api.GET('/api/v1/auth/csrf');
+  const { data, error } = await api.GET('/api/v1/auth/csrf', { signal: AbortSignal.timeout(10_000) });
   if (error || !data || !data.token) throw new Error('CSRF token unavailable');
   state = { ...state, csrfToken: data.token };
   emit();
