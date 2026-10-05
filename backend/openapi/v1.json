@@ -709,6 +709,60 @@
         },
         "type": "object"
       },
+      "RecomputeVisitsRequest": {
+        "properties": {
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "gapSeconds": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RecomputeVisitsResponse": {
+        "properties": {
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "excludedImplausibleTime": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "excludedUnattributed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "excludedUnknownClock": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "gapSeconds": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalObservations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "usableObservations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "visitCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visits": {
+            "items": {
+              "$ref": "#/components/schemas/VisitView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "RegisterDeviceRequest": {
         "properties": {
           "label": {
@@ -860,6 +914,61 @@
           "apiVersion",
           "version"
         ],
+        "type": "object"
+      },
+      "VisitView": {
+        "properties": {
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "catId": {
+            "type": "string"
+          },
+          "chipId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "endAtMillis": {
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "feedingSiteId": {
+            "type": "string"
+          },
+          "firstObservationId": {
+            "type": "string"
+          },
+          "gapSeconds": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastObservationId": {
+            "type": "string"
+          },
+          "observationCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "startAtMillis": {
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          }
+        },
         "type": "object"
       }
     }
@@ -2330,6 +2439,178 @@
         "summary": "List one node's observations within an explicit organization context",
         "tags": [
           "observation-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/visits": {
+      "get": {
+        "operationId": "listVisits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "feedingSiteId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chipId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fromMillis",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "toMillis",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VisitView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List derived visits of an organization (requires ACTIVE membership)",
+        "tags": [
+          "visit-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/visits/recompute": {
+      "post": {
+        "operationId": "recomputeVisits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecomputeVisitsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecomputeVisitsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN rebuilds visits from stored raw observations (no raw re-ingest, raw rows unchanged)",
+        "tags": [
+          "visit-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/visits/{visitId}": {
+      "get": {
+        "operationId": "getVisit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "visitId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Visit details; never readable across organizations",
+        "tags": [
+          "visit-controller"
         ]
       }
     },

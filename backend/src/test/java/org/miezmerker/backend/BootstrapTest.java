@@ -4,6 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.miezmerker.backend.bootstrap.BootstrapRunner;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.AppDeviceRepository;
+import org.miezmerker.backend.repo.CatRepository;
+import org.miezmerker.backend.repo.DerivedVisitRepository;
+import org.miezmerker.backend.repo.FeedingSiteRepository;
+import org.miezmerker.backend.repo.NodeDeploymentRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
@@ -24,12 +28,20 @@ class BootstrapTest {
     @Autowired AppDeviceRepository devices;
     @Autowired NodeRepository nodes;
     @Autowired RawObservationRepository observations;
+    @Autowired DerivedVisitRepository derivedVisits;
+    @Autowired NodeDeploymentRepository deployments;
+    @Autowired CatRepository cats;
+    @Autowired FeedingSiteRepository sites;
     @Autowired PasswordEncoder passwords;
     @Autowired jakarta.validation.Validator validator;
 
     @Test
     void bootstrapCreatesFirstOrgAndAdminOnce() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
+        deployments.deleteAll();
+        cats.deleteAll();
+        sites.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -54,7 +66,11 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsPasswordsOverBcryptsByteLimitBeforeWriting() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
+        deployments.deleteAll();
+        cats.deleteAll();
+        sites.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -80,7 +96,11 @@ class BootstrapTest {
 
     @Test
     void bootstrapRequiresNoSecretsInRepoAndStrongPassword() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
+        deployments.deleteAll();
+        cats.deleteAll();
+        sites.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -94,7 +114,11 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsAnEmailThatCannotBeUsedByTheLoginApi() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
+        deployments.deleteAll();
+        cats.deleteAll();
+        sites.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -109,7 +133,11 @@ class BootstrapTest {
 
     @Test
     void invalidBootstrapMetadataIsRejectedBeforeWritingAnyEntities() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
+        deployments.deleteAll();
+        cats.deleteAll();
+        sites.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();
@@ -131,7 +159,11 @@ class BootstrapTest {
 
     @Test
     void bootstrapCannotAttachTheFirstAdminToADisabledOrganization() {
+        derivedVisits.deleteAll();
         observations.deleteAll();
+        deployments.deleteAll();
+        cats.deleteAll();
+        sites.deleteAll();
         devices.deleteAll();
         nodes.deleteAll();
         memberships.deleteAll();

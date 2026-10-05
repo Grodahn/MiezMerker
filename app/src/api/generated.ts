@@ -472,6 +472,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List derived visits of an organization (requires ACTIVE membership) */
+        get: operations["listVisits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/visits/recompute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ADMIN rebuilds visits from stored raw observations (no raw re-ingest, raw rows unchanged) */
+        post: operations["recomputeVisits"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/visits/{visitId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Visit details; never readable across organizations */
+        get: operations["getVisit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/version": {
         parameters: {
             query?: never;
@@ -735,6 +786,29 @@ export interface components {
             receivedAt?: string;
             sequence?: string;
         };
+        RecomputeVisitsRequest: {
+            algorithmVersion?: string;
+            /** Format: int32 */
+            gapSeconds?: number;
+        };
+        RecomputeVisitsResponse: {
+            algorithmVersion?: string;
+            /** Format: int64 */
+            excludedImplausibleTime?: number;
+            /** Format: int64 */
+            excludedUnattributed?: number;
+            /** Format: int64 */
+            excludedUnknownClock?: number;
+            /** Format: int32 */
+            gapSeconds?: number;
+            /** Format: int64 */
+            totalObservations?: number;
+            /** Format: int64 */
+            usableObservations?: number;
+            /** Format: int32 */
+            visitCount?: number;
+            visits?: components["schemas"]["VisitView"][];
+        };
         RegisterDeviceRequest: {
             label?: string;
             publicKeyX: string;
@@ -776,6 +850,26 @@ export interface components {
         VersionResponse: {
             apiVersion: string;
             version: string;
+        };
+        VisitView: {
+            algorithmVersion?: string;
+            catId?: string;
+            chipId?: string;
+            createdAt?: string;
+            endAt?: string;
+            endAtMillis?: string;
+            feedingSiteId?: string;
+            firstObservationId?: string;
+            /** Format: int32 */
+            gapSeconds?: number;
+            /** Format: uuid */
+            id?: string;
+            lastObservationId?: string;
+            /** Format: int32 */
+            observationCount?: number;
+            organizationId?: string;
+            startAt?: string;
+            startAtMillis?: string;
         };
     };
     responses: never;
@@ -1713,6 +1807,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawObservationView"][];
+                };
+            };
+        };
+    };
+    listVisits: {
+        parameters: {
+            query?: {
+                feedingSiteId?: string;
+                chipId?: string;
+                fromMillis?: number;
+                toMillis?: number;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitView"][];
+                };
+            };
+        };
+    };
+    recomputeVisits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RecomputeVisitsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecomputeVisitsResponse"];
+                };
+            };
+        };
+    };
+    getVisit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                visitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitView"];
                 };
             };
         };
