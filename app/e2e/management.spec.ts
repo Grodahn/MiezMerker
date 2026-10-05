@@ -158,3 +158,31 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     expect(state.requests.filter(r => r.method === 'POST' && r.path.endsWith('/deployments/move'))).toHaveLength(2);
   });
 }
+
+test('history lifecycle discards management state and restores the latest organization', async ({ page }) => {
+  const state = await backend(page);
+  state.sites.push({ id: siteId, organizationId: orgA, name: 'Private A site' });
+  await page.goto('/sites');
+  await expect(page.getByRole('cell', { name: 'Private A site', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Futterstelle anlegen' }).click();
+  await page.getByLabel('Name / Bezeichnung').fill('Private A draft');
+  // Chromium's test runner disables bfcache; deliver the native lifecycle events explicitly.
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.getByRole('cell', { name: 'Private A site', exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Name / Bezeichnung')).not.toBeVisible();
+  await page.evaluate(org => {
+    // Another document in this tab selected B while this document was retained in history.
+    const offline = JSON.parse(localStorage.getItem('miezmerker-offline-session')!);
+    offline.activeOrganizationId = org;
+    localStorage.setItem('miezmerker-offline-session', JSON.stringify(offline));
+    sessionStorage.setItem('miezmerker-active-organization', JSON.stringify({ userId: offline.user.userId, organizationId: org }));
+  }, orgB);
+  await Promise.all([
+    page.waitForEvent('load'),
+    page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))),
+  ]);
+  await expect(page.getByLabel('Aktive Organisation')).toHaveValue(orgB);
+  await expect(page.getByText(/Noch keine Futterstellen vorhanden/)).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Private A site', exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Name / Bezeichnung')).not.toBeVisible();
+});

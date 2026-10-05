@@ -77,6 +77,11 @@ prüfen den Kontext erneut nach CSRF-Auflösung. Fehlende/abgelaufene Session,
 inaktive Membership, Serverfehler und Konflikte werden mit neutralen Hinweisen
 angezeigt; Backend-Details mit Chip-/Standortdaten landen nicht in UI-Logs.
 Chip- und Standortfilter sind View-State und werden nicht in Navigations-URLs geschrieben.
+Beim Verlassen eines Verwaltungsdokuments (`pagehide`) werden Datensätze und
+Entwürfe synchron verworfen und laufende Requests abgebrochen. Stellt der Browser
+es aus dem Back/Forward-Cache wieder her (`pageshow.persisted`), lädt es die Seite
+neu und verwendet die bestehende Session-/Organisationswiederherstellung. Alte
+Verwaltungsdaten erscheinen so nicht nach einem Wechsel in einem anderen Dokument.
 
 Offline öffnet die Verwaltung mit einem Verbindungshinweis und Link auf `/sync`.
 Collector, AppDevice, Offline-Credentials, BLE, Outbox und Upload-Zustandsmaschinen
@@ -88,7 +93,7 @@ mobil an; Controls haben Labels und Tastaturfokus.
 - Frontend: leere Installation auf allen fünf Routen, MEMBER-Pflege,
   atomare Node-Zuordnung, unbekannter Chip → benannte Katze, alle Raw-Filter und
   Pagination, getrennte Visits/Version/Dauer, letzte Sichtung, Context-Abbruch,
-  A → B → A, Wechsel während CSRF, ADMIN/MEMBER, Offline und 401/Retry.
+  A → B → A, Wechsel während CSRF, History-Lifecycle, ADMIN/MEMBER, Offline und 401/Retry.
 - Backend: vorhandene #9/#10- und Auth-Negativtests; neue Fälle für MEMBER-Pflege,
   atomaren Umzug mit alten und verspäteten Reads/Visits, gescheiterte und
   konkurrierende Umzüge, fremde IDs, Chip-Aktivität, unbekannte Clock, no-store
@@ -103,9 +108,9 @@ Die verbleibende physische BLE-Abnahme von #8 ist weiterhin in
 `docs/collector-validation.md` dokumentiert und wird durch #11 nicht ersetzt.
 
 Lokale Validierung am 2026-10-05: 108 Backend-HTTP-/Integrationsprüfungen unter H2,
-188 Frontendprüfungen einschließlich Collector-Regressionen, TypeScript und
-Vite-PWA-Produktionsbuild sowie reproduzierbare API-Driftprüfungen. Alle vier
-Chromium-Szenarien bestehen: Offline-Collector, echter Same-Origin-Proxy und
-Verwaltungsablauf bei Desktop-/Mobilbreite. Screenshots beider Breiten wurden
+189 Frontendprüfungen einschließlich Collector-Regressionen, TypeScript und
+Vite-PWA-Produktionsbuild sowie reproduzierbare API-Driftprüfungen. Alle fünf
+Chromium-Szenarien bestehen: Offline-Collector, echter Same-Origin-Proxy,
+Verwaltungsablauf bei Desktop-/Mobilbreite und History-Lifecycle. Screenshots beider Breiten wurden
 visuell geprüft. PostgreSQL wird weiterhin durch die vorhandene CI geprüft;
 die lokale Backend-Prüfung verwendete den Test-Fallback H2.

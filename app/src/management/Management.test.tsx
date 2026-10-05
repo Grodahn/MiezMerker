@@ -183,6 +183,24 @@ test('switching organization while CSRF resolves prevents a mutation in the old 
   expect(post).not.toHaveBeenCalled(); expect(screen.queryByLabelText('Name / Bezeichnung')).toBeNull();
 });
 
+test('leaving a management document clears records and drafts before browser history retains it', async () => {
+  get.mockImplementation(async (path: string) => ok(path.endsWith('/feeding-sites') ? [site] : []));
+  let resolveCsrf: (value: string) => void = () => {};
+  csrf.mockImplementation(() => new Promise(resolve => { resolveCsrf = resolve; }));
+  render(<Management path="/sites"/>);
+  await screen.findByText('Garten');
+  const signal = get.mock.calls[0][1].signal as AbortSignal;
+  fireEvent.click(screen.getByRole('button', { name: 'Futterstelle anlegen' }));
+  fireEvent.change(screen.getByLabelText('Name / Bezeichnung'), { target: { value: 'Private draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+  fireEvent(window, new PageTransitionEvent('pagehide', { persisted: true }));
+  expect(screen.queryByText('Garten')).toBeNull();
+  expect(screen.queryByLabelText('Name / Bezeichnung')).toBeNull();
+  expect(signal.aborted).toBe(true);
+  await act(async () => resolveCsrf('csrf'));
+  expect(post).not.toHaveBeenCalled();
+});
+
 test('member cannot load roster; ADMIN uses existing member API', async () => {
   const view = render(<Management path="/admin/members"/>);
   expect(screen.getByRole('alert').textContent).toContain('ADMIN'); expect(get).not.toHaveBeenCalled();
