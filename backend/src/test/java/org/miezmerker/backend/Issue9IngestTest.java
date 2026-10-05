@@ -723,7 +723,7 @@ class Issue9IngestTest {
     // ---- roles ----
 
     @Test
-    void memberCanReadAndIngestButNotManage() throws Exception {
+    void memberCanReadIngestAndProvideRoutineCare() throws Exception {
         Seed s = seed();
         login("a9-admin-a@example.org", "supersecret-password-a");
         NodeKeys n = claimNode(s.orgA().getId());
@@ -745,23 +745,27 @@ class Issue9IngestTest {
         assertEquals(1, ingest(s.orgA().getId(),
                 List.of(item(n.nodeId(), 1, "chip-m", at, "SYNCED"))).get("inserted").asInt());
 
-        // Management stays ADMIN-only.
-        assertEquals(403, post("/api/v1/organizations/" + s.orgA().getId() + "/feeding-sites",
-                "{\"name\":\"Member site\"}").statusCode());
-        assertEquals(403, post("/api/v1/organizations/" + s.orgA().getId() + "/cats",
-                "{\"chipId\":\"chip-member\"}").statusCode());
-        Map<String, Object> dep = new LinkedHashMap<>();
-        dep.put("nodeId", n.nodeId().toString());
-        dep.put("feedingSiteId", site.toString());
-        dep.put("validFrom", Instant.now().toString());
-        assertEquals(403, post("/api/v1/organizations/" + s.orgA().getId() + "/deployments",
-                mapper.writeValueAsString(dep)).statusCode());
-        assertEquals(403, patch("/api/v1/nodes/" + n.nodeId(),
+        // #11: normal care is available to ACTIVE MEMBER; administration stays ADMIN.
+        UUID memberSite = createSite(s.orgA().getId(), "Member site");
+        UUID memberCat = createCat(s.orgA().getId(), "chip-member");
+        String orgPath = "/api/v1/organizations/" + s.orgA().getId();
+        assertEquals(200, patch(orgPath + "/feeding-sites/" + memberSite,
+                "{\"description\":\"Member description\"}").statusCode());
+        assertEquals(200, patch(orgPath + "/cats/" + memberCat,
+                "{\"name\":\"Miez\",\"notes\":\"Member note\"}").statusCode());
+        assertEquals(200, patch("/api/v1/nodes/" + n.nodeId(),
                 "{\"statusNote\":\"member note\"}").statusCode());
+        assertEquals(200, post(orgPath + "/deployments/move", mapper.writeValueAsString(Map.of(
+                "nodeId", n.nodeId(), "feedingSiteId", memberSite, "validFrom", Instant.now().toString()))).statusCode());
+        assertEquals(403, delete(orgPath + "/feeding-sites/" + memberSite).statusCode());
+        assertEquals(403, delete(orgPath + "/cats/" + memberCat).statusCode());
+        assertEquals(403, get(orgPath + "/members").statusCode());
+        assertEquals(403, post(orgPath + "/visits/recompute", "{}").statusCode());
+
     }
 
     @Test
-    void nodeMetadataManagementIsAdminOnlyAndTenantScoped() throws Exception {
+    void nodeMetadataManagementIsTenantScoped() throws Exception {
         Seed s = seed();
         login("a9-admin-a@example.org", "supersecret-password-a");
         NodeKeys nodeA = claimNode(s.orgA().getId());
@@ -959,5 +963,138 @@ class Issue9IngestTest {
         assertEquals(1, result.get("inserted").asInt());
         assertEquals(400, post("/api/v1/organizations/" + s.orgA().getId() + "/cats",
                 mapper.writeValueAsString(Map.of("chipId", "ß".repeat(64)))).statusCode());
+    }
+
+    // #11 additions extend the #9 HTTP contract without replacing its tenant tests.
+    @Test
+    void atomicMoveKeepsHistoricalObservationsAndVisits() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        String orgPath = "/api/v1/organizations/" + s.orgA().getId();
+        NodeKeys node = claimNode(s.orgA().getId());
+        UUID oldSite = createSite(s.orgA().getId(), "Old site");
+        UUID newSite = createSite(s.orgA().getId(), "New site");
+        Instant start = Instant.parse("2025-01-01T00:00:00Z");
+        UUID oldDeployment = createDeployment(s.orgA().getId(), node.nodeId(), oldSite, start, null);
+        ingest(s.orgA().getId(), List.of(item(node.nodeId(), 1, "chip-history",
+                start.plusSeconds(60).toEpochMilli(), "SYNCED")));
+        assertEquals(200, post(orgPath + "/visits/recompute", "{}").statusCode());
+        login("a9-member-a@example.org", "supersecret-password-m");
+        var moved = post(orgPath + "/deployments/move", mapper.writeValueAsString(Map.of(
+                "nodeId", node.nodeId(), "feedingSiteId", newSite,
+                "validFrom", start.plusSeconds(120).toString())));
+        assertEquals(200, moved.statusCode(), moved.body());
+        assertEquals(start.plusSeconds(120), deployments.findById(oldDeployment).orElseThrow().getValidUntil());
+        assertEquals(2, deployments.findByNodeNodeId(node.nodeId()).size());
+        var raw = mapper.readTree(get("/api/v1/observations?organizationId=" + s.orgA().getId()).body());
+        assertEquals(oldSite.toString(), raw.get(0).get("feedingSiteId").asText());
+        var visits = mapper.readTree(get(orgPath + "/visits").body());
+        assertEquals(oldSite.toString(), visits.get(0).get("feedingSiteId").asText());
+        // The boundary belongs to the new interval; late old data still uses the old one.
+        ingest(s.orgA().getId(), List.of(
+                item(node.nodeId(), 2, "chip-history", start.plusSeconds(120).toEpochMilli(), "SYNCED"),
+                item(node.nodeId(), 3, "chip-history", start.plusSeconds(90).toEpochMilli(), "SYNCED")));
+        var boundary = mapper.readTree(get("/api/v1/observations?organizationId=" + s.orgA().getId()).body());
+        assertEquals(newSite.toString(), boundary.get(1).get("feedingSiteId").asText());
+        assertEquals(oldSite.toString(), boundary.get(2).get("feedingSiteId").asText());
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        assertEquals(200, post(orgPath + "/visits/recompute", "{}").statusCode());
+        assertEquals(2, mapper.readTree(get(orgPath + "/visits").body()).size());
+    }
+
+    @Test
+    void failedMoveDoesNotCloseExistingAssignmentOrExposeForeignResources() throws Exception {
+        Seed s = seed();
+        login("a9-admin-b@example.org", "supersecret-password-b");
+        UUID foreignSite = createSite(s.orgB().getId(), "Foreign");
+        NodeKeys foreignNode = claimNode(s.orgB().getId());
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        UUID site = createSite(s.orgA().getId(), "Own");
+        UUID target = createSite(s.orgA().getId(), "Target");
+        NodeKeys node = claimNode(s.orgA().getId());
+        Instant start = Instant.parse("2025-01-01T00:00:00Z");
+        UUID deployment = createDeployment(s.orgA().getId(), node.nodeId(), site, start, null);
+        login("a9-member-a@example.org", "supersecret-password-m");
+        String path = "/api/v1/organizations/" + s.orgA().getId() + "/deployments/move";
+        assertEquals(404, post(path, mapper.writeValueAsString(Map.of("nodeId", node.nodeId(),
+                "feedingSiteId", foreignSite, "validFrom", start.plusSeconds(60).toString()))).statusCode());
+        assertEquals(404, post(path, mapper.writeValueAsString(Map.of("nodeId", foreignNode.nodeId(),
+                "feedingSiteId", target, "validFrom", start.plusSeconds(60).toString()))).statusCode());
+        assertEquals(409, post(path, mapper.writeValueAsString(Map.of("nodeId", node.nodeId(),
+                "feedingSiteId", target, "validFrom", start.toString()))).statusCode());
+        assertEquals(409, post(path, mapper.writeValueAsString(Map.of("nodeId", node.nodeId(),
+                "feedingSiteId", site, "validFrom", start.plusSeconds(60).toString()))).statusCode());
+        assertNull(deployments.findById(deployment).orElseThrow().getValidUntil());
+        assertEquals(1, deployments.findByNodeNodeId(node.nodeId()).size());
+        assertEquals(403, post("/api/v1/organizations/" + s.orgB().getId() + "/deployments/move",
+                mapper.writeValueAsString(Map.of("nodeId", foreignNode.nodeId(), "feedingSiteId", foreignSite,
+                        "validFrom", start.toString()))).statusCode());
+    }
+
+    @Test
+    void concurrentMovesCannotCreateOverlappingAssignments() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        UUID site = createSite(s.orgA().getId(), "Old");
+        UUID targetA = createSite(s.orgA().getId(), "Target A");
+        UUID targetB = createSite(s.orgA().getId(), "Target B");
+        NodeKeys node = claimNode(s.orgA().getId());
+        Instant start = Instant.parse("2025-01-01T00:00:00Z");
+        createDeployment(s.orgA().getId(), node.nodeId(), site, start, null);
+        String path = "/api/v1/organizations/" + s.orgA().getId() + "/deployments/move";
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var tasks = List.<Callable<Integer>>of(
+                    () -> post(path, mapper.writeValueAsString(Map.of("nodeId", node.nodeId(),
+                            "feedingSiteId", targetA, "validFrom", start.plusSeconds(60).toString()))).statusCode(),
+                    () -> post(path, mapper.writeValueAsString(Map.of("nodeId", node.nodeId(),
+                            "feedingSiteId", targetB, "validFrom", start.plusSeconds(60).toString()))).statusCode());
+            var statuses = executor.invokeAll(tasks).stream().map(future -> {
+                try { return future.get(); } catch (Exception e) { throw new RuntimeException(e); }
+            }).sorted().toList();
+            assertEquals(List.of(200, 409), statuses);
+        }
+        var history = deployments.findByNodeNodeId(node.nodeId());
+        assertEquals(2, history.size());
+        assertEquals(1, history.stream().filter(d -> d.getValidUntil() == null).count());
+    }
+
+    @Test
+    void chipActivityUsesSightingTimeAndFrozenSitesWithoutFabricatingUnknownTime() throws Exception {
+        Seed s = seed();
+        String path = "/api/v1/organizations/" + s.orgA().getId() + "/chip-activity";
+        assertEquals(401, get(path).statusCode());
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        assertEquals("[]", get(path).body());
+        NodeKeys node = claimNode(s.orgA().getId());
+        UUID site = createSite(s.orgA().getId(), "Own site");
+        Instant start = Instant.parse("2025-01-01T00:00:00Z");
+        createDeployment(s.orgA().getId(), node.nodeId(), site, start, null);
+        ingest(s.orgA().getId(), List.of(item(node.nodeId(), 1, "chip-new", start.plusSeconds(120).toEpochMilli(), "SYNCED")));
+        ingest(s.orgA().getId(), List.of(
+                item(node.nodeId(), 2, "chip-new", start.plusSeconds(60).toEpochMilli(), "RTC_ONLY"),
+                item(node.nodeId(), 3, "chip-new", null, "UNKNOWN"),
+                item(node.nodeId(), 4, "chip-unknown", null, "UNKNOWN")));
+        login("a9-member-a@example.org", "supersecret-password-m");
+        var response = get(path);
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+        JsonNode activity = mapper.readTree(response.body());
+        assertEquals(2, activity.size());
+        assertEquals("CHIP-NEW", activity.get(0).get("chipId").asText());
+        assertEquals(Long.toString(start.plusSeconds(120).toEpochMilli()), activity.get(0).get("lastSeenAtMillis").asText());
+        assertEquals(3, activity.get(0).get("observationCount").asInt());
+        assertEquals(1, activity.get(0).get("uncertainClockCount").asInt());
+        assertEquals(site.toString(), activity.get(0).get("feedingSiteIds").get(0).asText());
+        assertTrue(activity.get(1).get("lastSeenAtMillis").isNull());
+        assertEquals(0, activity.get(1).get("feedingSiteIds").size());
+        assertEquals(403, get("/api/v1/organizations/" + s.orgB().getId() + "/chip-activity").statusCode());
+        // Paginate in reverse receipt order without changing the existing default.
+        var newest = mapper.readTree(get("/api/v1/observations?organizationId=" + s.orgA().getId()
+                + "&newestFirst=true&limit=1").body());
+        assertEquals("4", newest.get(0).get("sequence").asText());
+        assertEquals("1", mapper.readTree(get("/api/v1/observations?organizationId=" + s.orgA().getId()
+                + "&limit=1").body()).get(0).get("sequence").asText());
+        login("a9-admin-b@example.org", "supersecret-password-b");
+        assertEquals(403, get(path).statusCode());
     }
 }

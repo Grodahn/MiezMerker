@@ -75,7 +75,9 @@ real upload/aggregation implementations.
 
 `/sync` belongs to collector #8. `/sites`, `/nodes`, `/cats`, `/observations`,
 `/visits`, `/admin/members` belong to management #11, inside the same `/app`
-project, service-worker scope and deployment artifact. Routes are placeholders.
+project, service-worker scope and deployment artifact. Management routes are
+implemented in #11; see `docs/issue11-management.md`. They use transient,
+organization-bound server data without mounting collector storage.
 
 The production Service Worker precaches the shell and collector assets and uses
 an SPA navigation fallback excluding `/api/`. It never caches authenticated HTTP

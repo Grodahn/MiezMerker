@@ -1,17 +1,17 @@
 import { CollectorShell } from './collector/CollectorShell';
 import { AuthPanel } from './platform/AuthPanel';
+import { Management, managementAreas } from './management/Management';
+import { useManagementContext } from './management/context';
 
-const areas: Record<string, string> = {
-  '/sites': 'Futterstellen', '/nodes': 'Nodes', '/cats': 'Katzen',
-  '/observations': 'Rohbeobachtungen', '/visits': 'Besuche', '/admin/members': 'Mitglieder',
-};
 export function App() {
+  const context = useManagementContext();
   const path = window.location.pathname;
   const collector = path === '/' || path === '/sync';
   return <><header><strong>MiezMerker</strong><nav aria-label="Bereiche">
-    <a href="/sync">Vor-Ort-Sync</a>
-    {Object.entries(areas).map(([href, label]) => <a key={href} href={href}>{label}</a>)}
+    <a href="/sync" aria-current={collector ? 'page' : undefined}>Vor-Ort-Sync</a>
+    {Object.entries(managementAreas).filter(([href]) => href !== '/admin/members' || context.admin)
+      .map(([href, label]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined}>{label}</a>)}
   </nav><AuthPanel/></header><main>{collector ? <CollectorShell/> :
-    <section><h1>{areas[path] ?? 'Seite nicht gefunden'}</h1><p>Dieser Bereich wird in #11 ergänzt.</p></section>}
+    <Management path={path}/>}
   </main><footer>RFID → Node → BLE → PWA → Backend → abgeleitete Besuche</footer></>;
 }

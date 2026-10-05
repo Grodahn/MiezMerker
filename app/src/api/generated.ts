@@ -202,7 +202,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** ADMIN updates node metadata (firmware/protocol version, status note) */
+        /** ACTIVE member updates node metadata (firmware/protocol version, status note) */
         patch: operations["updateNode"];
         trace?: never;
     };
@@ -319,7 +319,7 @@ export interface paths {
         /** List cats of an organization (requires ACTIVE membership) */
         get: operations["listCats"];
         put?: never;
-        /** ADMIN creates a cat in their own organization */
+        /** ACTIVE member creates a cat in their own organization */
         post: operations["createCat"];
         delete?: never;
         options?: never;
@@ -342,8 +342,25 @@ export interface paths {
         delete: operations["deleteCat"];
         options?: never;
         head?: never;
-        /** ADMIN updates a cat of their own organization */
+        /** ACTIVE member updates a cat of their own organization */
         patch: operations["updateCat"];
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/chip-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ACTIVE member lists observed chips, reliable last sightings, clock issues and frozen historical feeding sites; server receipt time is separate */
+        get: operations["listChipActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/organizations/{organizationId}/deployments": {
@@ -356,8 +373,25 @@ export interface paths {
         /** List deployments of an organization, optionally filtered by node */
         get: operations["listDeployments"];
         put?: never;
-        /** ADMIN assigns a node to a feeding site for a validity range */
+        /** ACTIVE member assigns a node to a feeding site for a validity range */
         post: operations["createDeployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/deployments/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ACTIVE member atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged */
+        post: operations["moveDeployment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -379,7 +413,7 @@ export interface paths {
         delete: operations["deleteDeployment"];
         options?: never;
         head?: never;
-        /** ADMIN closes or reopens a deployment by setting validUntil */
+        /** ACTIVE member closes or reopens a deployment by setting validUntil */
         patch: operations["closeDeployment"];
         trace?: never;
     };
@@ -393,7 +427,7 @@ export interface paths {
         /** List feeding sites of an organization (requires ACTIVE membership) */
         get: operations["listFeedingSites"];
         put?: never;
-        /** ADMIN creates a feeding site in their own organization */
+        /** ACTIVE member creates a feeding site in their own organization */
         post: operations["createFeedingSite"];
         delete?: never;
         options?: never;
@@ -416,7 +450,7 @@ export interface paths {
         delete: operations["deleteFeedingSite"];
         options?: never;
         head?: never;
-        /** ADMIN updates a feeding site of their own organization */
+        /** ACTIVE member updates a feeding site of their own organization */
         patch: operations["updateFeedingSite"];
         trace?: never;
     };
@@ -554,6 +588,16 @@ export interface components {
             organizationId?: string;
             status?: string;
             updatedAt?: string;
+        };
+        ChipActivityView: {
+            chipId?: string;
+            feedingSiteIds?: string[];
+            lastReceivedAt?: string;
+            lastSeenAtMillis?: string | null;
+            /** Format: int64 */
+            observationCount?: number;
+            /** Format: int64 */
+            uncertainClockCount?: number;
         };
         ClaimNodeRequest: {
             claimSignature: string;
@@ -737,6 +781,14 @@ export interface components {
             organizationSlug?: string;
             role?: string;
             status?: string;
+        };
+        MoveDeploymentRequest: {
+            /** Format: uuid */
+            feedingSiteId: string;
+            /** Format: uuid */
+            nodeId: string;
+            /** Format: date-time */
+            validFrom: string;
         };
         NodeOwnerView: {
             /** Format: uuid */
@@ -1221,6 +1273,7 @@ export interface operations {
                 toMillis?: number;
                 limit?: number;
                 offset?: number;
+                newestFirst?: boolean;
             };
             header?: never;
             path?: never;
@@ -1470,6 +1523,28 @@ export interface operations {
             };
         };
     };
+    listChipActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChipActivityView"][];
+                };
+            };
+        };
+    };
     listDeployments: {
         parameters: {
             query?: {
@@ -1506,6 +1581,32 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateDeploymentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentView"];
+                };
+            };
+        };
+    };
+    moveDeployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveDeploymentRequest"];
             };
         };
         responses: {

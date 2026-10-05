@@ -35,7 +35,7 @@ a client-supplied `organization_id` is never trusted.
 
 - Names are not unique: several sites of one organization may share a name; there is
   no DB unique constraint on `(organization_id, name)`
-- CRUD: read=ACTIVE, write=ADMIN
+- CRUD: read/care=ACTIVE, delete=ADMIN (#11)
 - Location coordinates validated to ±90/±180; must be set together or both null
 
 ## Cat
@@ -53,7 +53,7 @@ a client-supplied `organization_id` is never trusted.
 
 - `UNIQUE (organization_id, chip_id)` — the same chip ID may exist independently
   in two organizations without cross-tenant access.
-- CRUD: read=ACTIVE, write=ADMIN
+- CRUD: read/care=ACTIVE, delete=ADMIN (#11)
 
 ## Node (extended from #18)
 
@@ -72,7 +72,7 @@ a client-supplied `organization_id` is never trusted.
 | claimed_at | TIMESTAMPTZ | |
 
 - Claiming (#18) assigns organization; Factory Reset rotates identity (new UUID + key)
-- Management: read=ACTIVE, update=ADMIN (metadata only)
+- Management: read/update=ACTIVE (metadata only; #11)
 - Public `/owner` endpoint exposes organization slug/name/contact for claimed nodes
 
 ## NodeDeployment
@@ -92,7 +92,7 @@ Historical assignment of a Node to a FeedingSite with a validity interval.
 - Intervals for one node must not overlap; enforced by serializing deployment writes
   on the node row (pessimistic lock) and a `CHECK (valid_until IS NULL OR valid_until > valid_from)`.
 - A move closes the old interval and opens a new one.
-- CRUD: read=ACTIVE, write=ADMIN
+- CRUD: read/care=ACTIVE, delete=ADMIN (#11)
 - Deleting a deployment referenced by observations returns `409`; its historical
   attribution stays intact. Unreferenced deployments can be deleted.
 
@@ -158,7 +158,7 @@ timestamp. Raw values are never clamped or rewritten to fit that range.
    deferred to #10.
 
 2. **Deployment overlap prevention**: Overlap freedom is enforced by
-   application-level serialization on the node row. Concurrent ADMIN calls to
+   application-level serialization on the node row. Concurrent ACTIVE member calls to
    create/close deployments for the same node are serialized; no database
    exclusion constraint exists on `(node_id, valid_from, valid_until)` because
    PostgreSQL lacks built-in range exclusion without `btree_gist`/`btree_gin`
@@ -184,19 +184,19 @@ timestamp. Raw values are never clamped or rewritten to fit that range.
 
 | Endpoint | Methods | Auth | Notes |
 |----------|---------|------|-------|
-| `/api/v1/organizations/{orgId}/feeding-sites` | GET, POST | ACTIVE / ADMIN | |
-| `/api/v1/organizations/{orgId}/feeding-sites/{siteId}` | GET, PATCH, DELETE | ACTIVE / ADMIN | |
-| `/api/v1/organizations/{orgId}/cats` | GET, POST | ACTIVE / ADMIN | |
-| `/api/v1/organizations/{orgId}/cats/{catId}` | GET, PATCH, DELETE | ACTIVE / ADMIN | |
-| `/api/v1/organizations/{orgId}/deployments` | GET, POST | ACTIVE / ADMIN | |
-| `/api/v1/organizations/{orgId}/deployments/{deploymentId}` | GET, PATCH, DELETE | ACTIVE / ADMIN | |
+| `/api/v1/organizations/{orgId}/feeding-sites` | GET, POST | ACTIVE | |
+| `/api/v1/organizations/{orgId}/feeding-sites/{siteId}` | GET, PATCH, DELETE | ACTIVE care / ADMIN delete | |
+| `/api/v1/organizations/{orgId}/cats` | GET, POST | ACTIVE | |
+| `/api/v1/organizations/{orgId}/cats/{catId}` | GET, PATCH, DELETE | ACTIVE care / ADMIN delete | |
+| `/api/v1/organizations/{orgId}/deployments` | GET, POST | ACTIVE | |
+| `/api/v1/organizations/{orgId}/deployments/{deploymentId}` | GET, PATCH, DELETE | ACTIVE care / ADMIN delete | |
 | `/api/v1/observations/ingest` | POST | ACTIVE | Idempotent batch |
 | `/api/v1/observations` | GET | ACTIVE | Filter: org, node, site, chip, time |
 | `/api/v1/observations/{observationId}` | GET | ACTIVE | Tenant-gated |
 | `/api/v1/organizations/{orgId}/nodes/{nodeId}/observations` | GET | ACTIVE | Explicit org+node scope |
 | `/api/v1/nodes` | GET | ACTIVE | |
 | `/api/v1/nodes/claim` | POST | ADMIN | #18 |
-| `/api/v1/nodes/{nodeId}` | GET, PATCH | ACTIVE / ADMIN | |
+| `/api/v1/nodes/{nodeId}` | GET, PATCH | ACTIVE | |
 | `/api/v1/nodes/{nodeId}/owner` | GET | public | Claimed nodes only |
 
 ## API versioning and error format
@@ -244,3 +244,10 @@ to `backend/target/openapi.json`, canonicalized to
 `backend/openapi/v1.json`, and the TypeScript client is generated to
 `app/src/api/generated.ts`. CI verifies both committed files byte-for-byte
 and repeats the check. Never hand-edit frontend DTOs.
+
+## #11 management additions
+
+Routine care now permits ACTIVE MEMBER as required by #11; claiming, deletion,
+membership administration and visit recomputation remain ADMIN-only.
+Atomic deployment moves, organization-scoped chip activity and optional newest-first
+receipt ordering are documented in `docs/issue11-management.md` and exported OpenAPI.

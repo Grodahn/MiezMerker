@@ -31,6 +31,38 @@
         },
         "type": "object"
       },
+      "ChipActivityView": {
+        "properties": {
+          "chipId": {
+            "type": "string"
+          },
+          "feedingSiteIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lastReceivedAt": {
+            "type": "string"
+          },
+          "lastSeenAtMillis": {
+            "pattern": "^[0-9]+$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observationCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "uncertainClockCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ClaimNodeRequest": {
         "properties": {
           "claimSignature": {
@@ -574,6 +606,28 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "MoveDeploymentRequest": {
+        "properties": {
+          "feedingSiteId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "validFrom": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feedingSiteId",
+          "nodeId",
+          "validFrom"
+        ],
         "type": "object"
       },
       "NodeOwnerView": {
@@ -1367,7 +1421,7 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN updates node metadata (firmware/protocol version, status note)",
+        "summary": "ACTIVE member updates node metadata (firmware/protocol version, status note)",
         "tags": [
           "node-controller"
         ]
@@ -1480,6 +1534,15 @@
               "default": 0,
               "format": "int32",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "newestFirst",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           }
         ],
@@ -1721,7 +1784,7 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN creates a cat in their own organization",
+        "summary": "ACTIVE member creates a cat in their own organization",
         "tags": [
           "cat-controller"
         ]
@@ -1843,9 +1906,44 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN updates a cat of their own organization",
+        "summary": "ACTIVE member updates a cat of their own organization",
         "tags": [
           "cat-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/chip-activity": {
+      "get": {
+        "operationId": "listChipActivity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChipActivityView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ACTIVE member lists observed chips, reliable last sightings, clock issues and frozen historical feeding sites; server receipt time is separate",
+        "tags": [
+          "chip-activity-controller"
         ]
       }
     },
@@ -1927,7 +2025,49 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN assigns a node to a feeding site for a validity range",
+        "summary": "ACTIVE member assigns a node to a feeding site for a validity range",
+        "tags": [
+          "deployment-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/deployments/move": {
+      "post": {
+        "operationId": "moveDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ACTIVE member atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged",
         "tags": [
           "deployment-controller"
         ]
@@ -2049,7 +2189,7 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN closes or reopens a deployment by setting validUntil",
+        "summary": "ACTIVE member closes or reopens a deployment by setting validUntil",
         "tags": [
           "deployment-controller"
         ]
@@ -2124,7 +2264,7 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN creates a feeding site in their own organization",
+        "summary": "ACTIVE member creates a feeding site in their own organization",
         "tags": [
           "feeding-site-controller"
         ]
@@ -2246,7 +2386,7 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN updates a feeding site of their own organization",
+        "summary": "ACTIVE member updates a feeding site of their own organization",
         "tags": [
           "feeding-site-controller"
         ]
