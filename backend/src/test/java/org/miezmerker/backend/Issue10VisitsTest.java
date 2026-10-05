@@ -787,6 +787,61 @@ class Issue10VisitsTest {
     }
 
     @Test
+    void visitListingFiltersWork() throws Exception {
+        Seed s = seed();
+        login("a10-admin-a@example.org", "supersecret-password-a");
+        NodeKeys n1 = claimNode(s.orgA().getId());
+        NodeKeys n2 = claimNode(s.orgA().getId());
+        UUID siteA = createSite(s.orgA().getId(), "Site A");
+        UUID siteB = createSite(s.orgA().getId(), "Site B");
+        Instant from = Instant.now().minus(Duration.ofDays(30));
+        createDeployment(s.orgA().getId(), n1.nodeId(), siteA, from, null);
+        createDeployment(s.orgA().getId(), n2.nodeId(), siteB, from, null);
+        long base = Instant.now().minus(Duration.ofDays(1)).toEpochMilli();
+        ingest(s.orgA().getId(), List.of(
+                item(n1.nodeId(), 1, "chip-F1", base, "SYNCED"),
+                item(n2.nodeId(), 1, "chip-F2", base + 5_000, "SYNCED"),
+                item(n1.nodeId(), 2, "chip-F1", base + 500_000, "SYNCED")));
+        assertEquals(3, recompute(s.orgA().getId(), 60, null).get("visitCount").asInt());
+
+        // Chip filter is normalized server-side.
+        var byChip = get("/api/v1/organizations/" + s.orgA().getId()
+                + "/visits?chipId=chip-f1&limit=100");
+        assertEquals(200, byChip.statusCode(), byChip.body());
+        assertEquals(2, mapper.readTree(byChip.body()).size());
+
+        // Site filter.
+        var bySite = get("/api/v1/organizations/" + s.orgA().getId()
+                + "/visits?feedingSiteId=" + siteB + "&limit=100");
+        assertEquals(200, bySite.statusCode(), bySite.body());
+        JsonNode siteRows = mapper.readTree(bySite.body());
+        assertEquals(1, siteRows.size());
+        assertEquals("CHIP-F2", siteRows.get(0).get("chipId").asText());
+
+        // Time filter applies to visit start_at: fromMillis inclusive,
+        // toMillis exclusive.
+        var byTime = get("/api/v1/organizations/" + s.orgA().getId()
+                + "/visits?fromMillis=" + (base + 100_000) + "&limit=100");
+        assertEquals(200, byTime.statusCode(), byTime.body());
+        assertEquals(1, mapper.readTree(byTime.body()).size());
+
+        // Pagination is deterministic (start_at asc): limit/offset slices.
+        var page1 = get("/api/v1/organizations/" + s.orgA().getId()
+                + "/visits?limit=2&offset=0");
+        var page2 = get("/api/v1/organizations/" + s.orgA().getId()
+                + "/visits?limit=2&offset=2");
+        assertEquals(200, page1.statusCode());
+        assertEquals(200, page2.statusCode());
+        assertEquals(2, mapper.readTree(page1.body()).size());
+        assertEquals(1, mapper.readTree(page2.body()).size());
+
+        // Foreign site ids are indistinguishable from absent ones.
+        assertEquals(404, get("/api/v1/organizations/" + s.orgA().getId()
+                + "/visits?feedingSiteId=" + UUID.randomUUID() + "&limit=10")
+                .statusCode());
+    }
+
+    @Test
     void equalTimestampsAreDeterministic() throws Exception {
         Seed s = seed();
         login("a10-admin-a@example.org", "supersecret-password-a");
