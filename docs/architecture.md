@@ -11,7 +11,7 @@ implementation contract. Subsequent tickets add features within these boundaries
 | firmware-esp32 | ESP-IDF platform composition and future board adapters | Host composition target today; board image in firmware tickets |
 | simulator | Inject simulated ports into the actual firmware-core library | CMake / CTest, no hardware |
 | protocol | BLE logical record schema/fixture and wire boundaries; future GATT codecs | Schema/fixture checked by app tests |
-| app | **One** React/TypeScript/Vite installable PWA: collector and administration | npm ci / tests / build / browser tests |
+| app | **One** React/TypeScript/Vite installable field PWA: login, sync, Nodes and Cats | npm ci / tests / build / browser tests |
 | backend | Java/Spring Boot HTTP API + server-rendered ADMIN backoffice (`/admin`, Thymeleaf, ADMIN-only); Security, JPA, PostgreSQL, Flyway, OpenAPI | Maven wrapper verify |
 | docs | Domain, trust boundaries, ADRs and acceptance review | Documentation review |
 | hardware | Schematics/BOM/reader/power work | Documentation placeholder today |
@@ -19,6 +19,27 @@ implementation contract. Subsequent tickets add features within these boundaries
 The portable core cannot import ESP32, ESP-IDF, OS or browser APIs. Platform
 adapters implement ports; the simulator links the very same core sources as the
 ESP32 composition boundary. No duplicate simulated business logic is allowed.
+
+## Final surfaces after #30
+
+The field PWA serves `/login`, `/sync`, `/nodes` and `/cats`. Offline `/sync`
+requires the established AppDevice identity, active organization context and
+valid device-bound offline credential; offline access does not authorize Admin.
+Nodes consumes FeedingSite labels and deployment history for field work, while
+FeedingSite master-data administration belongs to the backend.
+
+Spring MVC and Thymeleaf serve `/admin/login`, `/admin/`, `/admin/members`,
+`/admin/sites`, `/admin/cats`, `/admin/observations` and `/admin/visits`.
+Spring Security uses the same global AppUser, BCrypt passwords and HTTP session
+foundation as the PWA. Only ACTIVE ADMIN memberships in active organizations
+grant Admin access; the selected organization is validated server-side on use.
+Admin mutations require CSRF. Cats intentionally exists in both surfaces and
+retains the PWA's normal MEMBER permissions. Observations and standalone Visits
+are Admin UI; shared REST services remain available where field workflows need them.
+
+See [the final split and namespace routing](issue38-field-pwa.md). The #11
+combined-PWA implementation remains documented as historical context, not as
+an implementation of this later split.
 
 ## Domain vocabulary
 

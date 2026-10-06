@@ -1,5 +1,11 @@
 # Futterstellenverwaltung im Admin-Backend (#35)
 
+> Final closeout (#30/#38): this document records its implementation stage.
+> All Admin pages are now implemented. The field PWA retains `/login`, `/sync`,
+> `/nodes` and `/cats`; Members, Site maintenance, Observations and standalone
+> Visits use the server-rendered Admin backend. Cats remains in both surfaces.
+> See [the final split](issue38-field-pwa.md).
+
 Vertrag: [Issue #35](https://github.com/Grodahn/MiezMerker/issues/35).
 Parent-Epic #30, abhängig von #33 (Admin-Shell), wiederverwendet #9/#11
 (Domain/Service/Tenantlogik). Verwandte PWA-Seite `/sites` bleibt bis #38
