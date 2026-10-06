@@ -210,6 +210,26 @@ test('member cannot load roster; ADMIN uses existing member API', async () => {
   view.unmount();
 });
 
+test('members show display name, email, role and status with email fallback', async () => {
+  get.mockImplementation(async () => ok([
+    { membershipId: 'm-1', userId: 'u-1', email: 'ada@example.org', displayName: 'Ada Lovelace', role: 'ADMIN', status: 'ACTIVE' },
+    { membershipId: 'm-2', userId: 'u-2', email: 'plain@example.org', displayName: null, role: 'MEMBER', status: 'ACTIVE' },
+  ]));
+  await act(async () => { auth.user.memberships[0].role = 'ADMIN'; changed(); });
+  const view = render(<Management path="/admin/members"/>);
+  // #32: Name column uses the global display name; missing names fall back to email.
+  expect(await screen.findByText('Ada Lovelace')).toBeTruthy();
+  expect(screen.getByText('ada@example.org')).toBeTruthy();
+  // Fallback renders the email in both the Name and E-Mail cells.
+  expect(screen.getAllByText('plain@example.org').length).toBe(2);
+  const rows = screen.getAllByRole('row');
+  expect(rows.length).toBe(3);
+  expect(rows[1].textContent).toContain('Ada Lovelace');
+  expect(rows[1].textContent).toContain('ADMIN');
+  expect(rows[2].textContent).toContain('plain@example.org');
+  view.unmount();
+});
+
 test('inactive membership, no selected organization and offline management cannot fetch business data', async () => {
   auth.activeOrganizationId = null; changed();
   const view = render(<Management path="/sites"/>);

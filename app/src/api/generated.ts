@@ -485,7 +485,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** ADMIN changes role or activates/disables a membership */
+        /** ADMIN changes role, activates/disables a membership, or maintains the global display name (blank clears; global across all organizations) */
         patch: operations["updateMember"];
         trace?: never;
     };
@@ -648,6 +648,8 @@ export interface components {
             name: string;
         };
         CreateMemberRequest: {
+            /** @description Optional human-readable display name (global AppUser.displayName, trimmed; blank means no name; shown in every organization of this user) */
+            displayName?: string;
             /** Format: email */
             email: string;
             /** @description Initial password: at least 12 characters, at most 72 UTF-8 bytes */
@@ -764,6 +766,7 @@ export interface components {
             password: string;
         };
         MemberView: {
+            displayName?: string;
             email?: string;
             /** Format: uuid */
             membershipId?: string;
@@ -867,6 +870,7 @@ export interface components {
             publicKeyY: string;
         };
         SessionView: {
+            displayName?: string;
             email?: string;
             memberships?: components["schemas"]["MembershipView"][];
             /** Format: uuid */
@@ -889,6 +893,8 @@ export interface components {
             name?: string;
         };
         UpdateMemberRequest: {
+            /** @description Optional display name update for the underlying global AppUser. Absent/null leaves the name unchanged; blank clears it to null; a value is trimmed and stored globally (visible in all organizations). */
+            displayName?: string;
             /** @enum {string} */
             role?: "ADMIN" | "MEMBER";
             /** @enum {string} */

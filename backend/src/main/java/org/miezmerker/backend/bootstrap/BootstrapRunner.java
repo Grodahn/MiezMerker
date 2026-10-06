@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Required env (no secrets in git):
  * {@code BOOTSTRAP_ADMIN_EMAIL}, {@code BOOTSTRAP_ADMIN_PASSWORD} (min 12 chars),
  * optional {@code BOOTSTRAP_ORG_SLUG} (default {@code versuch}), {@code BOOTSTRAP_ORG_NAME},
- * {@code BOOTSTRAP_ORG_CONTACT}.
+ * {@code BOOTSTRAP_ORG_CONTACT}, {@code BOOTSTRAP_ADMIN_NAME} (optional display name, #32).
  *
  * <p>If users already exist, bootstrap does nothing (idempotent, no overwrite).
  */
@@ -49,10 +49,12 @@ public class BootstrapRunner implements ApplicationRunner {
     private record BootstrapInput(@NotBlank @Email @Size(max = 320) String email,
             @NotBlank @Size(max = 64) String slug,
             @NotBlank @Size(max = 255) String name,
-            @Size(max = 500) String contact) {}
+            @Size(max = 500) String contact,
+            @Size(max = 255) String adminName) {}
 
     private final String adminEmail;
     private final String adminPassword;
+    private final String adminName;
     private final String orgSlug;
     private final String orgName;
     private final String orgContact;
@@ -61,6 +63,7 @@ public class BootstrapRunner implements ApplicationRunner {
             MembershipRepository memberships, PasswordEncoder passwords, Validator validator,
             @Value("${miezmerker.bootstrap.admin-email:}") String adminEmail,
             @Value("${miezmerker.bootstrap.admin-password:}") String adminPassword,
+            @Value("${miezmerker.bootstrap.admin-name:}") String adminName,
             @Value("${miezmerker.bootstrap.org-slug:versuch}") String orgSlug,
             @Value("${miezmerker.bootstrap.org-name:Versuchsorganisation}") String orgName,
             @Value("${miezmerker.bootstrap.org-contact:}") String orgContact) {
@@ -71,6 +74,7 @@ public class BootstrapRunner implements ApplicationRunner {
         this.validator = validator;
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
+        this.adminName = adminName;
         this.orgSlug = orgSlug;
         this.orgName = orgName;
         this.orgContact = orgContact;
@@ -98,16 +102,24 @@ public class BootstrapRunner implements ApplicationRunner {
                 : orgSlug.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
         String name = orgName == null || orgName.isBlank() ? "Versuchsorganisation" : orgName.trim();
         String contact = orgContact == null || orgContact.isBlank() ? null : orgContact.trim();
+        // Optional human-readable admin name (#32, global AppUser.displayName).
+        // Blank-only input means "no name" (null); overlong input fails startup.
+        String displayName = AppUser.normalizeDisplayName(adminName);
+        if (displayName != null && displayName.length() > AppUser.MAX_DISPLAY_NAME_LENGTH) {
+            throw new IllegalStateException("BOOTSTRAP_ADMIN_NAME must not exceed "
+                    + AppUser.MAX_DISPLAY_NAME_LENGTH + " characters");
+        }
         // Validate only public metadata; password validation errors must never log a secret.
-        if (!validator.validate(new BootstrapInput(email, slug, name, contact)).isEmpty()) {
-            throw new IllegalStateException("Invalid bootstrap email or organization metadata");
+        // The display name itself is never logged.
+        if (!validator.validate(new BootstrapInput(email, slug, name, contact, displayName)).isEmpty()) {
+            throw new IllegalStateException("Invalid bootstrap email, organization metadata or admin name");
         }
         Organization org = organizations.findBySlug(slug)
                 .orElseGet(() -> organizations.save(new Organization(slug, name, contact)));
         if (org.getStatus() != OrganizationStatus.ACTIVE) {
             throw new IllegalStateException("Bootstrap organization must be active");
         }
-        AppUser user = users.save(new AppUser(email, passwords.encode(adminPassword)));
+        AppUser user = users.save(new AppUser(email, passwords.encode(adminPassword), displayName));
         OrganizationMembership membership =
                 new OrganizationMembership(org, user, MembershipRole.ADMIN, MembershipStatus.ACTIVE);
         memberships.save(membership);

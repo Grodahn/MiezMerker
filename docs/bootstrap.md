@@ -10,6 +10,7 @@ the database contains no users yet.
 | --- | --- | --- |
 | `BOOTSTRAP_ADMIN_EMAIL` | yes | Admin email (normalized to lowercase) |
 | `BOOTSTRAP_ADMIN_PASSWORD` | yes | Initial password, min 12 characters, max 72 UTF-8 bytes (BCrypt limit) |
+| `BOOTSTRAP_ADMIN_NAME` | no | Optional human-readable display name for the bootstrap admin (`AppUser.displayName`, #32) |
 | `BOOTSTRAP_ORG_SLUG` | no | Organization slug (default `versuch`) |
 | `BOOTSTRAP_ORG_NAME` | no | Display name (default `Versuchsorganisation`) |
 | `BOOTSTRAP_ORG_CONTACT` | no | Optional public contact for the owner hint |
@@ -21,6 +22,25 @@ Bootstrap validates the email against the login API's email rules and checks org
 field lengths before writing anything. If the slug already exists, its organization must
 be ACTIVE. Invalid configuration fails startup so it can be corrected and retried without
 leaving an unusable first admin in the database.
+
+## Display name (#32)
+
+`AppUser.displayName` is the global human-readable name of a person (max 255 characters,
+Unicode allowed, trimmed; blank-only input means "no name" and is stored as `NULL`).
+It lives on `AppUser`, not on `OrganizationMembership`: role/status stay per organization,
+but the same person shows the same name in every organization. Changing the name from one
+organization changes it everywhere for that user; there are no organization-specific
+aliases in this ticket.
+
+`BOOTSTRAP_ADMIN_NAME` is optional. When supplied, the newly bootstrapped admin stores
+the trimmed name; when absent or blank, bootstrap still works and the admin has no name
+(`NULL`). Overlong names fail startup before anything is written. The name is never
+logged. No name is ever derived from the email prefix.
+
+Pre-#32 users have `NULL` after the Flyway migration (`V8__issue32_display_name.sql`,
+nullable `display_name`, existing passwords/status/timestamps preserved). The API returns
+`displayName: null` for them and the UI falls back to showing the email until a real
+name is provided (no fabricated stored value).
 
 ## Local start
 

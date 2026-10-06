@@ -44,6 +44,7 @@ miezmerker:
   bootstrap:
     admin-email: ${BOOTSTRAP_ADMIN_EMAIL:}
     admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+    admin-name: ${BOOTSTRAP_ADMIN_NAME:}
     org-slug: ${BOOTSTRAP_ORG_SLUG:versuch}
     org-name: ${BOOTSTRAP_ORG_NAME:Versuchsorganisation}
     org-contact: ${BOOTSTRAP_ORG_CONTACT:}

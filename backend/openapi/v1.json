@@ -222,6 +222,12 @@
       },
       "CreateMemberRequest": {
         "properties": {
+          "displayName": {
+            "description": "Optional human-readable display name (global AppUser.displayName, trimmed; blank means no name; shown in every organization of this user)",
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
           "email": {
             "format": "email",
             "maxLength": 320,
@@ -563,6 +569,9 @@
       },
       "MemberView": {
         "properties": {
+          "displayName": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
@@ -843,6 +852,9 @@
       },
       "SessionView": {
         "properties": {
+          "displayName": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
@@ -917,6 +929,12 @@
       },
       "UpdateMemberRequest": {
         "properties": {
+          "displayName": {
+            "description": "Optional display name update for the underlying global AppUser. Absent/null leaves the name unchanged; blank clears it to null; a value is trimmed and stored globally (visible in all organizations).",
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
           "role": {
             "enum": [
               "ADMIN",
@@ -2512,7 +2530,7 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN changes role or activates/disables a membership",
+        "summary": "ADMIN changes role, activates/disables a membership, or maintains the global display name (blank clears; global across all organizations)",
         "tags": [
           "member-controller"
         ]

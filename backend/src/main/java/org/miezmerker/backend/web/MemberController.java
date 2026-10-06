@@ -56,25 +56,32 @@ public class MemberController {
     }
 
     @Schema(name = "MemberView")
-    public record MemberView(UUID membershipId, UUID userId, String email, String role,
-            String status) {}
+    public record MemberView(UUID membershipId, UUID userId, String email, String displayName,
+            String role, String status) {}
 
     @Schema(name = "CreateMemberRequest")
     public record CreateMemberRequest(
             @Email @NotBlank @Size(max = 320) String email,
             @Schema(minLength = 12, maxLength = 72,
                     description = "Initial password: at least 12 characters, at most 72 UTF-8 bytes") String password,
-            @NotNull MembershipRole role) {
+            @NotNull MembershipRole role,
+            @Size(max = 255, message = "displayName must not exceed 255 characters")
+            @Schema(description = "Optional human-readable display name (global AppUser.displayName, "
+                    + "trimmed; blank means no name; shown in every organization of this user)") String displayName) {
         // password is required when the user does not exist yet; optional when adding a
         // membership for an existing user. Validation of presence happens in the handler.
     }
 
     @Schema(name = "UpdateMemberRequest")
-    public record UpdateMemberRequest(MembershipRole role, MembershipStatus status) {}
+    public record UpdateMemberRequest(MembershipRole role, MembershipStatus status,
+            @Size(max = 255, message = "displayName must not exceed 255 characters")
+            @Schema(description = "Optional display name update for the underlying global AppUser. "
+                    + "Absent/null leaves the name unchanged; blank clears it to null; "
+                    + "a value is trimmed and stored globally (visible in all organizations).") String displayName) {}
 
     private static MemberView toView(OrganizationMembership m) {
         return new MemberView(m.getId(), m.getUser().getId(), m.getUser().getEmail(),
-                m.getRole().name(), m.getStatus().name());
+                m.getUser().getDisplayName(), m.getRole().name(), m.getStatus().name());
     }
 
     @GetMapping(produces = "application/json")
@@ -112,13 +119,24 @@ public class MemberController {
                     "password must have at least 12 characters and at most 72 UTF-8 bytes");
         }
         String email = AppUser.normalizeEmail(request.email());
+        String normalizedName = AppUser.normalizeDisplayName(request.displayName());
+        if (normalizedName != null && normalizedName.length() > AppUser.MAX_DISPLAY_NAME_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "displayName must not exceed " + AppUser.MAX_DISPLAY_NAME_LENGTH + " characters");
+        }
         AppUser user = users.findByEmail(email).orElse(null);
         if (user == null) {
             if (request.password() == null || request.password().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "password required for new user");
             }
-            user = users.save(new AppUser(email, passwords.encode(request.password())));
+            user = users.save(new AppUser(email, passwords.encode(request.password()), normalizedName));
+        } else if (normalizedName != null) {
+            // Existing user gains a membership in another organization: an explicitly
+            // supplied name updates the global AppUser.displayName (visible everywhere).
+            // Absent/blank in this path never clears an existing name; use PATCH to clear.
+            user.setDisplayName(normalizedName);
+            user = users.save(user);
         }
         if (memberships.findByOrganizationIdAndUserId(organizationId, user.getId()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "already a member");
@@ -132,11 +150,12 @@ public class MemberController {
     @PatchMapping(value = "/{membershipId}", consumes = "application/json",
             produces = "application/json")
     @Operation(operationId = "updateMember",
-            summary = "ADMIN changes role or activates/disables a membership")
+            summary = "ADMIN changes role, activates/disables a membership, or maintains the "
+                    + "global display name (blank clears; global across all organizations)")
     @Transactional
     public MemberView update(@PathVariable UUID organizationId,
             @PathVariable UUID membershipId,
-            @RequestBody UpdateMemberRequest request,
+            @Valid @RequestBody UpdateMemberRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
@@ -159,6 +178,19 @@ public class MemberController {
             } else {
                 membership.setStatusDirect(request.status());
             }
+        }
+        if (request.displayName() != null) {
+            // Resolved via the org-scoped membership, never via an arbitrary user id:
+            // only the member of this organization can be renamed, and the change is
+            // global (AppUser.displayName shows in every organization of that user).
+            String patchName = AppUser.normalizeDisplayName(request.displayName());
+            if (patchName != null && patchName.length() > AppUser.MAX_DISPLAY_NAME_LENGTH) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "displayName must not exceed " + AppUser.MAX_DISPLAY_NAME_LENGTH + " characters");
+            }
+            // Blank input (normalized to null) intentionally clears the name.
+            membership.getUser().setDisplayName(patchName);
+            users.save(membership.getUser());
         }
         memberships.save(membership);
         return toView(membership);

@@ -33,9 +33,11 @@ export function AuthPanel() {
   }
 
   const memberships = auth.user?.memberships.filter(m => m.status === 'ACTIVE') ?? [];
+  // #32: global display name with email fallback for pre-#32 users without a name.
+  const accountLabel = auth.user?.displayName?.trim() ? auth.user.displayName : auth.user?.email;
   return <section aria-label="Benutzerkonto" className="auth-panel">
     {auth.user ? <>
-      <p>Angemeldet als {auth.user.email}</p>
+      <p>Angemeldet als {accountLabel}</p>
       {memberships.length ? <label>Aktive Organisation
         <select value={auth.activeOrganizationId ?? ''}
           onChange={event => selectOrganization(event.target.value)}>

@@ -28,7 +28,7 @@ frontend copies of future HTTP DTOs. Backend domain/API tickets introduce those.
 | Concept | Meaning and relationships |
 | --- | --- |
 | Organization | Tenant and scope for all business records, including sites, Nodes, cats, observations, visits and upload receipts. |
-| User | Global login identity (email/password); may participate in multiple Organizations. Not itself a tenant-owned business record. |
+| User | Global login identity (email/password); may participate in multiple Organizations. Not itself a tenant-owned business record. Carries the global human-readable `AppUser.displayName` (#32, nullable, max 255, trimmed, Unicode; UI falls back to email when absent). The name describes the person, not a membership: one user shows the same name in every organization. |
 | OrganizationMembership | User ↔ Organization link. **Role** answers which permissions apply; **status** answers whether access is currently allowed. An administrative role never overrides an inactive membership. Exact role/status sets belong to #16. |
 | AppDevice | Local installation identity with its own asymmetric key pair; backend registration connects public key, User and authorized Organization context. Private keys remain local; lifecycle and key protection belong to #17. |
 | FeedingSite | Organization-owned physical feeding location. |

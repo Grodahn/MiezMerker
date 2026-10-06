@@ -231,4 +231,14 @@ describe('auth session (#16)', () => {
     expect(states.at(-1)).toBe('a@example.org');
     expect(getAuthState().user?.email).toBe('a@example.org');
   });
+
+  test('session display name is stored with email fallback to null', async () => {
+    get.mockResolvedValue({ data: { userId: 'u-1', email: 'ada@example.org',
+      displayName: 'Ada Lovelace', memberships: [] } });
+    await fetchSession();
+    expect(getAuthState().user?.displayName).toBe('Ada Lovelace');
+    get.mockResolvedValue({ data: { userId: 'u-1', email: 'plain@example.org', memberships: [] } });
+    await fetchSession();
+    expect(getAuthState().user?.displayName).toBeNull();
+  });
 });
