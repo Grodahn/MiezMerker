@@ -11,6 +11,11 @@ import org.springframework.data.repository.query.Param;
 public interface RawObservationRepository extends JpaRepository<RawObservation, UUID> {
     Optional<RawObservation> findByNodeNodeIdAndSequence(UUID nodeId, long sequence);
 
+    List<RawObservation> findByOrganizationIdAndFeedingSiteId(UUID organizationId,
+            UUID feedingSiteId, org.springframework.data.domain.Pageable pageable);
+
+    long countByOrganizationIdAndFeedingSiteId(UUID organizationId, UUID feedingSiteId);
+
     @Query("select o from RawObservation o join fetch o.node n left join fetch o.feedingSite "
             + "where o.node.nodeId = :nodeId and o.sequence = :sequence")
     Optional<RawObservation> findByNodeAndSequenceWithRefs(

@@ -9,9 +9,9 @@ import java.util.List;
 import java.util.UUID;
 import org.miezmerker.backend.domain.FeedingSite;
 import org.miezmerker.backend.repo.FeedingSiteRepository;
-import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
+import org.miezmerker.backend.service.FeedingSiteService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,19 +30,23 @@ import org.springframework.web.server.ResponseStatusException;
  * normal care requires ACTIVE membership; deletion requires ADMIN.
  * The organization is always taken from the server-side
  * membership check, never trusted from the client alone.
+ *
+ * <p>Master-data logic lives in {@link FeedingSiteService} so the
+ * server-rendered Admin backend (#35) reuses the same domain semantics
+ * without a second implementation.
  */
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/feeding-sites")
 public class FeedingSiteController {
     private final FeedingSiteRepository sites;
-    private final OrganizationRepository organizations;
     private final TenantService tenants;
+    private final FeedingSiteService feedingSites;
 
     public FeedingSiteController(FeedingSiteRepository sites,
-            OrganizationRepository organizations, TenantService tenants) {
+            TenantService tenants, FeedingSiteService feedingSites) {
         this.sites = sites;
-        this.organizations = organizations;
         this.tenants = tenants;
+        this.feedingSites = feedingSites;
     }
 
     @Schema(name = "FeedingSiteView")
@@ -73,19 +77,6 @@ public class FeedingSiteController {
                 s.getLocationLabel(), s.getCreatedAt().toString(), s.getUpdatedAt().toString());
     }
 
-    private static void checkLocation(Double lat, Double lng) {
-        if ((lat == null) != (lng == null)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "locationLat and locationLng must be set together");
-        }
-        if (lat != null && (!Double.isFinite(lat) || lat < -90 || lat > 90)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "locationLat out of range");
-        }
-        if (lng != null && (!Double.isFinite(lng) || lng < -180 || lng > 180)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "locationLng out of range");
-        }
-    }
-
     @GetMapping(produces = "application/json")
     @Operation(operationId = "listFeedingSites",
             summary = "List feeding sites of an organization (requires ACTIVE membership)")
@@ -95,8 +86,7 @@ public class FeedingSiteController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireActive(principal.getId(), organizationId);
-        return sites.findByOrganizationId(organizationId).stream()
+        return feedingSites.list(principal.getId(), organizationId).stream()
                 .map(FeedingSiteController::toView).toList();
     }
 
@@ -109,9 +99,7 @@ public class FeedingSiteController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireActive(principal.getId(), organizationId);
-        return toView(sites.findByIdAndOrganizationId(siteId, organizationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
+        return toView(feedingSites.get(principal.getId(), organizationId, siteId));
     }
 
     @PostMapping(consumes = "application/json", produces = "application/json")
@@ -124,14 +112,9 @@ public class FeedingSiteController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireActive(principal.getId(), organizationId);
-        var org = organizations.findById(organizationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        checkLocation(request.locationLat(), request.locationLng());
-        FeedingSite site = new FeedingSite(org, request.name().trim(),
-                blankToNull(request.description()), request.locationLat(),
-                request.locationLng(), blankToNull(request.locationLabel()));
-        return toView(sites.save(site));
+        return toView(feedingSites.create(principal.getId(), organizationId,
+                request.name(), request.description(), request.locationLat(),
+                request.locationLng(), request.locationLabel()));
     }
 
     @PatchMapping(value = "/{siteId}", consumes = "application/json",
@@ -145,34 +128,12 @@ public class FeedingSiteController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireActive(principal.getId(), organizationId);
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }
-        FeedingSite site = sites.findByIdAndOrganizationId(siteId, organizationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        if (request.name() != null) {
-            if (request.name().isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "name must not be blank");
-            }
-            site.setName(request.name().trim());
-        }
-        if (request.description() != null) {
-            site.setDescription(blankToNull(request.description()));
-        }
-        if (Boolean.TRUE.equals(request.clearLocation())) {
-            site.setLocation(null, null, null);
-        } else if (request.locationLat() != null || request.locationLng() != null
-                || request.locationLabel() != null) {
-            Double lat = request.locationLat() != null ? request.locationLat()
-                    : site.getLocationLat();
-            Double lng = request.locationLng() != null ? request.locationLng()
-                    : site.getLocationLng();
-            checkLocation(lat, lng);
-            site.setLocation(lat, lng, request.locationLabel() != null
-                    ? blankToNull(request.locationLabel()) : site.getLocationLabel());
-        }
-        return toView(sites.save(site));
+        return toView(feedingSites.update(principal.getId(), organizationId, siteId,
+                request.name(), request.description(), request.locationLat(),
+                request.locationLng(), request.locationLabel(), request.clearLocation()));
     }
 
     @DeleteMapping("/{siteId}")
@@ -194,9 +155,5 @@ public class FeedingSiteController {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "feeding site is still referenced by deployments or observations");
         }
-    }
-
-    private static String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 }
