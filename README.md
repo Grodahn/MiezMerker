@@ -1,35 +1,104 @@
 # MiezMerker
 
-MiezMerker unterstützt die Betreuung von Streunerkatzen an Futterstellen. Ein
-batteriebetriebener ESP32-Node erkennt 134,2-kHz-Tierchips und sammelt Rohdaten.
-Eine **gemeinsame installierbare PWA** übernimmt sie vor Ort per BLE und lädt sie
-später ins Backend. Verwaltung und Auswertung gehören zu derselben PWA.
+**MiezMerker is an open-source hardware and software platform for animal shelters,
+rescue groups, and organizations caring for stray cats.** It is designed to
+identify microchipped cats at feeding stations using low-cost RFID/ESP32 nodes,
+collect observations offline in the field, and turn them into useful visit
+history for animal-welfare work.
+
+The project is intended to be freely reusable and self-hostable by interested
+shelters and organizations rather than tied to a proprietary service. The first
+intended real-world handoff is to an animal shelter in Düren, Germany, once the
+hardware path has been validated; the multi-organization architecture is designed
+so that other shelters can operate the same infrastructure independently.
+
+MiezMerker is currently under active development and is **not yet a finished
+animal-monitoring product**. Much of the software foundation already exists;
+physical RFID/antenna validation and final field deployment are still pending.
+
+## Why this project
+
+Stray-cat care often depends on repeated manual observation: which cat visits
+which feeding station, whether a known animal has returned, and whether an
+unknown microchip appears regularly.
+
+MiezMerker aims to provide an inexpensive, open alternative:
+
+- use standard 134.2 kHz animal microchips as the identity source;
+- collect observations at feeding stations with battery-powered ESP32 nodes;
+- keep field collection usable without Internet access;
+- synchronize observations later through a browser-based field app;
+- derive visits centrally while preserving immutable raw observations;
+- support multiple independent organizations with strict tenant separation;
+- keep hardware, protocol, backend, and application code openly inspectable and
+  reproducible.
+
+The project also serves as a practical experiment in agent-assisted open-source
+engineering. Implementation work is decomposed into explicit GitHub issue
+contracts, reviewed, tested, and integrated through reproducible CI rather than
+treating generated code as trusted by default.
+
+## System overview
+
+The target architecture separates **field work** from **administration**:
 
 ```text
-RFID → Node (Rohdaten) → BLE → PWA (lokale Outbox) → HTTP Backend
-                                                        ↓
-                                          serverseitig abgeleitete Besuche
-                                                        ↓
-                                             Verwaltung in derselben PWA
+134.2 kHz RFID
+      ↓
+ESP32 feeding-station node
+      ↓  BLE, works without Internet
+Field PWA
+  login / sync / nodes / cats
+      ↓  HTTP when connectivity is available
+Spring Boot backend
+      ↓
+immutable RawObservations
+      ↓
+server-side DerivedVisits
+      ↓
+Admin web UI
+  members / sites / cats / observations / visits
 ```
 
-Node-Sync funktioniert ohne Internet; Backend-Sync ist ein unabhängiger Ablauf.
-Rohbeobachtungen bleiben unverändert. Firmware und PWA aggregieren keine Visits.
-Issue [#2](https://github.com/Grodahn/MiezMerker/issues/2) liefert das Fundament.
-Issue #5 ergänzt die hardwareunabhängige Rohdaten-Erfassung mit RTC, Sequence
-und persistentem Store (`firmware-core/README.md`).
-Organisationen, Benutzer, Memberships und Login (#16), signierte Offline-BLE-
-Berechtigungen mit AppDevice-Identitäten (#17) sowie Node-Identität und Claiming (#18)
-sind implementiert.
-**Issue #9 (organisationsgescopter Domain + idempotenter Rohdaten-Ingest) ist implementiert.**
-#19 (Invite-per-E-Mail) und die übrigen Features folgen.
+The field PWA remains installable and offline-capable. Administrative workflows
+are being moved to a server-rendered Spring MVC/Thymeleaf back office so that the
+field application stays focused on work at feeding stations.
+
+## Current status
+
+| Area | Current state |
+| --- | --- |
+| Repository architecture | React/TypeScript field PWA, Java/Spring Boot backend, PostgreSQL, C++20 firmware core, ESP32 composition layer, simulator, BLE protocol contracts |
+| Offline collection | Local PWA outbox, offline-capable app shell, signed time-limited BLE credentials, AppDevice identities |
+| Organizations & security | Multi-organization users/memberships, session login, tenant separation, signed offline authorization, node identity and claiming |
+| Observation pipeline | Idempotent immutable raw-observation ingest and reproducible server-side visit derivation |
+| Testing | Backend/app/firmware-core tests, PostgreSQL CI, Playwright flows, deterministic firmware simulator |
+| Admin/UI split | Auth gate and user display names complete; dedicated server-side admin pages are being implemented under #30–#38 |
+| Hardware | Firmware abstractions exist; physical RFID reader/antenna and long-running field validation are still outstanding |
+| Deployment | First real-world shelter handoff is planned after hardware validation; broader reuse by other animal-welfare organizations is a project goal |
+
+## Development priorities
+
+The near-term path is deliberately practical:
+
+1. finish the field-PWA / admin-backend separation (#30–#38);
+2. validate the physical 134.2 kHz RFID reader and antenna geometry (#3/#4);
+3. prove the end-to-end path from chip read to derived visit (#13);
+4. validate real-world power/runtime behavior (#12);
+5. complete the remaining onboarding/invite flow (#19);
+6. package the system so another shelter or organization can deploy it without
+   project-specific knowledge.
+
+Contributions are welcome, particularly around embedded hardware, RFID/antenna
+testing, Web Bluetooth, Spring/Java, React/PWA, security review, deployment,
+documentation, and field usability.
 
 ## Repository
 
 | Pfad | Verantwortung |
 | --- | --- |
-| `/app` | Ein React/TypeScript/Vite-Projekt: Collector #8 und Verwaltung #11; PWA, Dexie, Browser-Ports |
-| `/backend` | Java/Spring Boot, Security, JPA, PostgreSQL, Flyway und HTTP OpenAPI |
+| `/app` | React/TypeScript/Vite Feld-PWA: Login, Offline-Sync, Nodes und Katzen; Dexie, Web-Bluetooth-/Browser-Ports |
+| `/backend` | Java/Spring Boot, Security, JPA, PostgreSQL, Flyway, HTTP OpenAPI und serverseitiges Admin-Backoffice |
 | `/firmware-core` | Portabler C++20-Core und Hardware-Ports |
 | `/firmware-esp32` | Plattform-Komposition; spätere ESP-IDF-Adapter |
 | `/simulator` | Deterministischer Firmware-Core-Simulator und Szenario-Engine (`simulator/README.md`) |
@@ -38,7 +107,8 @@ sind implementiert.
 | `/hardware` | Platz für Schaltplan, BOM, Verdrahtung und Messungen |
 
 [Architektur](docs/architecture.md) und [ADRs](docs/adr/) sind die gemeinsame
-Grundlage für folgende Implementierungen. Es gibt keine native Android-App.
+Grundlage für folgende Implementierungen. Es gibt keine native Android-App; die
+Feldanwendung bleibt bewusst eine installierbare PWA.
 
 ## Voraussetzungen
 
