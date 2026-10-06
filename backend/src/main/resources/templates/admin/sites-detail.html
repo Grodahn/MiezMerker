@@ -7,6 +7,13 @@
 <div th:replace="~{admin/layout :: topbar}"></div>
 <div th:replace="~{admin/layout :: nav('sites')}"></div>
 <main>
+<style>
+.table-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}
+th{font-weight:700;background:#f9fafb}
+small.muted{display:block;opacity:.75;font-size:.85rem}
+</style>
 <h1 th:text="${siteName}">Futterstelle</h1>
 <p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
@@ -30,13 +37,6 @@
 <p><small>Aktuelle Zuordnung aus zeitbasierten Deployments (gültig jetzt). Historie bleibt unverändert; Umzüge nur über die bestehende atomare Deployment-Pflege.</small></p>
 <p th:if="${currentNodeCount == 0}">Keine aktuell zugeordneten Nodes.</p>
 <div th:if="${currentNodeCount > 0}" class="table-scroll" role="region" aria-label="Aktuelle Nodes" tabindex="0">
-<style>
-.table-scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:640px}
-th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}
-th{font-weight:700;background:#f9fafb}
-small.muted{display:block;opacity:.75;font-size:.85rem}
-</style>
 <table>
 <caption class="sr-only">Aktuelle Nodes</caption>
 <thead><tr><th scope="col">Node</th><th scope="col">Firmware / Notiz</th><th scope="col">Letzter Serverkontakt</th></tr></thead>
@@ -55,7 +55,7 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 </div>
 <div class="card">
 <h2>Deployment-Historie (<span th:text="${deploymentCount}">0</span>)</h2>
-<p><small>Intervalle: <code>valid_from</code> einschließlich, <code>valid_until</code> ausschließlich (<code>null</code> = aktuell offen). Historische Intervalle werden durch Stammdaten-Änderungen nie umgedeutet.</small></p>
+<p><small>Intervalle: <code>valid_from</code> einschließlich, <code>valid_until</code> ausschließlich (<code>null</code> = ohne Enddatum). Historische Intervalle werden durch Stammdaten-Änderungen nie umgedeutet.</small></p>
 <p th:if="${deploymentCount == 0}">Keine Deployments für diese Futterstelle.</p>
 <div th:if="${deploymentCount > 0}" class="table-scroll" role="region" aria-label="Deployment-Historie" tabindex="0">
 <table>
@@ -65,7 +65,7 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 <tr th:each="d : ${deployments}">
 <td><code th:text="${d.nodeId}">node</code></td>
 <td th:text="${d.validFrom}">ab</td>
-<td th:text="${d.validUntil != null ? d.validUntil : 'aktuell offen'}">bis</td>
+<td th:text="${d.validUntil != null ? d.validUntil : 'Ohne Enddatum'}">bis</td>
 </tr>
 </tbody>
 </table>

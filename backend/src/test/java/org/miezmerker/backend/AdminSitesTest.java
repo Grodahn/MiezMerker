@@ -55,6 +55,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @ActiveProfiles("test")
 class AdminSitesTest {
     @Value("${local.server.port}") int port;
+    String formOrganizationId;
 
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;
@@ -86,8 +87,14 @@ class AdminSitesTest {
     }
 
     HttpResponse<String> get(String path) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create(base(path))).GET().build(),
+        var response = client.send(HttpRequest.newBuilder(URI.create(base(path))).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
+        Matcher org = Pattern.compile("name=\"formOrganizationId\"[^>]*value=\"([^\"]+)\"")
+                .matcher(response.body());
+        if (org.find()) {
+            formOrganizationId = org.group(1);
+        }
+        return response;
     }
 
     String extractCsrf(String html) {
@@ -160,6 +167,10 @@ class AdminSitesTest {
                 sb.append('&');
             }
             sb.append("_csrf=").append(URLEncoder.encode(csrf, StandardCharsets.UTF_8));
+        }
+        if (formOrganizationId != null && !java.util.Arrays.asList(pairs)
+                .contains("formOrganizationId")) {
+            sb.append("&formOrganizationId=").append(formOrganizationId);
         }
         return sb.toString();
     }
@@ -461,7 +472,7 @@ class AdminSitesTest {
         // Currently assigned node is shown with server contact info.
         assertTrue(detailB.body().contains(node.getNodeId().toString()), detailB.body());
         // Open deployment is marked honestly.
-        assertTrue(detailB.body().contains("aktuell offen"), detailB.body());
+        assertTrue(detailB.body().contains("Ohne Enddatum"), detailB.body());
         // UNKNOWN clock is never a precise timestamp.
         assertTrue(detailB.body().contains("Uhrzeit unbekannt"), detailB.body());
         assertFalse(detailB.body().contains("Rohwert: null"), detailB.body());
@@ -670,6 +681,49 @@ class AdminSitesTest {
         assertEquals(200, listB.statusCode(), listB.body());
         assertTrue(listB.body().contains("Nur B"), listB.body());
         assertFalse(listB.body().contains("Nur A"), listB.body());
+    }
+
+    @Test
+    void staleCreateFormCannotWriteIntoNewlySelectedOrganization() throws Exception {
+        Fixture f = seed();
+        assertLoginSuccess(formLogin("a35-multi-admin@example.org", "supersecret-password-x"));
+        String csrf = adminPageCsrf("/admin/org");
+        assertEquals(302, postForm("/admin/org", formBody(csrf,
+                "organizationId", f.orgA().getId().toString())).statusCode());
+        String staleCsrf = adminPageCsrf("/admin/sites/new");
+        String staleOrg = formOrganizationId;
+        assertEquals(f.orgA().getId().toString(), staleOrg);
+        assertEquals(302, postForm("/admin/org", formBody(staleCsrf,
+                "organizationId", f.orgB().getId().toString())).statusCode());
+
+        var stale = postForm("/admin/sites", formBody(staleCsrf,
+                "name", "Created for A", "formOrganizationId", staleOrg));
+        assertEquals(409, stale.statusCode(), stale.body());
+        assertEquals(0, sites.count());
+
+        String freshCsrf = adminPageCsrf("/admin/sites/new");
+        assertEquals(f.orgB().getId().toString(), formOrganizationId);
+        var fresh = postForm("/admin/sites", formBody(freshCsrf, "name", "Created for B"));
+        assertEquals(302, fresh.statusCode(), fresh.body());
+        assertEquals(1, sites.findByOrganizationId(f.orgB().getId()).size());
+        assertTrue(sites.findByOrganizationId(f.orgA().getId()).isEmpty());
+    }
+
+    @Test
+    void futureDeploymentIsNotPresentedAsCurrentAndHistoryKeepsTableStyles() throws Exception {
+        Fixture f = seed();
+        FeedingSite site = saveSite(f.orgA(), "Future site", null, null);
+        NodeDevice node = saveClaimedNode(f.orgA());
+        deployments.save(new NodeDeployment(f.orgA(), node, site,
+                Instant.now().plus(Duration.ofDays(30)), null));
+        assertLoginSuccess(formLogin("a35-admin-a@example.org", "supersecret-password-a"));
+        var detail = get("/admin/sites/" + site.getId());
+        assertEquals(200, detail.statusCode(), detail.body());
+        assertTrue(detail.body().contains("Keine aktuell zugeordneten Nodes."), detail.body());
+        assertTrue(detail.body().contains(node.getNodeId().toString()), detail.body());
+        assertTrue(detail.body().contains("Ohne Enddatum"), detail.body());
+        assertFalse(detail.body().contains("aktuell offen"), detail.body());
+        assertTrue(detail.body().contains(".table-scroll{overflow-x:auto}"), detail.body());
     }
 
     @Test

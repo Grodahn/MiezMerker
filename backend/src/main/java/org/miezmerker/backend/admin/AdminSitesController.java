@@ -139,6 +139,7 @@ public class AdminSitesController {
     @Transactional
     public String create(@AuthenticationPrincipal AppUserDetails principal,
             HttpSession session, Model model,
+            @RequestParam UUID formOrganizationId,
             @RequestParam(value = "name", required = false) String name,
             @RequestParam(value = "description", required = false) String description,
             @RequestParam(value = "locationLabel", required = false) String locationLabel,
@@ -148,6 +149,12 @@ public class AdminSitesController {
         ActiveContext ctx = requireContext(principal, session, model);
         if (ctx == null) {
             return "redirect:/admin/org";
+        }
+        // This is a stale-form guard, not tenant authority. Writes still use
+        // only the validated active organization from the session.
+        if (!ctx.org().id().equals(formOrganizationId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Organisation gewechselt. Bitte das Anlageformular neu öffnen.");
         }
         List<String> errors = new ArrayList<>();
         String cleanName = validateName(name, errors);

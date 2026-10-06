@@ -41,8 +41,11 @@ ADMIN-API, blockiert bei referenzierenden Deployments/Observations).
 Jede Operation nutzt ausschließlich die serverseitige aktive Admin-Org
 (`ADMIN_ORG_ID` via `AdminService.requireActiveOrg` → `TenantService.requireAdmin`).
 
-- Keine `organizationId` aus dem Browser wird als Berechtigung akzeptiert;
-  Formulare enthalten keine Org-IDs.
+- Keine Org-ID aus dem Browser wird als Berechtigung akzeptiert.
+  Das Anlageformular enthält `formOrganizationId` ausschließlich als
+  Stale-Form-Prüfung: nach einem Org-Wechsel wird ein altes Formular mit
+  409 abgewiesen. Die Schreibberechtigung und Ziel-Org kommen weiterhin
+  ausschließlich aus dem validierten Session-Kontext.
 - Reads/Writes via `findByOrganizationId` / `findByIdAndOrganizationId`.
 - Fremde IDs → 404 ohne Leak (kein Name, Ort, Beschreibung, Nodes,
   Observations, Deployments, keine Existenz-Orakel).
@@ -61,7 +64,8 @@ Zeitbasiert wie #9: `[valid_from` inklusiv, `valid_until)` exklusiv,
   zugehörigem CLAIMED-Node derselben Org; angezeigt mit Firmware, Notiz und
   letztem Serverkontakt (`lastContactAt`, `null` = „Noch kein Kontakt“).
 - Historie: alle Deployments dieser Site, neuestes zuerst, mit
-  `valid_from`/`valid_until` („aktuell offen“ bei `null`).
+  `valid_from`/`valid_until` („Ohne Enddatum“ bei `null`, auch bei einem
+  zukünftigen Start; dies bedeutet nicht aktuell zugeordnet).
 - Stammdaten-Edit ändert nur `feeding_sites`-Spalten. Deployments,
   frozen `feeding_site_id`/`deployment_id` auf RawObservations und
   `feeding_site_id` auf DerivedVisits bleiben unberührt.
@@ -105,7 +109,7 @@ Keine zweite Fachlogik, keine Entfernung der PWA-Seite in #35.
 
 ## Tests
 
-`AdminSitesTest` (14 Integrationstests, H2, wie `AdminShellTest`):
+`AdminSitesTest` (16 Integrationstests, H2, wie `AdminShellTest`):
 
 - Unauthentifiziert → Login-Redirect; ADMIN ok; MEMBER/PENDING/DISABLED → 403.
 - Liste: nur eigene Sites, leere Org mit Empty-State.
@@ -118,6 +122,10 @@ Keine zweite Fachlogik, keine Entfernung der PWA-Seite in #35.
 - Tenant-Isolation A↔B (Detail/Edit/Liste, kein Leak, Random-ID = 404).
 - Historie A→B mit frozen Attribution + Visit-Garantie nach beidseitigem Edit.
 - Multi-Org-Wechsel A↔B ohne stale Daten.
+- Altes Anlageformular nach Org-Wechsel → 409 ohne Anlage in A oder B;
+  frisch geöffnetes Formular legt korrekt in B an.
+- Zukünftige offene Deployments werden nicht als aktuell bezeichnet;
+  Tabellenstile bleiben auch ohne aktuelle Nodes erhalten.
 - REST-Vertrag für PWA unverändert (JSON-Liste enthält erstellte Site).
 
 Bestand: `AdminShellTest`, `Issue9IngestTest`, `Issue10VisitsTest`,
