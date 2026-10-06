@@ -135,15 +135,7 @@ public class AdminController {
         return "redirect:/admin/";
     }
 
-    // Placeholder routes for #36-#37. Member and site management live in
-    // AdminMembersController and AdminSitesController.
-
-    @GetMapping("/cats")
-    public String cats(@AuthenticationPrincipal AppUserDetails principal,
-            HttpSession session, Model model) {
-        return placeholder(principal, session, model, "Katzen",
-                "Katzenverwaltung folgt in #37 (Liste, Chips, Status, Sichtungen).");
-    }
+    // Placeholder routes for #36. Members, sites and cats have dedicated controllers.
 
     @GetMapping("/observations")
     public String observations(@AuthenticationPrincipal AppUserDetails principal,

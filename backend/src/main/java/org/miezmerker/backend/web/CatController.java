@@ -9,9 +9,9 @@ import java.util.List;
 import java.util.UUID;
 import org.miezmerker.backend.domain.Cat;
 import org.miezmerker.backend.repo.CatRepository;
-import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
+import org.miezmerker.backend.service.CatService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,13 +34,13 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/v1/organizations/{organizationId}/cats")
 public class CatController {
     private final CatRepository cats;
-    private final OrganizationRepository organizations;
+    private final CatService service;
     private final TenantService tenants;
 
-    public CatController(CatRepository cats, OrganizationRepository organizations,
+    public CatController(CatRepository cats, CatService service,
             TenantService tenants) {
         this.cats = cats;
-        this.organizations = organizations;
+        this.service = service;
         this.tenants = tenants;
     }
 
@@ -107,25 +107,8 @@ public class CatController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireActive(principal.getId(), organizationId);
-        var org = organizations.findById(organizationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        String chip = Cat.normalizeChipId(request.chipId());
-        if (chip == null || chip.isEmpty() || chip.length() > 64) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "chipId must have 1..64 characters");
-        }
-        if (cats.findByOrganizationIdAndChipId(organizationId, chip).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "chipId already registered in this organization");
-        }
-        Cat cat = new Cat(org, chip, blankToNull(request.name()),
-                blankToNull(request.status()), blankToNull(request.notes()));
-        try {
-            return toView(cats.saveAndFlush(cat));
-        } catch (org.springframework.dao.DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "chipId already registered in this organization");
-        }
+        return toView(service.create(principal.getId(), organizationId, request.chipId(),
+                request.name(), request.status(), request.notes()));
     }
 
     @PatchMapping(value = "/{catId}", consumes = "application/json",
@@ -143,36 +126,8 @@ public class CatController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }
-        Cat cat = cats.findByIdAndOrganizationId(catId, organizationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        if (request.chipId() != null) {
-            String chip = Cat.normalizeChipId(request.chipId());
-            if (chip == null || chip.isEmpty() || chip.length() > 64) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "chipId must have 1..64 characters");
-            }
-            if (!chip.equals(cat.getChipId())
-                    && cats.findByOrganizationIdAndChipId(organizationId, chip).isPresent()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "chipId already registered in this organization");
-            }
-            cat.setChipId(chip);
-        }
-        if (request.name() != null) {
-            cat.setName(blankToNull(request.name()));
-        }
-        if (request.status() != null) {
-            cat.setStatus(blankToNull(request.status()));
-        }
-        if (request.notes() != null) {
-            cat.setNotes(blankToNull(request.notes()));
-        }
-        try {
-            return toView(cats.saveAndFlush(cat));
-        } catch (org.springframework.dao.DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "chipId already registered in this organization");
-        }
+        return toView(service.update(principal.getId(), organizationId, catId,
+                request.chipId(), request.name(), request.status(), request.notes()));
     }
 
     @DeleteMapping("/{catId}")
@@ -190,7 +145,4 @@ public class CatController {
         cats.delete(cat);
     }
 
-    private static String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
-    }
 }

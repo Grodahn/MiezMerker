@@ -1,0 +1,23 @@
+<!DOCTYPE html><html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Katzen')}"><title>Katzen · MiezMerker Admin</title></head><body>
+<div th:replace="~{admin/layout :: topbar}"></div><div th:replace="~{admin/layout :: nav('cats')}"></div>
+<style>.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:.6rem;border-bottom:1px solid #d1d5db}td{overflow-wrap:anywhere}caption{text-align:left;font-weight:600}</style>
+<main><p>Aktive Organisation: <strong th:text="${activeOrg.displayName}">Organisation</strong></p>
+<h1>Katzen</h1><p><a href="/cats">Katzen in der PWA öffnen</a></p>
+<p>Verlässliche Sichtungen (UTC) und Server-Empfang (UTC) werden getrennt angezeigt. Futterstellen stammen aus der historischen Zuordnung der Beobachtungen.</p>
+<p th:if="${#lists.isEmpty(cats)}" class="card">Noch keine Katzen in dieser Organisation.</p>
+<div th:unless="${#lists.isEmpty(cats)}" class="table-wrap"><table><caption>Bekannte Katzen</caption><thead><tr><th scope="col">Name / Chip</th><th scope="col">Status / Notiz</th><th scope="col">Letzte verlässliche Sichtung</th><th scope="col">Letzte bekannte Futterstelle</th><th scope="col">Aktivität / Empfang</th></tr></thead>
+<tbody><tr th:each="cat : ${cats}"><td><a th:href="@{/admin/cats/{id}(id=${cat.id})}" th:text="${cat.name ?: 'Unbenannte Katze'}">Name</a><br/><code th:text="${cat.chipId}">Chip</code></td>
+<td><span th:text="${cat.status ?: '–'}">Status</span><p th:text="${cat.notes}">Notiz</p></td>
+<td th:text="${cat.sighting ?: 'unbekannt – keine verlässliche Uhrzeit'}">Zeit</td>
+<td><span th:if="${#lists.isEmpty(cat.lastSites)}">unbekannt</span><div th:each="site : ${cat.lastSites}"><a th:href="@{/admin/sites/{id}(id=${site.id})}" th:text="${site.name}">Futterstelle</a></div></td>
+<td><span th:text="${cat.count}">0</span> Beobachtungen<br/>Letzter Server-Empfang: <span th:text="${cat.received ?: 'unbekannt'}">Zeit</span><p th:if="${cat.uncertain > 0}">Uhrzeit unbekannt/ungültig: <span th:text="${cat.uncertain}">0</span></p></td>
+</tr></tbody></table></div><h2>Unbekannte Chips</h2><p>Beobachtete Chips ohne zugeordnete Katze sind ein gültiger Zustand.</p>
+<p th:if="${#lists.isEmpty(unknown)}">Keine unbekannten Chips in dieser Organisation.</p>
+<div th:unless="${#lists.isEmpty(unknown)}" class="table-wrap"><table><caption>Beobachtete Chips ohne Katze</caption><thead><tr><th scope="col">Chip-ID / Aktion</th><th scope="col">Status / Notiz</th><th scope="col">Letzte verlässliche Sichtung</th><th scope="col">Letzte bekannte Futterstelle</th><th scope="col">Aktivität / Empfang</th></tr></thead>
+<tbody><tr th:each="cat : ${unknown}"><td><code th:text="${cat.chipId}">Chip</code><br/><a th:href="@{/admin/cats/from-chip(chipId=${cat.chipId})}">Katze anlegen</a></td>
+<td><span th:text="${cat.status ?: '–'}">Status</span><p th:text="${cat.notes}">Notiz</p></td>
+<td th:text="${cat.sighting ?: 'unbekannt – keine verlässliche Uhrzeit'}">Zeit</td>
+<td><span th:if="${#lists.isEmpty(cat.lastSites)}">unbekannt</span><div th:each="site : ${cat.lastSites}"><a th:href="@{/admin/sites/{id}(id=${site.id})}" th:text="${site.name}">Futterstelle</a></div></td>
+<td><span th:text="${cat.count}">0</span> Beobachtungen<br/>Letzter Server-Empfang: <span th:text="${cat.received ?: 'unbekannt'}">Zeit</span><p th:if="${cat.uncertain > 0}">Uhrzeit unbekannt/ungültig: <span th:text="${cat.uncertain}">0</span></p></td>
+</tr></tbody></table></div></main><div th:replace="~{admin/layout :: footer}"></div></body></html>
