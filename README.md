@@ -231,8 +231,8 @@ npm run test:e2e
 ```
 
 Linux benötigt für Chromium ggf. `npx playwright install --with-deps chromium`.
-Playwright startet selbst die Production-Preview auf Port 4173; diesen Port
-freihalten. Geprüft werden echter Same-Origin-Proxy, Offline-Neuladen der
+Playwright startet selbst die Production-Preview auf Port 4173 und den
+Dev-Server auf Port 5173; beide Ports freihalten. Geprüft werden echter Same-Origin-Proxy, Offline-Neuladen der
 Collector-App-Shell und persistente Outbox sowie Nodes/Cats, die Auth-Grenze und servergerenderte Admin-URLs
 bei Desktop- und Mobilbreite. Der Vite-Dev-Modus aktiviert keinen
 Service Worker. Zum manuellen Offline-Test `npm run build` und `npm run preview`

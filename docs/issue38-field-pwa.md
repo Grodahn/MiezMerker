@@ -41,7 +41,8 @@ are unchanged. Historical #11 documentation carries an architecture follow-up no
 Vite development and production preview proxy `/admin` and `/admin/**` to Spring,
 as they already do for `/api`. The default target is port 8080;
 `MIEZMERKER_BACKEND_URL` can select an isolated local backend for verification. The production worker excludes both namespaces
-from its navigation fallback and caches no business HTTP responses or Admin HTML.
+from its navigation fallback, including bare roots with query strings such as
+`/admin?from=field`, and caches no business HTTP responses or Admin HTML.
 The PWA manifest can retain its existing root scope and `/sync` start URL.
 
 There is no Spring SPA forward/fallback or bundled React static shell in this

@@ -5,7 +5,7 @@ test('direct Admin URLs reach Spring HTML even after the field worker controls n
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
   await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-  for (const path of ['/admin', '/admin/', '/admin/members', '/admin/sites', '/admin/cats', '/admin/observations', '/admin/visits']) {
+  for (const path of ['/admin?from=field', '/admin', '/admin/', '/admin/members', '/admin/sites', '/admin/cats', '/admin/observations', '/admin/visits']) {
     const response = await page.goto(path);
     expect(response?.status()).toBe(200);
     expect(new URL(page.url()).pathname).toBe('/admin/login');
@@ -22,11 +22,13 @@ test('direct Admin URLs reach Spring HTML even after the field worker controls n
   expect(cached.some(path => /^\/admin(?:\/|$)/.test(path))).toBe(false);
   await context.setOffline(true);
   // A denied network navigation must fail, never return the cached React shell.
-  await expect(page.goto('/admin/sites')).rejects.toThrow();
+  for (const path of ['/admin/sites', '/admin?from=field', '/api?from=field']) {
+    await expect(page.goto(path)).rejects.toThrow();
+  }
 });
 
 test('development proxy reserves the complete Admin namespace for Spring', async ({ request }) => {
-  for (const path of ['/admin', '/admin/', '/admin/members', '/admin/sites', '/admin/cats', '/admin/observations', '/admin/visits']) {
+  for (const path of ['/admin?from=field', '/admin', '/admin/', '/admin/members', '/admin/sites', '/admin/cats', '/admin/observations', '/admin/visits']) {
     const response = await request.get(`http://127.0.0.1:5173${path}`);
     expect(response.status()).toBe(200);
     expect(new URL(response.url()).pathname).toBe('/admin/login');
