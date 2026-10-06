@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Mitglieder')}">
+<title>Mitglieder · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('members')}"></div>
+<main>
+<h1>Mitglieder</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong>
+<span th:text="' (' + ${activeOrg.slug} + ')'"> (slug)</span></p>
+<p style="opacity:.8">Anzeigename gehört zur globalen Benutzeridentität (<code>AppUser.displayName</code>);
+eine Änderung wirkt organisationsübergreifend. Ohne Namen wird die E-Mail gezeigt;
+es wird kein Name aus der E-Mail abgeleitet oder gespeichert.</p>
+<!-- Extension point for #19: a future 'Mitglied einladen' action (mail/token/activation)
+     will be added here as a POST form. No invite flow is implemented in #34. -->
+
+<div th:if="${success != null}" class="alert alert-info" th:text="${success}">Erfolg</div>
+<div th:if="${error != null}" class="alert alert-error" th:text="${error}">Fehler</div>
+
+<div th:if="${#lists.isEmpty(members)}" class="card">
+<p><strong>Keine Mitglieder sichtbar.</strong></p>
+<p style="opacity:.7">Diese Organisation hat derzeit keine sichtbaren Mitgliedschaften.</p>
+</div>
+
+<div th:if="${!#lists.isEmpty(members)}" class="card" style="padding:0;overflow:auto">
+<style>
+table.members{width:100%;border-collapse:collapse;background:#fff}
+table.members th,table.members td{border-bottom:1px solid #e5e7eb;padding:.55rem .6rem;text-align:left;vertical-align:top}
+table.members th{background:#f9fafb;font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:#374151}
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.8rem;border:1px solid #d1d5db;background:#f9fafb}
+.badge-active{background:#ecfdf5;border-color:#6ee7b7;color:#065f46}
+.badge-pending{background:#fffbeb;border-color:#fcd34d;color:#92400e}
+.badge-disabled{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
+form.inline{display:inline}
+form.inline select,form.inline input[type=text]{font:inherit;max-width:11rem;padding:.4rem .5rem;border:1px solid #d1d5db;border-radius:.35rem}
+.row-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+.muted{color:#6b7280;font-size:.85rem}
+@media(max-width:640px){
+table.members thead{display:none}
+table.members,table.members tbody,table.members tr,table.members td{display:block;width:100%}
+table.members tr{border:1px solid #e5e7eb;border-radius:.5rem;margin-bottom:.8rem;background:#fff}
+table.members td{border-bottom:none}
+table.members td[data-label]::before{content:attr(data-label) ": ";font-weight:600;color:#374151}
+}
+</style>
+<table class="members">
+<thead>
+<tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th>Aktionen</th></tr>
+</thead>
+<tbody>
+<tr th:each="m : ${members}">
+<td data-label="Name" th:text="${m.displayOrEmail}">Name</td>
+<td data-label="E-Mail" th:text="${m.email}">a@example.org</td>
+<td data-label="Rolle"><span th:text="${m.role}">MEMBER</span></td>
+<td data-label="Status">
+<span class="badge" th:classappend="${m.status == 'ACTIVE' ? ' badge-active' : (m.status == 'PENDING' ? ' badge-pending' : ' badge-disabled')}" th:text="${m.status}">ACTIVE</span>
+</td>
+<td data-label="Aktionen">
+<div class="row-actions">
+<form class="inline" method="post" th:action="@{'/admin/members/' + ${m.membershipId}}">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<select name="role" aria-label="Rolle ändern">
+<option value="">Rolle…</option>
+<option value="ADMIN" th:selected="${m.role == 'ADMIN'}">ADMIN</option>
+<option value="MEMBER" th:selected="${m.role == 'MEMBER'}">MEMBER</option>
+</select>
+<select name="status" aria-label="Status ändern">
+<option value="">Status…</option>
+<option value="PENDING" th:selected="${m.status == 'PENDING'}">PENDING</option>
+<option value="ACTIVE" th:selected="${m.status == 'ACTIVE'}">ACTIVE</option>
+<option value="DISABLED" th:selected="${m.status == 'DISABLED'}">DISABLED</option>
+</select>
+<button class="btn btn-secondary" type="submit">Rolle/Status speichern</button>
+</form>
+<form class="inline" method="post" th:action="@{'/admin/members/' + ${m.membershipId}}">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<input type="text" name="displayName" maxlength="255" placeholder="Anzeigename" th:value="${m.displayName}" aria-label="Anzeigename ändern"/>
+<button class="btn btn-secondary" type="submit">Name speichern</button>
+</form>
+</div>
+<div class="muted" th:text="'ID: ' + ${m.membershipId}">ID</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p class="muted" style="opacity:.7;font-size:.85rem">Hinweis: Es gibt bewusst keinen Schutz vor dem Entfernen des letzten ADMIN (Stand #16-Semantik);
+eine Organisation ohne ADMIN benötigt erneute ADMIN-Provisionierung.</p>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

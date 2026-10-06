@@ -135,14 +135,9 @@ public class AdminController {
         return "redirect:/admin/";
     }
 
-    // --- Placeholder stubs for #34-#37 (reusable layout, no detailed logic yet) ---
-
-    @GetMapping("/members")
-    public String members(@AuthenticationPrincipal AppUserDetails principal,
-            HttpSession session, Model model) {
-        return placeholder(principal, session, model, "Mitglieder",
-                "Mitgliederverwaltung folgt in #34 (Name, E-Mail, Rolle, Status).");
-    }
+    // --- Placeholder stubs for #35-#37 (reusable layout, no detailed logic yet) ---
+    // NOTE (#34): GET /admin/members lives in AdminMembersController (real member
+    // management). This stub was removed to avoid an ambiguous mapping.
 
     @GetMapping("/sites")
     public String sites(@AuthenticationPrincipal AppUserDetails principal,
