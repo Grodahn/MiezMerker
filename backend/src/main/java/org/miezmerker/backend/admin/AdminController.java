@@ -137,20 +137,6 @@ public class AdminController {
 
     // Placeholder routes for #36. Members, sites and cats have dedicated controllers.
 
-    @GetMapping("/observations")
-    public String observations(@AuthenticationPrincipal AppUserDetails principal,
-            HttpSession session, Model model) {
-        return placeholder(principal, session, model, "Rohbeobachtungen",
-                "Rohbeobachtungen folgen in #36 (Liste, Filter, Clock-Status, Site-Zuordnung).");
-    }
-
-    @GetMapping("/visits")
-    public String visits(@AuthenticationPrincipal AppUserDetails principal,
-            HttpSession session, Model model) {
-        return placeholder(principal, session, model, "Besuche",
-                "Besuche folgen in #36 (Start/Ende/Dauer, Katze/Chip, Provenance, Recompute).");
-    }
-
     private String placeholder(AppUserDetails principal, HttpSession session, Model model,
             String section, String hint) {
         if (principal == null) {

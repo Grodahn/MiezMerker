@@ -96,3 +96,9 @@ CSRF-Semantik sind unverändert.
 `/admin/cats` ist jetzt implementiert. Details zu Pflege, unbekannten Chips,
 Zeit-/Tenant-Semantik und historischen Futterstellen stehen in
 [issue37-admin-cats.md](issue37-admin-cats.md). PWA `/cats` bleibt erhalten.
+
+## Observations and visits (#36)
+
+The observation and visit placeholders are now implemented. See
+[filters, pagination, clock/history semantics and recompute](issue36-admin-observations-visits.md).
+PWA routes remain available until #38.
