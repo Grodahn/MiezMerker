@@ -11,7 +11,7 @@
 <p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong>
 <span th:text="' (' + ${activeOrg.slug} + ')'"> (slug)</span></p>
 <div class="grid">
-<a class="card cardlink" th:href="@{/admin/members}"><h2>Mitglieder</h2><p>Name, E-Mail, Rolle, Status. Verwaltung folgt in #34.</p></a>
+<a class="card cardlink" th:href="@{/admin/members}"><h2>Mitglieder</h2><p>Name, E-Mail, Rolle, Status pflegen (aktive Organisation).</p></a>
 <a class="card cardlink" th:href="@{/admin/sites}"><h2>Futterstellen</h2><p>Liste, Anlage, Detail, Nodes. Verwaltung folgt in #35.</p></a>
 <a class="card cardlink" th:href="@{/admin/cats}"><h2>Katzen</h2><p>Chips, Status, Sichtungen. Verwaltung folgt in #37.</p></a>
 <a class="card cardlink" th:href="@{/admin/observations}"><h2>Rohbeobachtungen</h2><p>Technische Rohdaten, Filter. Ansicht folgt in #36.</p></a>

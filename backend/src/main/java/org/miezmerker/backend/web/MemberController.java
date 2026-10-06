@@ -20,6 +20,7 @@ import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
+import org.miezmerker.backend.service.MemberService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -45,14 +46,17 @@ public class MemberController {
     private final MembershipRepository memberships;
     private final TenantService tenants;
     private final PasswordEncoder passwords;
+    private final MemberService memberService;
 
     public MemberController(OrganizationRepository organizations, AppUserRepository users,
-            MembershipRepository memberships, TenantService tenants, PasswordEncoder passwords) {
+            MembershipRepository memberships, TenantService tenants, PasswordEncoder passwords,
+            MemberService memberService) {
         this.organizations = organizations;
         this.users = users;
         this.memberships = memberships;
         this.tenants = tenants;
         this.passwords = passwords;
+        this.memberService = memberService;
     }
 
     @Schema(name = "MemberView")
@@ -174,39 +178,11 @@ public class MemberController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        tenants.requireAdmin(principal.getId(), organizationId);
-        OrganizationMembership membership = memberships.findById(membershipId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        if (!membership.getOrganization().getId().equals(organizationId)) {
-            // Never leak or mutate another tenant's membership through this path.
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        }
-        if (request.role() != null) {
-            membership.setRole(request.role());
-        }
-        if (request.status() != null) {
-            if (request.status() == MembershipStatus.ACTIVE) {
-                membership.activate();
-            } else if (request.status() == MembershipStatus.DISABLED) {
-                membership.disable();
-            } else {
-                membership.setStatusDirect(request.status());
-            }
-        }
-        if (request.displayName() != null) {
-            // Resolved via the org-scoped membership, never via an arbitrary user id:
-            // only the member of this organization can be renamed, and the change is
-            // global (AppUser.displayName shows in every organization of that user).
-            String patchName = AppUser.normalizeDisplayName(request.displayName());
-            if (patchName != null && patchName.length() > AppUser.MAX_DISPLAY_NAME_LENGTH) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "displayName must not exceed " + AppUser.MAX_DISPLAY_NAME_LENGTH + " characters");
-            }
-            // Blank input (normalized to null) intentionally clears the name.
-            membership.getUser().setDisplayName(patchName);
-            users.save(membership.getUser());
-        }
-        memberships.save(membership);
+        // Shared service-layer operation (#34 reuses the same logic, no duplication).
+        // Resolved via the org-scoped membership, never via an arbitrary user id.
+        OrganizationMembership membership = memberService.updateMember(principal.getId(),
+                organizationId, membershipId, request.role(), request.status(),
+                request.displayName());
         return toView(membership);
     }
 }
