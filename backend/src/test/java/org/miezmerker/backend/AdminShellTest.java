@@ -243,7 +243,7 @@ class AdminShellTest {
 
     @Test
     void adminLoginSuccessAndDashboardListsAllAreas() throws Exception {
-        Fixture f = seed();
+        seed();
         var login = formLogin("admin-a@example.org", "supersecret-password-a");
         assertLoginSuccess(login);
         var dash = get("/admin/");
@@ -278,10 +278,10 @@ class AdminShellTest {
         assertEquals(302, login.statusCode(), login.body());
         var dash = get("/admin/");
         assertEquals(403, dash.statusCode(), dash.body());
-        assertTrue(dash.body().contains("Kein Admin-Zugang") || dash.body().contains("403"),
-                dash.body());
-        // No tenant data leaks to MEMBER.
-        assertFalse(dash.body().contains("Mitgliederverwaltung"), dash.body());
+        assertTrue(dash.body().contains("Kein Admin-Zugang"), dash.body());
+        // No tenant data leaks to MEMBER: neither org name may appear.
+        assertFalse(dash.body().contains("Org A"), dash.body());
+        assertFalse(dash.body().contains("Org B"), dash.body());
     }
 
     @Test
@@ -313,17 +313,14 @@ class AdminShellTest {
         Fixture f = seed();
         var login = formLogin("multi-admin@example.org", "supersecret-password-x");
         assertLoginSuccess(login);
-        // Multiple ADMIN orgs: dashboard defers to explicit selection.
+        // Multiple ADMIN orgs with no session context: dashboard defers to selection.
         var dash = get("/admin/");
-        // Either dashboard with switcher or redirect to /admin/org.
-        if (dash.statusCode() == 302) {
-            assertTrue(dash.headers().firstValue("location").orElse("").contains("/admin/org"));
-            var sel = get("/admin/org");
-            assertEquals(200, sel.statusCode(), sel.body());
-            assertTrue(sel.body().contains("Org A") && sel.body().contains("Org B"), sel.body());
-        } else {
-            assertEquals(200, dash.statusCode());
-        }
+        assertEquals(302, dash.statusCode(), dash.body());
+        assertTrue(dash.headers().firstValue("location").orElse("").contains("/admin/org"),
+                dash.headers().firstValue("location").orElse(""));
+        var sel = get("/admin/org");
+        assertEquals(200, sel.statusCode(), sel.body());
+        assertTrue(sel.body().contains("Org A") && sel.body().contains("Org B"), sel.body());
         // Validated switch to A.
         String csrf = extractCsrf(get("/admin/org").body());
         assertNotNull(csrf);
@@ -382,14 +379,14 @@ class AdminShellTest {
                             "organizationId=" + f.orgB().getId()))
                     .build(), HttpResponse.BodyHandlers.ofString());
         }
-        assertTrue(attempt.statusCode() == 403 || attempt.statusCode() == 404,
+        // TenantService.requireAdmin rejects the foreign org with 403.
+        assertEquals(403, attempt.statusCode(),
                 "foreign org switch must fail, got: " + attempt.statusCode() + " " + attempt.body());
         // Active context still A, never B.
         var stillA = get("/admin/");
         assertEquals(200, stillA.statusCode(), stillA.body());
         assertTrue(stillA.body().contains("Org A"), stillA.body());
-        assertFalse(stillA.body().contains("Org B") && !stillA.body().contains("Org A"),
-                stillA.body());
+        assertFalse(stillA.body().contains("Org B"), stillA.body());
     }
 
     @Test
@@ -448,13 +445,10 @@ class AdminShellTest {
         assertEquals(200, probe.statusCode(), probe.body());
         Thread.sleep(1200);
         var after = get("/admin/");
-        // Expired admin session: redirect to login (with expired hint) or 401.
-        assertTrue(after.statusCode() == 302 || after.statusCode() == 401,
-                "expected redirect/401 after expiry, got: " + after.statusCode());
-        if (after.statusCode() == 302) {
-            assertTrue(after.headers().firstValue("location").orElse("").contains("/admin/login"),
-                    after.headers().firstValue("location").orElse(""));
-        }
+        // Expired admin session (stale JSESSIONID sent): dedicated expired state.
+        assertEquals(302, after.statusCode(), after.body());
+        assertTrue(after.headers().firstValue("location").orElse("").contains("/admin/login?expired"),
+                after.headers().firstValue("location").orElse(""));
     }
 
     @Test

@@ -6,7 +6,10 @@
 <body>
 <header class="topbar">
 <div><div class="org">MiezMerker Admin</div>
-<div class="user" th:if="${userLabel != null}" th:text="${userLabel}">Benutzer</div>
+<div class="user" th:if="${userLabel != null}">
+<span th:text="${userLabel}">Benutzer</span>
+<span th:if="${userEmail != null}" th:text="' · ' + ${userEmail}"> · mail</span>
+</div>
 <div class="user" th:if="${userLabel == null}">Nicht angemeldet</div>
 </div>
 <form th:if="${userLabel != null}" th:action="@{/admin/logout}" method="post">

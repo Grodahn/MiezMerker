@@ -10,7 +10,6 @@ import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.domain.UserStatus;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
-import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
 import org.springframework.http.HttpStatus;
@@ -32,14 +31,12 @@ public class AdminService {
 
     private final AppUserRepository users;
     private final MembershipRepository memberships;
-    private final OrganizationRepository organizations;
     private final TenantService tenants;
 
     public AdminService(AppUserRepository users, MembershipRepository memberships,
-            OrganizationRepository organizations, TenantService tenants) {
+            TenantService tenants) {
         this.users = users;
         this.memberships = memberships;
-        this.organizations = organizations;
         this.tenants = tenants;
     }
 
@@ -68,13 +65,6 @@ public class AdminService {
         return !adminOrgs(userId).isEmpty();
     }
 
-    @Transactional(readOnly = true)
-    public void requireAdmin(UUID userId) {
-        if (!isAdmin(userId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin required");
-        }
-    }
-
     /** Active organization from the server-side session, validated on every use. */
     @Transactional(readOnly = true)
     public AdminOrg requireActiveOrg(AppUserDetails principal, HttpSession session) {
@@ -100,7 +90,7 @@ public class AdminService {
     }
 
     /** Validated organization switch; rejects foreign or non-ADMIN organizations. */
-    @Transactional
+    @Transactional(readOnly = true)
     public AdminOrg selectOrg(UUID userId, UUID organizationId, HttpSession session) {
         OrganizationMembership membership = tenants.requireAdmin(userId, organizationId);
         var org = membership.getOrganization();
@@ -124,10 +114,7 @@ public class AdminService {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "no active organization");
     }
 
-    public void clearOrg(HttpSession session) {
-        session.removeAttribute(SESSION_ORG_KEY);
-    }
-
+    @Transactional(readOnly = true)
     public String displayLabelFor(UUID userId) {
         return users.findById(userId)
                 .map(u -> u.getDisplayName() != null && !u.getDisplayName().isBlank()
@@ -135,6 +122,7 @@ public class AdminService {
                 .orElse("?");
     }
 
+    @Transactional(readOnly = true)
     public String emailFor(UUID userId) {
         return users.findById(userId).map(u -> u.getEmail()).orElse("?");
     }

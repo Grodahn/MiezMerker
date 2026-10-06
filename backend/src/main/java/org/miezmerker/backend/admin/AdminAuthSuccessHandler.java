@@ -10,6 +10,7 @@ import org.miezmerker.backend.security.AppUserDetails;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Post-login handling for the server-rendered admin backend (#33).
@@ -37,7 +38,10 @@ public class AdminAuthSuccessHandler extends SavedRequestAwareAuthenticationSucc
         setAlwaysUseDefaultTargetUrl(false);
     }
 
+    // One transaction for last_login_at + org-context init, mirroring the
+    // @Transactional API login in AuthController.
     @Override
+    @Transactional
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
             Authentication authentication) throws ServletException, IOException {
         if (authentication != null && authentication.getPrincipal() instanceof AppUserDetails principal) {

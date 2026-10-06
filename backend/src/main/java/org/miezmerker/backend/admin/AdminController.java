@@ -11,7 +11,9 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -44,9 +46,13 @@ public class AdminController {
             @RequestParam(value = "error", required = false) String error,
             @RequestParam(value = "logout", required = false) String logout,
             @RequestParam(value = "expired", required = false) String expired) {
-        // Already an admin: skip the login form.
-        if (principal != null && admins.isAdmin(principal.getId())) {
-            return "redirect:/admin/";
+        // Already authenticated: admins skip the form, everyone else gets the
+        // understandable 403 state instead of a confusing second login form.
+        if (principal != null) {
+            if (admins.isAdmin(principal.getId())) {
+                return "redirect:/admin/";
+            }
+            return "redirect:/admin/denied";
         }
         if (error != null) {
             model.addAttribute("loginError", "Anmeldung fehlgeschlagen. E-Mail und Passwort prüfen.");
@@ -60,22 +66,16 @@ public class AdminController {
         return "admin/login";
     }
 
-    @org.springframework.web.bind.annotation.RequestMapping(value = "/denied",
-            method = {org.springframework.web.bind.annotation.RequestMethod.GET,
-                    org.springframework.web.bind.annotation.RequestMethod.POST})
-    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.FORBIDDEN)
-    public String denied(@AuthenticationPrincipal AppUserDetails principal, HttpSession session,
-            Model model) {
-        // Understandable 403 state with the reusable layout (no tenant leak).
+    // GET + POST: the access-denied handler forwards CSRF-rejected POSTs here,
+    // and a forward preserves the original method (POST-only mapping would 405).
+    @RequestMapping(value = "/denied", method = {RequestMethod.GET, RequestMethod.POST})
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public String denied(@AuthenticationPrincipal AppUserDetails principal, Model model) {
+        // Understandable 403 state (no tenant leak: no org names, no IDs).
         if (principal != null) {
             model.addAttribute("userLabel", admins.displayLabelFor(principal.getId()));
             model.addAttribute("userEmail", admins.emailFor(principal.getId()));
-            List<AdminService.AdminOrg> orgs = admins.adminOrgs(principal.getId());
-            model.addAttribute("adminOrgs", orgs);
-            AdminService.AdminOrg active = admins.currentOrgOrNull(principal, session);
-            model.addAttribute("activeOrg", active);
         }
-        model.addAttribute("status", 403);
         return "admin/denied";
     }
 
@@ -85,18 +85,17 @@ public class AdminController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not authenticated");
         }
-        admins.requireAdmin(principal.getId());
+        // Single fetch: an empty ADMIN-org list is the 403 gate.
         List<AdminService.AdminOrg> orgs = admins.adminOrgs(principal.getId());
+        if (orgs.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin required");
+        }
         AdminService.AdminOrg active = admins.currentOrgOrNull(principal, session);
         if (active == null) {
             if (orgs.size() > 1) {
                 return "redirect:/admin/org";
             }
-            if (orgs.size() == 1) {
-                active = admins.selectOrg(principal.getId(), orgs.get(0).id(), session);
-            } else {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin required");
-            }
+            active = admins.selectOrg(principal.getId(), orgs.get(0).id(), session);
         }
         fillCommon(principal, active, orgs, model);
         return "admin/dashboard";
@@ -108,8 +107,10 @@ public class AdminController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not authenticated");
         }
-        admins.requireAdmin(principal.getId());
         List<AdminService.AdminOrg> orgs = admins.adminOrgs(principal.getId());
+        if (orgs.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin required");
+        }
         if (orgs.size() <= 1) {
             // Nothing to choose: ensure the single org is active and go back.
             if (orgs.size() == 1) {
@@ -177,18 +178,16 @@ public class AdminController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not authenticated");
         }
-        admins.requireAdmin(principal.getId());
         List<AdminService.AdminOrg> orgs = admins.adminOrgs(principal.getId());
+        if (orgs.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin required");
+        }
         AdminService.AdminOrg active = admins.currentOrgOrNull(principal, session);
         if (active == null) {
             if (orgs.size() > 1) {
                 return "redirect:/admin/org";
             }
-            if (orgs.size() == 1) {
-                active = admins.selectOrg(principal.getId(), orgs.get(0).id(), session);
-            } else {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin required");
-            }
+            active = admins.selectOrg(principal.getId(), orgs.get(0).id(), session);
         }
         fillCommon(principal, active, orgs, model);
         model.addAttribute("section", section);

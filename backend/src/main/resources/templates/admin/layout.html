@@ -27,6 +27,7 @@ label{display:block;margin:.5rem 0 .25rem;font-weight:600}
 .alert-info{background:#dbeafe;border:1px solid #bfdbfe}
 .grid{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 a.cardlink{text-decoration:none;color:inherit}
+.sr-only{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 @media(max-width:600px){header.topbar{flex-direction:column;align-items:flex-start}nav.mainnav .orgswitch{margin-left:0}}
 </style>
 </head>
@@ -54,7 +55,7 @@ a.cardlink{text-decoration:none;color:inherit}
 <span class="orgswitch" th:if="${adminOrgs != null and #lists.size(adminOrgs) > 1}">
 <form th:action="@{/admin/org}" method="post" style="display:flex;gap:.5rem;align-items:center">
 <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
-<label class="sr-only" for="nav-org" style="position:absolute;left:-9999px">Organisation</label>
+<label class="sr-only" for="nav-org">Organisation</label>
 <select id="nav-org" name="organizationId">
 <option th:each="o : ${adminOrgs}" th:value="${o.id}" th:text="${o.displayName}" th:selected="${activeOrg != null and o.id == activeOrg.id}">Org</option>
 </select>
