@@ -15,7 +15,20 @@ vi.mock('./offline-identity', () => ({
 }));
 import { startOfflineRenewal } from './offline-renewal';
 let stop = () => {};
-afterEach(() => { stop(); vi.resetAllMocks(); });
+afterEach(() => {
+  stop(); vi.resetAllMocks();
+  Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+});
+
+test('logout on a cold offline start clears credentials before any renewal ran', () => {
+  Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+  mocks.state.user = { userId: 'offline-user', memberships: [{ organizationId: 'org', role: 'MEMBER' }] };
+  mocks.forget.mockResolvedValue(undefined);
+  stop = startOfflineRenewal();
+  mocks.state.user = null;
+  mocks.listener();
+  expect(mocks.forget).toHaveBeenCalledWith('offline-user');
+});
 
 test('logout cleanup runs immediately while renewal is waiting on a network response', async () => {
   mocks.state.user = { userId: 'user-a', memberships: [{ organizationId: 'org-a', role: 'MEMBER' }] };

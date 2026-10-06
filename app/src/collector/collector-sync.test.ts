@@ -32,12 +32,12 @@ const mockedLoad = vi.mocked(loadTrustedNodeIdentity);
 
 function authAs(org: string | null) {
   mockedAuth.mockReturnValue(org === null
-    ? { user: null, csrfToken: null, activeOrganizationId: null }
+    ? { user: null, csrfToken: null, activeOrganizationId: null, sessionChecked: true, sessionVerified: false }
     : {
         user: { userId: 'u1', email: 'a@b.c', memberships: [
           { organizationId: org, status: 'ACTIVE', role: 'MEMBER' },
         ] },
-        csrfToken: null, activeOrganizationId: org,
+        csrfToken: null, activeOrganizationId: org, sessionChecked: true, sessionVerified: true,
       });
 }
 

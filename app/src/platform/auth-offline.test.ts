@@ -19,14 +19,17 @@ test('cold offline start restores account and chosen active organization without
   expect(getAuthState().user?.memberships).toHaveLength(2);
 });
 
-test('server rejection clears the offline account snapshot', async () => {
+test('server rejection preserves the offline snapshot for offline-sync eligibility', async () => {
   localStorage.setItem('miezmerker-offline-session', JSON.stringify({
     user: { userId: 'user', email: 'field@example.org', memberships: [] },
   }));
   const { api } = await import('../api/client');
-  vi.mocked(api.GET).mockResolvedValue({ error: {}, response: { status: 401 } } as never);
+  vi.mocked(api.GET).mockResolvedValue({ error: {}, response: { status: 401 } });
   const { fetchSession, getAuthState } = await import('./auth');
   await fetchSession();
-  expect(getAuthState().user).toBeNull();
-  expect(localStorage.getItem('miezmerker-offline-session')).toBeNull();
+  // #31: session expiration locks management but must not destroy the
+  // snapshot that offline-sync eligibility (#8) depends on.
+  expect(getAuthState().user?.userId).toBe('user');
+  expect(getAuthState().sessionVerified).toBe(false);
+  expect(localStorage.getItem('miezmerker-offline-session')).not.toBeNull();
 });

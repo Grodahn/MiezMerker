@@ -163,14 +163,16 @@ describe('auth session (#16)', () => {
     expect(getAuthState().user).toBeNull();
   });
 
-  test('a rejected logout keeps the authenticated state', async () => {
+  test('a rejected server logout leaves local protected access cleared', async () => {
     get.mockResolvedValue({ data: { token: 'fresh' } });
     post.mockResolvedValueOnce({ data: { userId: 'u-1', email: 'a@example.org', memberships: [] } });
     await login('a@example.org', 'password');
     post.mockResolvedValueOnce({ error: {}, response: { status: 403 } });
     await expect(logout()).rejects.toThrow('Abmelden fehlgeschlagen');
-    expect(getAuthState().user?.userId).toBe('u-1');
-    expect(post).toHaveBeenLastCalledWith('/api/v1/auth/logout', { headers: { 'X-XSRF-TOKEN': 'fresh' } });
+    expect(getAuthState().user).toBeNull();
+    expect(getAuthState().sessionVerified).toBe(false);
+    expect(localStorage.getItem('miezmerker-offline-session')).toBeNull();
+    expect(post).toHaveBeenLastCalledWith('/api/v1/auth/logout', expect.objectContaining({ headers: { 'X-XSRF-TOKEN': 'fresh' } }));
   });
 
   test('multiple memberships require a selection and revocation clears it', async () => {

@@ -4,7 +4,7 @@ import { OfflineIdentity, OfflineIdentityDatabase } from './offline-identity';
 export function startOfflineRenewal(): () => void {
   const database = new OfflineIdentityDatabase();
   const identity = new OfflineIdentity(database);
-  let lastUser: string | undefined;
+  let lastUser: string | undefined = getAuthState().user?.userId;
   let active = true;
   let queue = Promise.resolve();
   const renew = (force = true) => {

@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { contextSignal } from './context';
-import { fetchCsrfToken } from '../platform/auth';
+import { fetchCsrfToken, markSessionExpired } from '../platform/auth';
 
 export function errorMessage(failure: unknown): string {
   return failure instanceof Error ? failure.message : 'Daten konnten nicht geladen werden.';
 }
 export function result<T>({ data, response }: { data?: T; response: Response }): T {
   if (!response.ok) {
+    // #31: an expired/missing backend session must immediately hide protected
+    // organization data. Central transition forces the app-shell gate back to
+    // login/offline-sync-only; the auth subscription aborts stale loads and
+    // unmounts management views so no stale data stays visible.
+    if (response.status === 401) {
+      try { markSessionExpired(); } catch { /* Gate transition must not mask the user message. */ }
+    }
     const messages: Record<number, string> = {
       400: 'Bitte Eingaben prüfen.', 401: 'Sitzung abgelaufen. Bitte erneut anmelden.',
       403: 'Keine Berechtigung. Bitte die aktive Mitgliedschaft prüfen.',

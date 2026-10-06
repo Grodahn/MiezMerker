@@ -16,7 +16,7 @@
 // field visit.
 
 import { api } from '../api/client';
-import { fetchCsrfToken } from '../platform/auth';
+import { fetchCsrfToken, markSessionExpired } from '../platform/auth';
 import type { CollectorObservationStore } from './observation-store';
 
 export type BackendSyncState =
@@ -135,6 +135,12 @@ export class BackendUploader {
         });
         if (error || !data) {
           const status = (response as Response | undefined)?.status;
+          // #31: an expired backend session locks management via the central
+          // gate. The field sync itself stays valid; upload remains retryable
+          // after re-login while a still-valid offline credential keeps BLE usable.
+          if (status === 401) {
+            try { markSessionExpired(); } catch { /* Upload message stays authoritative. */ }
+          }
           // 4xx (except 429) is a definitive rejection — retrying cannot help
           // (e.g. membership/device disabled, tenant conflict). Fail fast.
           if (status !== undefined && status >= 400 && status < 500 && status !== 429) {

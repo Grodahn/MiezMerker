@@ -20,6 +20,7 @@ describe('resolveCredential (offline credential handshake)', () => {
       user: { userId: 'u1', email: 'a@b.c', memberships: [
         { organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' },
       ] }, csrfToken: null, activeOrganizationId: 'org-a',
+      sessionChecked: true, sessionVerified: true,
     });
     const identity = { credential: async () => 'cached-jwt', renew: async () => 'renewed' };
     const resolved = await resolveCredential(identity as never, 'org-a');
@@ -32,6 +33,7 @@ describe('resolveCredential (offline credential handshake)', () => {
       user: { userId: 'u1', email: 'a@b.c', memberships: [
         { organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' },
       ] }, csrfToken: null, activeOrganizationId: 'org-a',
+      sessionChecked: true, sessionVerified: true,
     });
     const identity = { credential: async () => null, renew: async () => 'fresh-jwt' };
     const resolved = await resolveCredential(identity as never, 'org-a');
@@ -44,6 +46,7 @@ describe('resolveCredential (offline credential handshake)', () => {
       user: { userId: 'u1', email: 'a@b.c', memberships: [
         { organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' },
       ] }, csrfToken: null, activeOrganizationId: 'org-a',
+      sessionChecked: true, sessionVerified: true,
     });
     Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
     const identity = { credential: async () => null, renew: async () => { throw new Error('nope'); } };
@@ -52,7 +55,8 @@ describe('resolveCredential (offline credential handshake)', () => {
   });
 
   test('without login no credential is issued', async () => {
-    mockedAuth.mockReturnValue({ user: null, csrfToken: null, activeOrganizationId: null });
+    mockedAuth.mockReturnValue({ user: null, csrfToken: null, activeOrganizationId: null,
+      sessionChecked: true, sessionVerified: false });
     const identity = { credential: async () => 'x', renew: async () => 'y' };
     await expect(resolveCredential(identity as never, 'org-a')).rejects.toBeInstanceOf(CredentialError);
   });
