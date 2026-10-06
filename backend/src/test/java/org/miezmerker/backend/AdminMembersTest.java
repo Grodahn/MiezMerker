@@ -129,6 +129,19 @@ class AdminMembersTest {
         return token;
     }
 
+    void apiLogin(String email, String password) throws Exception {
+        var csrf = get("/api/v1/auth/csrf");
+        assertEquals(200, csrf.statusCode(), csrf.body());
+        String token = mapper.readTree(csrf.body()).get("token").asText();
+        var login = client.send(HttpRequest.newBuilder(URI.create(base("/api/v1/auth/login")))
+                .header("Content-Type", "application/json")
+                .header("X-XSRF-TOKEN", token)
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, login.statusCode(), login.body());
+    }
+
     HttpResponse<String> postMemberForm(UUID membershipId, String formBodyWithoutCsrf,
             String csrf) throws Exception {
         String body = formBodyWithoutCsrf.isEmpty() ? "_csrf=" + URLEncoder.encode(csrf, StandardCharsets.UTF_8)
@@ -249,8 +262,8 @@ class AdminMembersTest {
         Fixture f = seed();
         assertLoginSuccess(formLogin("adm-multi@example.org", "supersecret-password-x"));
         var initial = get("/admin/members");
-        assertTrue(initial.statusCode() == 302 || initial.statusCode() == 403 || initial.statusCode() == 200,
-                "got " + initial.statusCode());
+        assertEquals(302, initial.statusCode(), initial.body());
+        assertTrue(initial.headers().firstValue("location").orElse("").endsWith("/admin/org"));
         String csrfSel = pageCsrf("/admin/org");
         assertEquals(302, postOrgSwitch(f.orgA().getId(), csrfSel).statusCode());
         String htmlA = get("/admin/members").body();
@@ -264,6 +277,45 @@ class AdminMembersTest {
         assertTrue(htmlB.contains("adm-admin-b@example.org"), htmlB);
         assertTrue(htmlB.contains("Org B"), htmlB);
         assertFalse(htmlB.contains("adm-member-a@example.org"), "no stale A data after switch");
+    }
+
+    @Test
+    void apiSessionCanOpenMembersWithoutVisitingDashboard() throws Exception {
+        seed();
+        apiLogin("adm-admin-a@example.org", "supersecret-password-a");
+        var single = get("/admin/members");
+        assertEquals(200, single.statusCode(), single.body());
+        assertTrue(single.body().contains("adm-member-a@example.org"));
+        assertFalse(single.body().contains("adm-admin-b@example.org"));
+
+        http();
+        apiLogin("adm-multi@example.org", "supersecret-password-x");
+        var multi = get("/admin/members");
+        assertEquals(302, multi.statusCode(), multi.body());
+        assertTrue(multi.headers().firstValue("location").orElse("").endsWith("/admin/org"));
+        assertFalse(multi.body().contains("adm-member-a@example.org"));
+    }
+
+    @Test
+    void roleStatusFormPreservesTimestampsWhenStatusIsUnchanged() throws Exception {
+        Fixture f = seed();
+        assertLoginSuccess(formLogin("adm-admin-a@example.org", "supersecret-password-a"));
+        UUID target = f.memberAMembership().getId();
+        var before = memberships.findById(target).orElseThrow();
+        var activatedAt = before.getActivatedAt();
+        var active = postMemberForm(target, "role=ADMIN&status=ACTIVE", pageCsrf("/admin/members"));
+        assertEquals(302, active.statusCode(), active.body());
+        assertEquals(activatedAt, memberships.findById(target).orElseThrow().getActivatedAt());
+
+        UUID disabledId = memberships.findByOrganizationIdAndUserId(
+                f.orgA().getId(), f.disabledA().getId()).orElseThrow().getId();
+        var disabledAt = memberships.findById(disabledId).orElseThrow().getDisabledAt();
+        var disabled = postMemberForm(disabledId, "role=ADMIN&status=DISABLED", pageCsrf("/admin/members"));
+        assertEquals(302, disabled.statusCode(), disabled.body());
+        var after = memberships.findById(disabledId).orElseThrow();
+        assertEquals(MembershipRole.ADMIN, after.getRole());
+        assertEquals(MembershipStatus.DISABLED, after.getStatus());
+        assertEquals(disabledAt, after.getDisabledAt());
     }
 
     @Test

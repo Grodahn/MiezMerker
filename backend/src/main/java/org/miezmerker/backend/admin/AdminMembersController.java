@@ -76,7 +76,13 @@ public class AdminMembersController {
         if (orgs.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin required");
         }
-        AdminService.AdminOrg active = admins.requireActiveOrg(principal, session);
+        AdminService.AdminOrg active = admins.currentOrgOrNull(principal, session);
+        if (active == null) {
+            if (orgs.size() > 1) {
+                return "redirect:/admin/org";
+            }
+            active = admins.selectOrg(principal.getId(), orgs.get(0).id(), session);
+        }
         List<MemberRow> rows = members.listMembers(principal.getId(), active.id()).stream()
                 .map(AdminMembersController::toRow)
                 .toList();

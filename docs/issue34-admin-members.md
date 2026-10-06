@@ -59,6 +59,11 @@ Mitglieds-Erstellung (Bootstrap-/Testphase aus #16) bleibt vorerst API-only
 - Org-Wechsel nur über `#33`-Mechanismus (`POST /admin/org`, validiert);
   Multi-Org-ADMIN sieht nach Wechsel ausschließlich die neue Org (keine
   stale-Daten).
+- Ohne gültigen aktiven Kontext wählt die Liste die einzige ADMIN-Organisation
+  oder leitet Multi-Org-ADMINs zu `/admin/org` weiter, auch nach PWA/API-Login.
+  POST-Mutationen verlangen weiterhin einen bereits gewählten, gültigen Kontext.
+- Ein unverändert übermittelter Status lässt Aktivierungs-/Deaktivierungszeitpunkte
+  bestehen; nur tatsächliche Statuswechsel setzen diese neu.
 
 ## Autorisierung / Sicherheit
 
@@ -94,7 +99,7 @@ Keine PWA-Regression (gleiche REST-Semantik, `MemberService` wiederverwendet).
 
 ## Tests
 
-`AdminMembersTest` (10 Integrationstests, `RANDOM_PORT`, H2):
+`AdminMembersTest` (12 Integrationstests, `RANDOM_PORT`, H2):
 
 - Rendering (ADMIN sieht Name/E-Mail/Rolle/Status, Fallback `NULL`→E-Mail, kein persistierter E-Mail-Name, Org-Kontext/Nav/CSRF).
 - Tenant-Isolation A/B (A sieht nur A, fremde ID → 404 ohne Leak, DB unverändert).
@@ -103,6 +108,8 @@ Keine PWA-Regression (gleiche REST-Semantik, `MemberService` wiederverwendet).
 - Mutationen (gültig persistiert, fremd → 404, ungültig → Redirect+Fehler ohne Mutation, CSRF fehlt/ungültig → 403).
 - `displayName` (Unicode/Trim, überlang → Fehler, blank löscht, global konsistent).
 - `PENDING`-Status (keine Rolle, Aktivierung möglich).
+- Direkter Einstieg nach API-Login: Single-Org-Auswahl und Multi-Org-Weiterleitung.
+- Rollen-/Statusformular erhält Zeitpunkte bei unverändertem Status.
 
 Dazu unverändert: `AdminShellTest` (#33), `DisplayNameTest` (#32),
 `TenancyAuthTest` (#16), Backend-Suite, OpenAPI-Drift nur bei API-Änderung

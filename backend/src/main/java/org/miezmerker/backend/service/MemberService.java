@@ -83,7 +83,9 @@ public class MemberService {
         if (role != null) {
             membership.setRole(role);
         }
-        if (status != null) {
+        // HTML role/status forms submit the current status as well. Only actual
+        // transitions should replace the activation/disable audit timestamps.
+        if (status != null && status != membership.getStatus()) {
             if (status == MembershipStatus.ACTIVE) {
                 membership.activate();
             } else if (status == MembershipStatus.DISABLED) {
