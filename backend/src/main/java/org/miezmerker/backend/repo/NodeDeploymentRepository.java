@@ -17,6 +17,9 @@ public interface NodeDeploymentRepository extends JpaRepository<NodeDeployment, 
 
     List<NodeDeployment> findByNodeNodeId(UUID nodeId);
 
+    // Admin details display Node metadata; fetch it once instead of one SELECT per Node.
+    @Query("select d from NodeDeployment d join fetch d.node "
+            + "where d.organization.id = :organizationId and d.feedingSite.id = :feedingSiteId")
     List<NodeDeployment> findByOrganizationIdAndFeedingSiteId(UUID organizationId,
             UUID feedingSiteId);
 

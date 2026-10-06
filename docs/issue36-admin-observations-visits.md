@@ -1,5 +1,11 @@
 # Admin observations and visits (#36)
 
+> Final closeout (#30/#38): this document records its implementation stage.
+> All Admin pages are now implemented. The field PWA retains `/login`, `/sync`,
+> `/nodes` and `/cats`; Members, Site maintenance, Observations and standalone
+> Visits use the server-rendered Admin backend. Cats remains in both surfaces.
+> See [the final split](issue38-field-pwa.md).
+
 `GET /admin/observations` and `GET /admin/visits` reuse the #33 layout, login,
 ACTIVE ADMIN gate and validated session organization. Members and inactive
 memberships cannot use these pages or recompute. A multi-organization admin

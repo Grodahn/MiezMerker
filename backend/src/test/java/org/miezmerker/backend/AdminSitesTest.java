@@ -68,6 +68,7 @@ class AdminSitesTest {
     @Autowired CatRepository cats;
     @Autowired FeedingSiteRepository sites;
     @Autowired PasswordEncoder passwords;
+    @Autowired jakarta.persistence.EntityManagerFactory entityManagerFactory;
 
     HttpClient client;
     CookieManager cookies;
@@ -246,6 +247,34 @@ class AdminSitesTest {
         node.claim(org);
         node.touchContact();
         return nodes.save(node);
+    }
+
+    @Test
+    void siteDetailQueryCountDoesNotGrowPerCurrentNode() throws Exception {
+        Fixture f = seed();
+        FeedingSite site = saveSite(f.orgA(), "Batch Site", null, null);
+        Instant start = Instant.parse("2025-01-01T00:00:00Z");
+        deployments.save(new NodeDeployment(f.orgA(), saveClaimedNode(f.orgA()), site, start, null));
+        assertLoginSuccess(formLogin("a35-admin-a@example.org", "supersecret-password-a"));
+        var statistics = entityManagerFactory.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        try {
+            statistics.clear();
+            assertEquals(200, get("/admin/sites/" + site.getId()).statusCode());
+            long baseline = statistics.getPrepareStatementCount();
+            for (int i = 0; i < 25; i++) {
+                deployments.save(new NodeDeployment(f.orgA(), saveClaimedNode(f.orgA()), site, start, null));
+            }
+            statistics.clear();
+            var detail = get("/admin/sites/" + site.getId());
+            assertEquals(200, detail.statusCode(), detail.body());
+            assertTrue(detail.body().contains("test-1"));
+            assertTrue(statistics.getPrepareStatementCount() <= baseline + 2,
+                    "SQL count must stay constant: baseline=" + baseline
+                            + ", actual=" + statistics.getPrepareStatementCount());
+        } finally {
+            statistics.setStatisticsEnabled(false);
+        }
     }
 
     // --- Access ---

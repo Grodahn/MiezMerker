@@ -1,5 +1,11 @@
 # Admin-Backend Shell (#33)
 
+> Final closeout (#30/#38): this document records its implementation stage.
+> All Admin pages are now implemented. The field PWA retains `/login`, `/sync`,
+> `/nodes` and `/cats`; Members, Site maintenance, Observations and standalone
+> Visits use the server-rendered Admin backend. Cats remains in both surfaces.
+> See [the final split](issue38-field-pwa.md).
+
 Vertrag: [Issue #33](https://github.com/Grodahn/MiezMerker/issues/33).
 Abhängig von #32 (`AppUser.displayName`), verwandt mit #16 (Tenancy/Auth) und #31 (PWA-Gate).
 Gehört zu Epic #30 (Trennung Feld-PWA `/app` und Backoffice `/admin`).
