@@ -3,14 +3,12 @@ import { AuthPanel } from './platform/AuthPanel';
 import { LoginView } from './platform/LoginView';
 import { isCollectorPath, useAppGate } from './platform/gate';
 import { Management, managementAreas } from './management/Management';
-import { useManagementContext } from './management/context';
 
 function AllowedShell({ path, authenticated, online }: { path: string; authenticated: boolean; online: boolean }) {
-  const context = useManagementContext();
   const collector = isCollectorPath(path);
   return <><header><strong>MiezMerker</strong><nav aria-label="Bereiche">
     <a href="/sync" aria-current={collector ? 'page' : undefined}>Vor-Ort-Sync</a>
-    {authenticated && Object.entries(managementAreas).filter(([href]) => href !== '/admin/members' || context.admin)
+    {authenticated && Object.entries(managementAreas)
       .map(([href, label]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined}>{label}</a>)}
   </nav>{authenticated && <AuthPanel/>}</header><main>
     {!authenticated && <>

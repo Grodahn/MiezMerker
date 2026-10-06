@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { api } from '../api/client';
 import { Feedback, LoadState, millis, siteName, Table, time, type Cat, type Site } from './common';
 import { requestOptions, result, useLoad, useMutation } from './data';
-import { VisitTable } from './records';
+import { VisitTable } from './VisitTable';
 
 export function CatEditor({ organizationId, initial, onSaved, onClose }: {
   organizationId: string; initial: Cat; onSaved: () => void; onClose: () => void;

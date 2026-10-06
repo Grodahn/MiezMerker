@@ -74,13 +74,13 @@ beforeEach(async () => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 test('reconnect waits for fresh verification and cannot reveal an expired session', async () => {
-  setPath('/sites');
+  setPath('/cats');
   apiGet.mockImplementation(async (path: string) => path === '/api/v1/auth/session'
     ? sessionResponse(verifiedUser)
     : { data: [], response: { ok: true, status: 200 } });
   const { App } = await import('./App');
   render(<App />);
-  await screen.findByText('Futterstellen der aktiven Organisation.');
+  await screen.findByText('Bekannte Katzen und beobachtete Chips. Ein unbekannter Chip ist kein Fehler.');
   act(() => { setOnline(false); window.dispatchEvent(new Event('offline')); });
   expect(screen.queryByRole('navigation')).toBeNull();
   let resolveSession!: (value: unknown) => void;
@@ -89,17 +89,17 @@ test('reconnect waits for fresh verification and cannot reveal an expired sessio
     : Promise.resolve({ data: [], response: { ok: true, status: 200 } }));
   act(() => { setOnline(true); window.dispatchEvent(new Event('online')); });
   expect(screen.queryByRole('navigation')).toBeNull();
-  expect(screen.queryByText('Futterstellen der aktiven Organisation.')).toBeNull();
+  expect(screen.queryByText('Bekannte Katzen und beobachtete Chips. Ein unbekannter Chip ist kein Fehler.')).toBeNull();
   await act(async () => { resolveSession({ error: {}, response: { status: 401 } }); });
   expect(await screen.findByRole('button', { name: 'Anmelden' })).toBeTruthy();
 });
 
 test('logout hides private content before the server responds', async () => {
-  setPath('/sites');
+  setPath('/cats');
   apiGet.mockImplementation(async (path: string) => path === '/api/v1/auth/session'
     ? sessionResponse(verifiedUser)
     : path === '/api/v1/auth/csrf' ? { data: { token: 'csrf' } }
-      : { data: [{ id: 'site-a', name: 'Private A site' }], response: { ok: true, status: 200 } });
+      : { data: [{ id: 'cat-a', chipId: 'CHIP', name: 'Private A site' }], response: { ok: true, status: 200 } });
   const { App } = await import('./App');
   render(<App />);
   await screen.findByText('Private A site');
@@ -158,7 +158,7 @@ test('valid offline authorization keeps the collector mounted through disconnect
   apiGet.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   act(() => { setOnline(true); window.dispatchEvent(new Event('online')); });
   expect(screen.getByText('CollectorShell')).toBeTruthy();
-  expect(screen.queryByRole('link', { name: 'Futterstellen' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Katzen' })).toBeNull();
   await act(async () => { finish({ error: {}, response: { status: 401 } }); });
   expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
   expect(collectorMount).toHaveBeenCalledTimes(1);
@@ -214,7 +214,7 @@ test.each([
 });
 
 test('successful login reveals normal PWA without reload', async () => {
-  setPath('/sites');
+  setPath('/cats');
   let loggedIn = false;
   apiGet.mockImplementation(async (path: string) => {
     if (path === '/api/v1/auth/session') return loggedIn ? sessionResponse(verifiedUser) : { error: {}, response: { status: 401 } };
@@ -235,20 +235,20 @@ test('successful login reveals normal PWA without reload', async () => {
   fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'supersecret-password' } });
   fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
   expect(await screen.findByRole('navigation', { name: 'Bereiche' })).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Futterstellen' })).toBeTruthy();
-  expect(await screen.findByText('Futterstellen der aktiven Organisation.')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Katzen' })).toBeTruthy();
+  expect(await screen.findByText('Bekannte Katzen und beobachtete Chips. Ein unbekannter Chip ist kein Fehler.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Anmelden' })).toBeNull();
   const { getAuthState } = await import('./platform/auth');
   expect(getAuthState().activeOrganizationId).toBe('org-a');
 });
 
 test('session expiration hides protected content and shows login without stale data', async () => {
-  setPath('/sites');
+  setPath('/cats');
   apiGet.mockImplementation(async (path: string) => {
     if (path === '/api/v1/auth/session') return sessionResponse(verifiedUser);
     if (path === '/api/v1/auth/csrf') return { data: { token: 'csrf' } };
-    if (typeof path === 'string' && path.includes('/feeding-sites')) {
-      return { data: [{ id: 'site-a', organizationId: 'org-a', name: 'Private A site' }],
+    if (typeof path === 'string' && path.endsWith('/cats')) {
+      return { data: [{ id: 'cat-a', chipId: 'CHIP', organizationId: 'org-a', name: 'Private A site' }],
         response: { ok: true, status: 200 } };
     }
     return { data: [], response: { ok: true, status: 200 } };
@@ -291,16 +291,16 @@ test('session expiration preserves offline-sync eligibility when a valid credent
   await act(async () => { await fetchSession().catch(() => {}); });
   expect(await screen.findByText('CollectorShell')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
-  expect(screen.queryByRole('link', { name: 'Futterstellen' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Katzen' })).toBeNull();
 });
 
 test('logout immediately hides shell and discards management state', async () => {
-  setPath('/sites');
+  setPath('/cats');
   apiGet.mockImplementation(async (path: string) => {
     if (path === '/api/v1/auth/session') return sessionResponse(verifiedUser);
     if (path === '/api/v1/auth/csrf') return { data: { token: 'csrf' } };
-    if (typeof path === 'string' && path.includes('/feeding-sites')) {
-      return { data: [{ id: 'site-a', organizationId: 'org-a', name: 'Private A site' }],
+    if (typeof path === 'string' && path.endsWith('/cats')) {
+      return { data: [{ id: 'cat-a', chipId: 'CHIP', organizationId: 'org-a', name: 'Private A site' }],
         response: { ok: true, status: 200 } };
     }
     return { data: [], response: { ok: true, status: 200 } };
@@ -332,7 +332,7 @@ test('offline with valid credential keeps /sync usable but management locked', a
   const syncModule = await import('./App');
   const { unmount } = render(<syncModule.App />);
   expect(await screen.findByText('CollectorShell')).toBeTruthy();
-  expect(screen.queryByRole('link', { name: 'Futterstellen' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Katzen' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Anmelden' })).toBeNull();
   unmount();
   cleanup();
@@ -392,7 +392,7 @@ test('direct navigation to protected routes never renders navigation before auth
 });
 
 test('organization switch does not leak previous organization data', async () => {
-  setPath('/sites');
+  setPath('/cats');
   const orgA = { ...verifiedUser, memberships: [
     { membershipId: 'm1', organizationId: 'org-a', organizationName: 'Org A', role: 'MEMBER', status: 'ACTIVE' },
     { membershipId: 'm2', organizationId: 'org-b', organizationName: 'Org B', role: 'MEMBER', status: 'ACTIVE' },
@@ -400,7 +400,7 @@ test('organization switch does not leak previous organization data', async () =>
   apiGet.mockImplementation(async (path: string) => {
     if (path === '/api/v1/auth/session') return sessionResponse(orgA);
     if (path === '/api/v1/auth/csrf') return { data: { token: 'csrf' } };
-    if (typeof path === 'string' && path.includes('/feeding-sites')) {
+    if (typeof path === 'string' && path.endsWith('/cats')) {
       return { data: [], response: { ok: true, status: 200 } };
     }
     return { data: [], response: { ok: true, status: 200 } };
@@ -415,5 +415,16 @@ test('organization switch does not leak previous organization data', async () =>
   expect(getAuthState().activeOrganizationId).toBeNull();
   expect(await screen.findByText('Bitte eine aktive Organisation auswählen.')).toBeTruthy();
   await act(async () => { selectOrganization('org-a'); });
-  expect(await screen.findByText(/Noch keine Futterstellen/)).toBeTruthy();
+  expect(await screen.findByText(/Noch keine Katzen oder Chips/)).toBeTruthy();
+});
+
+test.each(['MEMBER', 'ADMIN'])('authenticated %s sees exactly the field navigation', async (role) => {
+  setPath('/sync');
+  apiGet.mockResolvedValue(sessionResponse({ ...verifiedUser, memberships: [{ ...verifiedUser.memberships[0], role }] }));
+  const { App } = await import('./App');
+  render(<App/>);
+  const navigation = await screen.findByRole('navigation', { name: 'Bereiche' });
+  const links = [...navigation.querySelectorAll('a')];
+  expect(links.map(link => link.getAttribute('href'))).toEqual(['/sync', '/nodes', '/cats']);
+  expect(links.map(link => link.textContent)).toEqual(['Vor-Ort-Sync', 'Nodes', 'Katzen']);
 });

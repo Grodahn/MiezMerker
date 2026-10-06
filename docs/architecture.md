@@ -71,13 +71,23 @@ upload cannot undo local durable acquisition. #2 provides separate state types
 and an outbox adapter, not transitions, acknowledgements, observation capture or
 real upload/aggregation implementations.
 
-## One frontend and the offline boundary
+## Field PWA, Admin backend and the offline boundary
 
-`/sync` belongs to collector #8. `/sites`, `/nodes`, `/cats`, `/observations`,
-`/visits`, `/admin/members` belong to management #11, inside the same `/app`
-project, service-worker scope and deployment artifact. Management routes are
-implemented in #11; see `docs/issue11-management.md`. They use transient,
-organization-bound server data without mounting collector storage.
+After Epic #30 / #38, `/app` exposes login (`/login`), `/sync`, `/nodes`
+and `/cats`. Former `/sites`, `/observations` and `/visits` URLs show a small
+not-found state inside the authenticated field shell. Nodes and Cats use
+transient, organization-bound server data without mounting collector storage.
+Nodes still reads FeedingSite context and deployments; FeedingSite master-data
+maintenance belongs only to the Admin UI. Cats deliberately remains MEMBER-capable
+in the PWA as well as available in the Admin backend, including per-cat visit history.
+
+Spring MVC/Thymeleaf owns `/admin/**`: `/admin/login`, `/admin/`,
+`/admin/members`, `/admin/sites`, `/admin/cats`, `/admin/observations`,
+`/admin/visits`. These online pages retain the ACTIVE-ADMIN gate from #33.
+RawObservations and Visits no longer have standalone PWA pages. Shared domain
+objects, REST APIs and generated OpenAPI types remain available.
+See `docs/issue38-field-pwa.md` for the final surface split and routing boundary;
+`docs/issue11-management.md` describes the historical combined PWA.
 
 Unauthenticated browsers see only login (#31; see `docs/issue31-auth-gate.md`).
 The centralized app-shell gate renders login-only, offline-sync-only (`/sync`
@@ -85,7 +95,7 @@ with a still-valid offline credential, never anonymous) or the authenticated
 app. It never replaces backend tenant/role checks.
 
 The production Service Worker precaches the shell and collector assets and uses
-an SPA navigation fallback excluding `/api/`. It never caches authenticated HTTP
+an SPA navigation fallback excluding both `/api` and `/admin` namespaces. It never caches authenticated HTTP
 business responses. Install/first use needs an online visit; thereafter `/sync`
 can reload offline. The Vite dev server intentionally does not register a worker;
 use a production build/preview to verify offline behavior. A future update UI
@@ -150,9 +160,9 @@ connection to that schema. The reserved `miezmerker` namespace must not alter
 PostgreSQL's lookup path when the database user has the same name.
 Tests use H2 by default for a portable smoke check and the same tests run against
 PostgreSQL in CI. No business entities, raw ingestion or visit engine are built
-in #2. Same-origin reverse proxy deployment is preferred; Vite proxies `/api` to
+in #2. Same-origin reverse proxy deployment is preferred; Vite proxies `/api` and `/admin/**` to
 port 8080 locally without CORS configuration. Serve static PWA files with an SPA
-fallback, route `/api` to backend before that fallback, and require HTTPS in
+fallback, route `/api` and `/admin/**` (including bare `/admin`) to the backend before that fallback, and require HTTPS in
 production. Production proxy/hosting configuration belongs to deployment work.
 
 ## Decisions and deliberately unfinished features

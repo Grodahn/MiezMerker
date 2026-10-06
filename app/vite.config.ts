@@ -2,7 +2,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-const proxy = { '/api': { target: 'http://127.0.0.1:8080', changeOrigin: false } };
+const backend = { target: process.env.MIEZMERKER_BACKEND_URL ?? 'http://127.0.0.1:8080', changeOrigin: false };
+// Proxy and Workbox match URLs including query strings, including bare /admin?… .
+// Server-rendered Admin owns this namespace in development and preview too.
+const proxy = { '/api': backend, '^/admin(?:/|\\?|$)': backend };
 export default defineConfig({
   plugins: [react(), VitePWA({
     registerType: 'prompt',
@@ -17,7 +20,7 @@ export default defineConfig({
     workbox: {
       globPatterns: ['**/*.{js,css,html,png,ico}'],
       navigateFallback: 'index.html',
-      navigateFallbackDenylist: [/^\/api\//],
+      navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/, /^\/admin(?:\/|\?|$)/],
       // HTTP business data is never cached by this foundation.
       runtimeCaching: [],
     },

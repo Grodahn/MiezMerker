@@ -294,6 +294,21 @@ class AdminShellTest {
     }
 
     @Test
+    void allBackofficeRoutesRenderServerHtmlWithoutThePwaShell() throws Exception {
+        seed();
+        assertLoginSuccess(formLogin("admin-a@example.org", "supersecret-password-a"));
+        for (String route : new String[] {"/admin/", "/admin/members", "/admin/sites",
+                "/admin/cats", "/admin/observations", "/admin/visits"}) {
+            var response = get(route);
+            assertEquals(200, response.statusCode(), route + ": " + response.body());
+            assertTrue(response.headers().firstValue("content-type").orElse("").contains("text/html"), route);
+            assertTrue(response.body().contains("/admin/logout"), route);
+            assertFalse(response.body().contains("id=\"root\""), route);
+            assertFalse(response.body().contains("/assets/index-"), route);
+        }
+    }
+
+    @Test
     void memberOnlyLoginIsDenied() throws Exception {
         seed();
         var login = formLogin("member-a@example.org", "supersecret-password-m");

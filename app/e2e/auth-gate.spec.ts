@@ -20,7 +20,8 @@ async function backend(page: Page) {
       await state.logoutHold; state.expired = true;
       return route.fulfill({ status: 204 });
     }
-    if (path.endsWith('/feeding-sites')) return send([{ id: 'site', organizationId: 'gate-org', name: 'Private site' }]);
+    if (path.endsWith('/cats')) return send([{ id: 'cat', chipId: 'CHIP', organizationId: 'gate-org', name: 'Private site' }]);
+    if (path.endsWith('/feeding-sites') || path.endsWith('/chip-activity')) return send([]);
     // Offline issuance is intentionally denied: the offline test seeds an
     // already-issued, account/device-bound credential and real Web Crypto keys.
     return send({}, 403);
@@ -30,7 +31,7 @@ async function backend(page: Page) {
 
 test('reconnect verifies the session before showing management', async ({ page, context }) => {
   const state = await backend(page);
-  await page.goto('/sites');
+  await page.goto('/cats');
   await expect(page.getByRole('cell', { name: 'Private site' })).toBeVisible();
   await context.setOffline(true);
   await expect(page.getByRole('navigation')).not.toBeVisible();
@@ -47,7 +48,7 @@ test('reconnect verifies the session before showing management', async ({ page, 
 
 test('logout clears the shell while its server request is pending', async ({ page }) => {
   const state = await backend(page);
-  await page.goto('/sites');
+  await page.goto('/cats');
   await expect(page.getByRole('cell', { name: 'Private site' })).toBeVisible();
   let release!: () => void;
   state.logoutHold = new Promise(resolve => { release = resolve; });

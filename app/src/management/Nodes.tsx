@@ -46,7 +46,7 @@ function NodeDetail({ organizationId, node, history, sites, close, saved }: {
       </select></label>
       <label>Gültig ab (lokale Uhrzeit)<input required type="datetime-local" step="1" value={validFrom} onChange={e => setFrom(e.target.value)}/></label>
       <button disabled={move.busy || mutation.busy}>Zuordnung speichern</button>
-    </form> : <p>Bitte zuerst eine <a href="/sites">Futterstelle anlegen</a>.</p>}
+    </form> : <p>Noch keine Futterstellen vorhanden. Bitte einen Administrator um die Einrichtung im Admin-Backend bitten.</p>}
     <Feedback {...move}/><h3>Deployment-Historie</h3>
     {ownHistory.length ? <Table label="Deployment-Historie" headings={['Futterstelle', 'Gültig ab (einschließlich)', 'Gültig bis (ausschließlich)']}>
       {ownHistory.map(deployment => <tr key={deployment.id}><td>{siteName(sites, deployment.feedingSiteId)}</td>

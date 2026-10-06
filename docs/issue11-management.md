@@ -1,5 +1,14 @@
 # Kleine Verwaltungs- und Beobachtungsoberfläche (#11)
 
+> Architecture follow-up (#30 / #38): this document records the historical
+> combined-PWA implementation of #11. The final field PWA has login, `/sync`,
+> `/nodes` and `/cats`. FeedingSite maintenance, Members, RawObservations and
+> standalone Visits now use Spring MVC/Thymeleaf `/admin/**`. Cats remains in
+> both surfaces, with its field workflow and per-cat visit history preserved.
+> Nodes still reads FeedingSite/deployment context. REST APIs remain intact.
+> See [the final split](issue38-field-pwa.md).
+
+
 Vertrag: [Issue #11](https://github.com/Grodahn/MiezMerker/issues/11), vor der
 Implementierung am 2026-10-05 von GitHub gelesen. Ausgangspunkt ist `main`
 (`af9f3f3`) mit den gemergten PRs #20 (#2), #23 (#16), #25 (#9), #26 (#8)

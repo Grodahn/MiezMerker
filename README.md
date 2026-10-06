@@ -61,7 +61,7 @@ Admin web UI
 ```
 
 The field PWA remains installable and offline-capable. Administrative workflows
-are being moved to a server-rendered Spring MVC/Thymeleaf back office so that the
+use a server-rendered Spring MVC/Thymeleaf back office so that the
 field application stays focused on work at feeding stations.
 
 ## Current status
@@ -73,7 +73,7 @@ field application stays focused on work at feeding stations.
 | Organizations & security | Multi-organization users/memberships, session login, tenant separation, signed offline authorization, node identity and claiming |
 | Observation pipeline | Idempotent immutable raw-observation ingest and reproducible server-side visit derivation |
 | Testing | Backend/app/firmware-core tests, PostgreSQL CI, Playwright flows, deterministic firmware simulator |
-| Admin/UI split | Auth gate and user display names complete; dedicated server-side admin pages are being implemented under #30–#38 |
+| Admin/UI split | Field PWA / server-rendered Admin separation complete (#30–#38) |
 | Hardware | Firmware abstractions exist; physical RFID reader/antenna and long-running field validation are still outstanding |
 | Deployment | First real-world shelter handoff is planned after hardware validation; broader reuse by other animal-welfare organizations is a project goal |
 
@@ -81,7 +81,7 @@ field application stays focused on work at feeding stations.
 
 The near-term path is deliberately practical:
 
-1. finish the field-PWA / admin-backend separation (#30–#38);
+1. validate the separated field-PWA / admin-backend workflows in real field use (#30–#38);
 2. validate the physical 134.2 kHz RFID reader and antenna geometry (#3/#4);
 3. prove the end-to-end path from chip read to derived visit (#13);
 4. validate real-world power/runtime behavior (#12);
@@ -148,7 +148,7 @@ npm ci
 npm run dev
 ```
 
-PWA: `http://127.0.0.1:5173/sync`. Vite leitet `/api` an
+PWA: `http://127.0.0.1:5173/sync`. Vite leitet `/api` und `/admin/**` an
 `http://127.0.0.1:8080` weiter. Der Browser nutzt dieselbe Origin; CORS ist nicht
 nötig. Health: `/api/v1/health`, Version: `/api/v1/version`, OpenAPI:
 `/api/v1/openapi` (auch über den PWA-Proxy erreichbar). Health ist ein Liveness-
@@ -231,9 +231,9 @@ npm run test:e2e
 ```
 
 Linux benötigt für Chromium ggf. `npx playwright install --with-deps chromium`.
-Playwright startet selbst die Production-Preview auf Port 4173; diesen Port
-freihalten. Geprüft werden echter Same-Origin-Proxy, Offline-Neuladen der
-Collector-App-Shell und persistente Outbox sowie die #11-Verwaltungsabläufe
+Playwright startet selbst die Production-Preview auf Port 4173 und den
+Dev-Server auf Port 5173; beide Ports freihalten. Geprüft werden echter Same-Origin-Proxy, Offline-Neuladen der
+Collector-App-Shell und persistente Outbox sowie Nodes/Cats, die Auth-Grenze und servergerenderte Admin-URLs
 bei Desktop- und Mobilbreite. Der Vite-Dev-Modus aktiviert keinen
 Service Worker. Zum manuellen Offline-Test `npm run build` und `npm run preview`
 verwenden, `/sync` einmal online öffnen, Worker-Aktivierung abwarten, dann offline
@@ -258,7 +258,12 @@ determinische Interop-Vektoren unter `protocol/fixtures/`.
 
 Implementiert (#9/#10/#11): organisationsgebundene Stammdaten, idempotenter
 Upload unveränderter Rohbeobachtungen, historisierte Node-Zuordnungen,
-Backend-Visit-Ableitung und kleine Verwaltungsseiten in derselben PWA.
+Backend-Visit-Ableitung und ursprünglich kleine Verwaltungsseiten in derselben PWA.
+Seit #30–#38 bleiben dort Login, `/sync`, `/nodes` und `/cats`; die übrige
+Verwaltung liegt unter `/admin/**` in Spring MVC/Thymeleaf.
+Katzen bleiben bewusst in beiden Oberflächen. Nodes nutzt weiterhin
+Futterstellenkontext; Futterstellen-Stammdatenpflege ist Admin-UI.
+[Endgültige Aufteilung und Routing](docs/issue38-field-pwa.md).
 Bedienung und API-Ergänzungen: [docs/issue11-management.md](docs/issue11-management.md).
 Der gemergte Collector (#8) unterstützt Offline-BLE und getrennten Backend-Upload;
 physische Abnahme und Board-Anbindung stehen weiter aus (siehe Collector-Dokumentation).
