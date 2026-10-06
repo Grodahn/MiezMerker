@@ -5,7 +5,6 @@ export type Site = components['schemas']['FeedingSiteView'];
 export type Node = components['schemas']['NodeView'];
 export type Cat = components['schemas']['CatView'];
 export type Deployment = components['schemas']['DeploymentView'];
-export type Observation = components['schemas']['RawObservationView'];
 export type Visit = components['schemas']['VisitView'];
 export type Activity = components['schemas']['ChipActivityView'];
 

@@ -31,7 +31,6 @@ nav a[aria-current="page"] { font-weight: 700; text-decoration-thickness: 3px; }
 .management-form input[type="checkbox"] { width: auto; align-self: start; }
 .management-form small { grid-column: 1 / -1; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
-.pagination { margin: 1rem 0; }
 .detail { margin-top: 1.5rem; padding: 1.2rem; border: 1px solid #bdd0c6; border-radius: .5rem; background: #fff; }
 .table-scroll { overflow-x: auto; margin: 1rem 0; max-width: 100%; border: 1px solid #bdd0c6; border-radius: .35rem; }
 table { border-collapse: collapse; width: 100%; font-size: .95rem; }

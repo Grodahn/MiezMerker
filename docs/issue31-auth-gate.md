@@ -1,5 +1,11 @@
 # Auth-Gate der PWA (#31)
 
+> Follow-up #38: the state machine below is unchanged. The field PWA now exposes
+> login, `/sync`, `/nodes`, `/cats`; obsolete field routes show not-found after
+> authentication. `/admin/**` belongs to Spring MVC/Thymeleaf and its #33 gate.
+> References below to the former combined-PWA routes document the #31 state.
+
+
 Vertrag: [Issue #31](https://github.com/Grodahn/MiezMerker/issues/31), vor der
 Implementierung von GitHub gelesen. Ausgangspunkt ist `main` mit den gemergten
 PRs für #8 (Collector), #11 (Management) und #16 (Session/Memberships).
