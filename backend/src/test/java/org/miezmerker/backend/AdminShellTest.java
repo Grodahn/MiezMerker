@@ -221,6 +221,29 @@ class AdminShellTest {
     }
 
     @Test
+    void apiRequestBeforeAdminLoginDoesNotChangeLandingPage() throws Exception {
+        seed();
+        assertEquals(401, get("/api/v1/organizations").statusCode());
+        var login = formLogin("admin-a@example.org", "supersecret-password-a");
+        assertTrue(login.headers().firstValue("location").orElse("").endsWith("/admin/"));
+        assertEquals(200, get("/admin/").statusCode());
+    }
+
+    @Test
+    void deniedMutationMethodsRenderForbiddenPage() throws Exception {
+        seed();
+        formLogin("admin-a@example.org", "supersecret-password-a");
+        for (String method : new String[] {"PUT", "PATCH", "DELETE"}) {
+            var denied = client.send(HttpRequest.newBuilder(URI.create(base("/admin/org")))
+                    .method(method, HttpRequest.BodyPublishers.noBody()).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(403, denied.statusCode(), method + ": " + denied.body());
+            assertTrue(denied.body().contains("Kein Admin-Zugang"), method);
+        }
+        assertEquals(200, get("/admin/").statusCode());
+    }
+
+    @Test
     void loginPageIsPublicWithoutPwaShell() throws Exception {
         seed();
         var res = get("/admin/login");

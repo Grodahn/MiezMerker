@@ -20,12 +20,15 @@ Gehört zu Epic #30 (Trennung Feld-PWA `/app` und Backoffice `/admin`).
 - `POST /admin/login` – Spring-Security-Form-Login (`email` als Username-Parameter),
   Erfolg via `AdminAuthSuccessHandler` (aktualisiert `last_login_at` wie die API,
   initialisiert den Session-Org-Kontext), Fehler nach `/admin/login?error`.
+  Erfolg führt immer nach `/admin/`, auch wenn zuvor ein API-Request in der
+  gemeinsamen Session gespeichert wurde.
 - `POST /admin/logout` – Spring-Security-Logout, invalidiert die Session,
   löscht `JSESSIONID`, Erfolg nach `/admin/login?logout` (CSRF-pflichtig).
 - `GET /admin/` – Dashboard mit allen Backoffice-Bereichen (Mitglieder,
   Futterstellen, Katzen, Rohbeobachtungen, Besuche).
 - `GET /admin/org` + `POST /admin/org` – Organisationsauswahl/-wechsel.
-- `GET /admin/denied` – wiederverwendbare 403-Seite (GET + POST, immer 403).
+- `/admin/denied` – wiederverwendbare 403-Seite für alle HTTP-Methoden;
+  Security-Forwards behalten die Methode des abgewiesenen Requests bei.
 - Stubs für Folge-Tickets (noch keine Fachlogik aus #34–#37):
   `GET /admin/members`, `/admin/sites`, `/admin/cats`,
   `/admin/observations`, `/admin/visits` rendern dasselbe Layout mit Platzhalter.
@@ -63,14 +66,14 @@ Wiederverwendbare Thymeleaf-Fragmente in `templates/admin/layout.html`
 ## Sicherheit
 
 - CSRF für alle Mutationen (`/admin/login`, `/admin/logout`, `/admin/org`);
-  fehlende Token → 403 über `/admin/denied` (POST-fähig, kein 405-Leak).
+  fehlende Token → 403 über `/admin/denied` (auch PUT/PATCH/DELETE, kein 405-Leak).
 - Keine sensiblen Daten in Logs/URLs (generische Login-Fehlermeldung, keine
   Passwort-/Token-Logs, IDs nur als validierte Form-Parameter).
 - Direkte fremde Org-IDs umgehen Tenant-Gates nie (Negativtests A gegen B).
 
 ## Tests
 
-`AdminShellTest` (12 Integrationstests, `RANDOM_PORT`, H2):
+`AdminShellTest` (14 Integrationstests, `RANDOM_PORT`, H2):
 
 - Login-Seite öffentlich ohne PWA-Shell; unauthentifiziert → Redirect zum Login.
 - ADMIN-Login erfolgreich, Dashboard listet alle Bereiche, Org/User/Logout sichtbar.
@@ -81,7 +84,9 @@ Wiederverwendbare Thymeleaf-Fragmente in `templates/admin/layout.html`
 - Logout invalidiert die Session; CSRF-freie POSTs → 403 ohne Zustandsänderung.
 - Session-Ablauf (1s-Timeout) → Redirect zu `/admin/login` (`?expired`).
 - Stubs nutzen dasselbe Layout und erfordern ADMIN.
+- Ein vorheriger unauthentifizierter API-Request ändert das Login-Ziel nicht.
+- CSRF-abgewiesene PUT/PATCH/DELETE-Requests rendern die 403-Seite.
 
-Alle 134 Backend-Tests (inkl. `TenancyAuthTest`, `DisplayNameTest`) bleiben grün;
+Die Backend-Suite umfasst 136 Tests (inkl. `TenancyAuthTest`, `DisplayNameTest`);
 bestehende REST-/PWA-APIs, Cookies (`HttpOnly`/`Secure`/`SameSite=Lax`) und
 CSRF-Semantik sind unverändert.

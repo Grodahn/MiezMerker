@@ -135,7 +135,7 @@ export async function fetchSession(): Promise<SessionUser | null> {
     }
     throw failure;
   }
-  const { data, error, response } = outcome as { data?: { userId?: string; email?: string; memberships?: SessionUser['memberships'] }; error?: unknown; response?: { status?: number } };
+  const { data, error, response } = outcome as { data?: components['schemas']['SessionView']; error?: unknown; response?: { status?: number } };
   // Initial restoration and online refreshes can complete after login/logout or each other.
   if (generation !== sessionGeneration || changingAuthentication) return state.user;
   if (error || !data || !data.userId || !data.email) {

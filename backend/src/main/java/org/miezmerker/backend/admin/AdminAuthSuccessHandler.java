@@ -35,7 +35,9 @@ public class AdminAuthSuccessHandler extends SavedRequestAwareAuthenticationSucc
         this.users = users;
         this.admins = admins;
         setDefaultTargetUrl("/admin/");
-        setAlwaysUseDefaultTargetUrl(false);
+        // The shared request cache can contain a previous unauthenticated API
+        // request. An admin form login must land in the HTML backoffice.
+        setAlwaysUseDefaultTargetUrl(true);
     }
 
     // One transaction for last_login_at + org-context init, mirroring the

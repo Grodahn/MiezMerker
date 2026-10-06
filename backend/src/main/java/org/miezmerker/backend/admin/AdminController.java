@@ -11,7 +11,6 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -66,9 +65,9 @@ public class AdminController {
         return "admin/login";
     }
 
-    // GET + POST: the access-denied handler forwards CSRF-rejected POSTs here,
-    // and a forward preserves the original method (POST-only mapping would 405).
-    @RequestMapping(value = "/denied", method = {RequestMethod.GET, RequestMethod.POST})
+    // A security forward preserves the rejected request's HTTP method. Handle
+    // every method so CSRF denials remain 403, including PUT/PATCH/DELETE.
+    @RequestMapping("/denied")
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public String denied(@AuthenticationPrincipal AppUserDetails principal, Model model) {
         // Understandable 403 state (no tenant leak: no org names, no IDs).
