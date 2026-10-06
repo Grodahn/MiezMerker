@@ -14,7 +14,8 @@ time filter compares the stored RTC milliseconds, never receipt time; visits
 filter the persisted start time. UNKNOWN rows without a timestamp are visible
 without a time filter. Foreign/absent filter resources return the same empty
 result, without disclosing names, chips or locations. Invalid form values show
-neutral validation feedback. The reset link removes all filters.
+neutral validation feedback. Time filters must be nonnegative Unix times within
+the existing finite PostgreSQL observation-time range. The reset link removes all filters.
 
 Pagination uses `limit` (default 50, 1–100) and nonnegative `offset`. The shared
 query service retrieves at most limit + 1 rows for next-page detection; no full
@@ -49,8 +50,8 @@ Raw rows and other tenants' visits are unchanged. The form's organization UUID
 is only a stale-form guard: authority remains the validated session context.
 An organization switch rejects a previous tenant's open recompute form.
 Success reports visit/exclusion counts; supported service errors produce
-neutral failure feedback. No second aggregation implementation is introduced.
+neutral failure feedback, including database errors after rollback. No second aggregation implementation is introduced.
 
 The PWA `/observations` and `/visits` continue to coexist until #38. REST
 contracts and the generated client are unchanged; REST and MVC share the
-extracted query layer. #34/#35 behavior and the #37 cats placeholder are intact.
+extracted query layer. #34/#35 behavior and the merged #37 cats Admin pages are intact.

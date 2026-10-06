@@ -107,7 +107,7 @@ public class AdminObservationsVisitsController {
                 page.stream().limit(filters.limit).map(AdminObservationsVisitsController::visitRow)
                         .forEach(rows::add);
             }
-        } catch (IllegalArgumentException | java.time.DateTimeException e) {
+        } catch (IllegalArgumentException | java.time.DateTimeException | ArithmeticException e) {
             model.addAttribute("error", "Filter ungültig. Bitte IDs, Zeitraum und Seitengröße prüfen.");
         } catch (ResponseStatusException e) {
             if (e.getStatusCode() != HttpStatus.NOT_FOUND) throw e;
@@ -137,6 +137,9 @@ public class AdminObservationsVisitsController {
                     + ", ohne Futterstelle " + result.excludedUnattributed() + ".");
         } catch (ResponseStatusException e) {
             if (e.getStatusCode() != HttpStatus.CONFLICT && e.getStatusCode() != HttpStatus.BAD_REQUEST) throw e;
+            redirect.addFlashAttribute("error", "Neuberechnung nicht möglich. Bitte erneut versuchen.");
+        } catch (org.springframework.dao.DataAccessException e) {
+            // The service transaction has rolled back. Do not expose SQL or operational data.
             redirect.addFlashAttribute("error", "Neuberechnung nicht möglich. Bitte erneut versuchen.");
         }
         return "redirect:/admin/visits";
@@ -170,7 +173,8 @@ public class AdminObservationsVisitsController {
     private static VisitRow visitRow(DerivedVisit v) {
         return new VisitRow(v.getId(), v.getStartAt().toString(), v.getEndAt().toString(),
                 Duration.between(v.getStartAt(), v.getEndAt()).toString(), v.getFeedingSite().getName(),
-                v.getCat() == null ? "Noch keine Katze zugeordnet" : v.getCat().getName(),
+                v.getCat() == null ? "Noch keine Katze zugeordnet"
+                        : blank(v.getCat().getName()) ? "Katze ohne Namen" : v.getCat().getName(),
                 v.getChipId(), v.getObservationCount(), v.getAlgorithmVersion(), v.getGapSeconds(),
                 v.getFirstObservation().getId(), v.getLastObservation().getId());
     }
@@ -178,7 +182,14 @@ public class AdminObservationsVisitsController {
     private static boolean blank(String v) { return v == null || v.isBlank(); }
     private static UUID uuid(String v) { return blank(v) ? null : UUID.fromString(v.trim()); }
     private static Long millis(String v) {
-        return blank(v) ? null : LocalDateTime.parse(v.trim()).toInstant(ZoneOffset.UTC).toEpochMilli();
+        if (blank(v)) return null;
+        long value = LocalDateTime.parse(v.trim()).toInstant(ZoneOffset.UTC).toEpochMilli();
+        // Raw observation/aggregation times are nonnegative and finite in PostgreSQL.
+        // Validate before JDBC binding; otherwise an extreme valid Java date becomes a 500.
+        if (value < 0 || value >= AdminSitesController.MAX_OBSERVED_AT_MS_EXCLUSIVE) {
+            throw new IllegalArgumentException();
+        }
+        return value;
     }
     private static String pageUrl(String route, Filters f, int offset) {
         return UriComponentsBuilder.fromPath(route).queryParam("feedingSiteId", f.feedingSiteId)
