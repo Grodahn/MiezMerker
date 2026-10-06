@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Organisation wählen')}">
+<title>Organisation wählen · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('')}"></div>
+<main>
+<h1>Organisation wählen</h1>
+<p>Mehrere ACTIVE ADMIN-Mitgliedschaften. Bitte aktiven Organisationskontext wählen. Der Kontext wird serverseitig in der Session gehalten; eine clientseitige ID allein ist kein Berechtigungsnachweis.</p>
+<div class="card">
+<form th:action="@{/admin/org}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<label for="organizationId">Aktive Organisation</label>
+<select id="organizationId" name="organizationId" required>
+<option th:each="o : ${adminOrgs}" th:value="${o.id}" th:text="${o.displayName + ' (' + o.slug + ')'}" th:selected="${activeOrg != null and o.id == activeOrg.id}">Org</option>
+</select>
+<div style="margin-top:1rem"><button class="btn" type="submit">Auswählen</button></div>
+</form>
+</div>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

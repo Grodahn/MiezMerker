@@ -20,13 +20,20 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
+import org.miezmerker.backend.admin.AdminAuthSuccessHandler;
+import org.miezmerker.backend.domain.MembershipRole;
+import org.miezmerker.backend.domain.MembershipStatus;
+import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.domain.UserStatus;
 import org.miezmerker.backend.repo.AppUserRepository;
+import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
 
 @Configuration
@@ -68,8 +75,13 @@ public class BoundaryConfiguration {
 
     @Bean
     SecurityFilterChain security(HttpSecurity http, CookieCsrfTokenRepository csrfRepository,
-            SessionAuthenticationStrategy sessionAuthenticationStrategy, AppUserRepository users) throws Exception {
+            SessionAuthenticationStrategy sessionAuthenticationStrategy, AppUserRepository users,
+            MembershipRepository memberships, AdminAuthSuccessHandler adminSuccessHandler)
+            throws Exception {
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
+        var adminLoginEntry = new LoginUrlAuthenticationEntryPoint("/admin/login");
+        var apiUnauthorized = new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED);
+        var apiDenied = new AccessDeniedHandlerImpl();
 
         return http
                 .csrf(csrf -> csrf
@@ -78,7 +90,7 @@ public class BoundaryConfiguration {
                         // Public read-only system endpoints do not mutate state.
                         .ignoringRequestMatchers("/api/v1/health", "/api/v1/version", "/api/v1/openapi"))
                 .authorizeHttpRequests(auth -> auth
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
                         .requestMatchers("/api/v1/health", "/api/v1/version", "/api/v1/openapi")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/session", "/api/v1/auth/csrf")
@@ -91,6 +103,25 @@ public class BoundaryConfiguration {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/credentials/issuer")
                         .permitAll()
+                        // Admin shell: public login + denied pages, everything else ADMIN-only (#33).
+                        .requestMatchers("/admin/login", "/admin/denied").permitAll()
+                        .requestMatchers("/admin", "/admin/**").access((authentication, context) -> {
+                            var current = authentication.get();
+                            if (!current.isAuthenticated()
+                                    || !(current.getPrincipal() instanceof AppUserDetails principal)) {
+                                return new AuthorizationDecision(false);
+                            }
+                            var user = users.findById(principal.getId());
+                            if (user.isEmpty() || user.get().getStatus() != UserStatus.ACTIVE) {
+                                return new AuthorizationDecision(false);
+                            }
+                            boolean admin = memberships.findByUserIdWithRefs(principal.getId()).stream()
+                                    .anyMatch(m -> m.getRole() == MembershipRole.ADMIN
+                                            && m.getStatus() == MembershipStatus.ACTIVE
+                                            && m.getOrganization().getStatus() == OrganizationStatus.ACTIVE
+                                            && m.getUser().getStatus() == UserStatus.ACTIVE);
+                            return new AuthorizationDecision(admin);
+                        })
                         .anyRequest().access((authentication, context) -> {
                             var current = authentication.get();
                             boolean active = current.isAuthenticated()
@@ -100,11 +131,53 @@ public class BoundaryConfiguration {
                             return new AuthorizationDecision(active);
                         }))
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                        .authenticationEntryPoint((request, response, entryException) -> {
+                            String uri = request.getRequestURI();
+                            String base = request.getContextPath() + "/admin/";
+                            String adminRoot = request.getContextPath() + "/admin";
+                            if (uri != null && (uri.startsWith(base) || uri.equals(adminRoot))) {
+                                // Expired server-side session (client sends an unknown JSESSIONID):
+                                // redirect to a dedicated expired state, otherwise plain login.
+                                // Never leak account or tenant details here.
+                                boolean expired = request.getRequestedSessionId() != null
+                                        && !request.isRequestedSessionIdValid();
+                                if (expired) {
+                                    response.sendRedirect(
+                                            request.getContextPath() + "/admin/login?expired");
+                                } else {
+                                    adminLoginEntry.commence(request, response, entryException);
+                                }
+                            } else {
+                                apiUnauthorized.commence(request, response, entryException);
+                            }
+                        })
+                        .accessDeniedHandler((request, response, deniedException) -> {
+                            String uri = request.getRequestURI();
+                            String base = request.getContextPath() + "/admin/";
+                            String adminRoot = request.getContextPath() + "/admin";
+                            if (uri != null && (uri.startsWith(base) || uri.equals(adminRoot))) {
+                                request.getRequestDispatcher("/admin/denied").forward(request, response);
+                            } else {
+                                apiDenied.handle(request, response, deniedException);
+                            }
+                        }))
+                .formLogin(form -> form
+                        .loginPage("/admin/login")
+                        .loginProcessingUrl("/admin/login")
+                        .usernameParameter("email")
+                        .passwordParameter("password")
+                        .successHandler(adminSuccessHandler)
+                        .failureUrl("/admin/login?error")
+                        .permitAll())
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                         .sessionAuthenticationStrategy(sessionAuthenticationStrategy))
-                .logout(logout -> logout.disable())
+                .logout(logout -> logout
+                        .logoutUrl("/admin/logout")
+                        .logoutSuccessUrl("/admin/login?logout")
+                        .invalidateHttpSession(true)
+                        .deleteCookies("JSESSIONID")
+                        .permitAll())
                 .build();
     }
 }
