@@ -10,7 +10,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import org.miezmerker.backend.domain.Cat;
+import org.miezmerker.backend.service.ObservationVisitQueryService;
 import org.miezmerker.backend.domain.RawObservation;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
@@ -47,13 +47,15 @@ public class ObservationController {
 
     private final ObservationIngestService ingest;
     private final TenantService tenants;
+    private final ObservationVisitQueryService queries;
 
     @PersistenceContext
     private EntityManager entities;
 
-    public ObservationController(ObservationIngestService ingest, TenantService tenants) {
+    public ObservationController(ObservationIngestService ingest, TenantService tenants, ObservationVisitQueryService queries) {
         this.ingest = ingest;
         this.tenants = tenants;
+        this.queries = queries;
     }
 
     @Schema(name = "IngestObservationRequest")
@@ -166,47 +168,9 @@ public class ObservationController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireActive(principal.getId(), organizationId);
-        if (limit < 1 || limit > MAX_LIMIT) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "limit must be 1.." + MAX_LIMIT);
-        }
-        if (offset < 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be >= 0");
-        }
-        rejectForeignNodeFilter(nodeId, organizationId);
-        String normalizedChip =
-                chipId == null || chipId.isBlank() ? null : Cat.normalizeChipId(chipId);
-        String jpql = "select o from RawObservation o join fetch o.node n "
-                + "left join fetch o.feedingSite "
-                + "where o.organization.id = :org"
-                + (nodeId != null ? " and n.nodeId = :node" : "")
-                + (feedingSiteId != null ? " and o.feedingSite.id = :site" : "")
-                + (normalizedChip != null ? " and o.chipId = :chip" : "")
-                + (fromMillis != null ? " and o.observedAtMs >= :from" : "")
-                + (toMillis != null ? " and o.observedAtMs < :to" : "")
-                + (newestFirst ? " order by o.receivedAt desc, o.sequence desc, o.id desc"
-                        : " order by o.receivedAt asc, o.sequence asc, o.id asc");
-        var query = entities.createQuery(jpql, RawObservation.class)
-                .setParameter("org", organizationId)
-                .setFirstResult(offset)
-                .setMaxResults(limit);
-        if (nodeId != null) {
-            query.setParameter("node", nodeId);
-        }
-        if (feedingSiteId != null) {
-            query.setParameter("site", feedingSiteId);
-        }
-        final String chipParam = normalizedChip;
-        if (chipParam != null) {
-            query.setParameter("chip", chipParam);
-        }
-        if (fromMillis != null) {
-            query.setParameter("from", fromMillis);
-        }
-        if (toMillis != null) {
-            query.setParameter("to", toMillis);
-        }
-        return query.getResultList().stream().map(ObservationController::toView).toList();
+        return queries.observations(principal.getId(), organizationId, nodeId,
+                feedingSiteId, chipId, fromMillis, toMillis, limit, offset, newestFirst, null)
+                .stream().map(ObservationController::toView).toList();
     }
 
     @GetMapping(value = "/observations/{observationId}", produces = "application/json")
@@ -274,7 +238,9 @@ public class ObservationController {
     }
 
     /**
-     * Unknown and foreign node filters have identical visibility.
+     * Unknown and foreign node filters have identical visibility
+     * (listByNode). The paginated list delegates this check to
+     * {@link ObservationQueryService}.
      */
     private void rejectForeignNodeFilter(UUID nodeId, UUID organizationId) {
         if (nodeId == null) {

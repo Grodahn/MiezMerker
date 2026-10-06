@@ -6,7 +6,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.util.List;
 import java.util.UUID;
-import org.miezmerker.backend.domain.Cat;
+import org.miezmerker.backend.service.ObservationVisitQueryService;
 import org.miezmerker.backend.domain.DerivedVisit;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
@@ -36,17 +36,17 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/visits")
 public class VisitController {
-    private static final int MAX_LIMIT = 1000;
-
     private final VisitAggregationService visits;
     private final TenantService tenants;
+    private final ObservationVisitQueryService queries;
 
     @PersistenceContext
     private EntityManager entities;
 
-    public VisitController(VisitAggregationService visits, TenantService tenants) {
+    public VisitController(VisitAggregationService visits, TenantService tenants, ObservationVisitQueryService queries) {
         this.visits = visits;
         this.tenants = tenants;
+        this.queries = queries;
     }
 
     @Schema(name = "VisitView")
@@ -95,49 +95,9 @@ public class VisitController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireActive(principal.getId(), organizationId);
-        if (limit < 1 || limit > MAX_LIMIT) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "limit must be 1.." + MAX_LIMIT);
-        }
-        if (offset < 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be >= 0");
-        }
-        if (feedingSiteId != null) {
-            var visible = entities.createQuery(
-                    "select s.id from FeedingSite s where s.id = :site "
-                            + "and s.organization.id = :org",
-                    UUID.class).setParameter("site", feedingSiteId)
-                    .setParameter("org", organizationId).getResultList();
-            if (visible.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-            }
-        }
-        String normalizedChip =
-                chipId == null || chipId.isBlank() ? null : Cat.normalizeChipId(chipId);
-        String jpql = "select v from DerivedVisit v join fetch v.feedingSite "
-                + "left join fetch v.cat where v.organization.id = :org"
-                + (feedingSiteId != null ? " and v.feedingSite.id = :site" : "")
-                + (normalizedChip != null ? " and v.chipId = :chip" : "")
-                + (fromMillis != null ? " and v.startAt >= :from" : "")
-                + (toMillis != null ? " and v.startAt < :to" : "")
-                + " order by v.startAt asc, v.chipId asc, v.feedingSite.id asc, v.id asc";
-        var query = entities.createQuery(jpql, DerivedVisit.class)
-                .setParameter("org", organizationId)
-                .setFirstResult(offset).setMaxResults(limit);
-        if (feedingSiteId != null) {
-            query.setParameter("site", feedingSiteId);
-        }
-        final String chipParam = normalizedChip;
-        if (chipParam != null) {
-            query.setParameter("chip", chipParam);
-        }
-        if (fromMillis != null) {
-            query.setParameter("from", java.time.Instant.ofEpochMilli(fromMillis));
-        }
-        if (toMillis != null) {
-            query.setParameter("to", java.time.Instant.ofEpochMilli(toMillis));
-        }
-        return query.getResultList().stream().map(VisitController::toView).toList();
+        return queries.visits(principal.getId(), organizationId, feedingSiteId,
+                chipId, fromMillis, toMillis, limit, offset)
+                .stream().map(VisitController::toView).toList();
     }
 
     @GetMapping(value = "/{visitId}", produces = "application/json")

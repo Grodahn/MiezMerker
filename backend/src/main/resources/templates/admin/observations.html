@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Rohbeobachtungen')}"><title>Rohbeobachtungen</title></head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('observations')}"></div>
+<main>
+<h1>Rohbeobachtungen</h1>
+<p>Unveränderte technische Lesungen. UNKNOWN bedeutet: Beobachtungszeit unbekannt; die Empfangszeit ist separat ausgewiesen. Abgeleitete Besuche stehen auf der Besuchsseite.</p>
+<p>Alle Zeiten in UTC. Historische Futterstellen stammen aus der gespeicherten Zuordnung.</p>
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}"></div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}"></div>
+<form class="card" method="get" th:action="${route}" th:object="${filters}">
+<div class="grid">
+<div><label for="from">Von (UTC, einschließlich)</label><input id="from" type="datetime-local" step="0.001" th:field="*{from}"/></div>
+<div><label for="to">Bis (UTC, ausschließlich)</label><input id="to" type="datetime-local" step="0.001" th:field="*{to}"/></div>
+<div><label for="feedingSiteId">Futterstellen-ID</label><input id="feedingSiteId" th:field="*{feedingSiteId}"/></div>
+<div><label for="chipId">Chip-ID (exakt)</label><input id="chipId" maxlength="64" th:field="*{chipId}"/></div>
+<div th:if="${raw}"><label for="nodeId">Node-ID</label><input id="nodeId" th:field="*{nodeId}"/></div>
+<div th:if="${raw}"><label for="sequence">Sequence (exakt)</label><input id="sequence" th:field="*{sequence}" inputmode="numeric"/></div>
+<div><label for="limit">Einträge pro Seite (1–100)</label><input id="limit" type="number" min="1" max="100" th:field="*{limit}"/></div>
+</div>
+<p th:if="${raw}">Der Zeitraum filtert den gespeicherten RTC-Rohwert, nicht die Empfangszeit. UNKNOWN-Daten ohne Rohwert bleiben ohne Zeitfilter sichtbar.</p>
+<p th:unless="${raw}">Der Zeitraum filtert den vom Backend berechneten Besuchsstart.</p>
+<button class="btn" type="submit">Filtern</button> <a th:href="${route}">Filter zurücksetzen</a>
+</form>
+
+<p th:if="${#lists.isEmpty(rows)}" class="card">Keine Ergebnisse für diese Organisation und Filter.</p>
+<div th:unless="${#lists.isEmpty(rows)}" class="card table-scroll" role="region" aria-label="Rohbeobachtungen" tabindex="0">
+<style>.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1000px}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}td small{display:block}th{background:#f9fafb}</style>
+<table><caption>Rohbeobachtungen der aktiven Organisation</caption>
+<thead><tr><th scope="col">Node / Beobachtung</th><th scope="col">Chip / Sequence</th><th scope="col">Beobachtungszeit / RTC-Rohwert</th><th scope="col">Clock-Status</th><th scope="col">Vom Backend empfangen</th><th scope="col">Historische Futterstelle / Deployment</th><th scope="col">Technische Metadaten</th></tr></thead>
+<tbody><tr th:each="r : ${rows}"><td><span th:text="${r.node}"></span><small th:text="${r.id}"></small></td>
+<td><span th:text="${r.chip}"></span><small th:text="'Sequence: ' + ${r.sequence}"></small></td>
+<td><span th:text="${r.observed}"></span><small th:text="'RTC-Rohwert (ms): ' + ${r.rawMillis != null ? r.rawMillis : 'nicht vorhanden'}"></small></td>
+<td th:text="${r.clock}"></td><td th:text="${r.received}"></td>
+<td><span th:text="${r.site}"></span><small th:text="'Deployment: ' + ${r.deployment != null ? r.deployment : 'unbekannt'}"></small></td>
+<td><small th:text="'Incarnation: ' + ${r.incarnation != null ? r.incarnation : '—'}"></small><small th:text="'Monotonic (ms): ' + ${r.monotonic != null ? r.monotonic : '—'}"></small><small th:text="'Boot counter: ' + ${r.boot != null ? r.boot : '—'}"></small></td></tr></tbody>
+</table></div>
+<nav aria-label="Seitennavigation">
+<a th:if="${previous != null}" th:href="${previous}" rel="prev">Vorherige Seite</a>
+<span th:text="'Ab Eintrag ' + ${filters.offset + 1}"></span>
+<a th:if="${next != null}" th:href="${next}" rel="next">Nächste Seite</a>
+</nav>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body></html>
