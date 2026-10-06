@@ -649,7 +649,7 @@ export interface components {
         };
         CreateMemberRequest: {
             /** @description Optional human-readable display name (global AppUser.displayName, trimmed; blank means no name; shown in every organization of this user) */
-            displayName?: string;
+            displayName?: string | null;
             /** Format: email */
             email: string;
             /** @description Initial password: at least 12 characters, at most 72 UTF-8 bytes */
@@ -766,7 +766,7 @@ export interface components {
             password: string;
         };
         MemberView: {
-            displayName?: string;
+            displayName?: string | null;
             email?: string;
             /** Format: uuid */
             membershipId?: string;
@@ -870,7 +870,7 @@ export interface components {
             publicKeyY: string;
         };
         SessionView: {
-            displayName?: string;
+            displayName?: string | null;
             email?: string;
             memberships?: components["schemas"]["MembershipView"][];
             /** Format: uuid */
@@ -894,7 +894,7 @@ export interface components {
         };
         UpdateMemberRequest: {
             /** @description Optional display name update for the underlying global AppUser. Absent/null leaves the name unchanged; blank clears it to null; a value is trimmed and stored globally (visible in all organizations). */
-            displayName?: string;
+            displayName?: string | null;
             /** @enum {string} */
             role?: "ADMIN" | "MEMBER";
             /** @enum {string} */

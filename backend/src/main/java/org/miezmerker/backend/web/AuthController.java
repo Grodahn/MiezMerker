@@ -68,7 +68,9 @@ public class AuthController {
 
     @Schema(name = "SessionView")
     public record SessionView(
-            UUID userId, String email, String displayName, List<MembershipView> memberships) {}
+            UUID userId, String email,
+            @Schema(type = "string", nullable = true) String displayName,
+            List<MembershipView> memberships) {}
 
     @PostMapping(value = "/login", consumes = "application/json", produces = "application/json")
     @Operation(operationId = "login", summary = "Email/password login, establishes a server-side session")

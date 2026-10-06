@@ -26,7 +26,9 @@ leaving an unusable first admin in the database.
 ## Display name (#32)
 
 `AppUser.displayName` is the global human-readable name of a person (max 255 characters,
-Unicode allowed, trimmed; blank-only input means "no name" and is stored as `NULL`).
+Unicode allowed, Unicode whitespace trimmed including non-breaking spaces; blank-only
+input means "no name" and is stored as `NULL`). The length limit applies after trimming
+in both bootstrap and member requests.
 It lives on `AppUser`, not on `OrganizationMembership`: role/status stay per organization,
 but the same person shows the same name in every organization. Changing the name from one
 organization changes it everywhere for that user; there are no organization-specific

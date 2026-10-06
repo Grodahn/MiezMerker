@@ -5,8 +5,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.DriverManager;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.miezmerker.backend.bootstrap.BootstrapRunner;
@@ -138,20 +141,43 @@ class DisplayNameTest {
     }
 
     @Test
-    void migrationPreservesExistingUsersWithNullDisplayName() {
-        clean();
-        Organization org = organizations.save(new Organization("org-mig", "Org Mig", null));
+    void migrationPreservesExistingUsersWithNullDisplayName() throws Exception {
+        // Insert the legacy user before V8, rather than into an already migrated DB.
+        String url = "jdbc:h2:mem:display-name-migration-" + UUID.randomUUID() + ";MODE=PostgreSQL";
         String hash = passwords.encode("supersecret-password-1");
-        AppUser legacy = users.save(new AppUser("legacy@example.org", hash));
-        UUID legacyId = legacy.getId();
-        memberships.save(new OrganizationMembership(org, legacy, MembershipRole.MEMBER, MembershipStatus.ACTIVE));
-
-        AppUser reloaded = users.findById(legacyId).orElseThrow();
-        // Pre-#32 row: no fabricated name from the email prefix.
-        assertNull(reloaded.getDisplayName());
-        assertEquals("legacy@example.org", reloaded.getEmail());
-        assertEquals(hash, reloaded.getPasswordHash());
-        assertNotNull(reloaded.getCreatedAt());
+        UUID legacyId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-10-01T10:00:00Z");
+        Instant lastLoginAt = Instant.parse("2026-10-02T10:00:00Z");
+        try (var connection = DriverManager.getConnection(url, "sa", "")) {
+            Flyway.configure().dataSource(url, "sa", "").target("7").load().migrate();
+            try (var insert = connection.prepareStatement("""
+                    INSERT INTO app_users (id, email, password_hash, status, created_at, last_login_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """)) {
+                insert.setObject(1, legacyId);
+                insert.setString(2, "legacy@example.org");
+                insert.setString(3, hash);
+                insert.setString(4, "ACTIVE");
+                insert.setObject(5, createdAt.atOffset(java.time.ZoneOffset.UTC));
+                insert.setObject(6, lastLoginAt.atOffset(java.time.ZoneOffset.UTC));
+                insert.executeUpdate();
+            }
+            var result = Flyway.configure().dataSource(url, "sa", "").load().migrate();
+            assertEquals(1, result.migrationsExecuted);
+            try (var query = connection.createStatement();
+                    var row = query.executeQuery("SELECT * FROM app_users")) {
+                assertTrue(row.next());
+                assertEquals(legacyId, row.getObject("id", UUID.class));
+                assertEquals("legacy@example.org", row.getString("email"));
+                assertNull(row.getString("display_name"));
+                assertEquals(hash, row.getString("password_hash"));
+                assertTrue(passwords.matches("supersecret-password-1", row.getString("password_hash")));
+                assertEquals("ACTIVE", row.getString("status"));
+                assertEquals(createdAt, row.getTimestamp("created_at").toInstant());
+                assertEquals(lastLoginAt, row.getTimestamp("last_login_at").toInstant());
+                assertFalse(row.next());
+            }
+        }
     }
 
     @Test
@@ -281,6 +307,51 @@ class DisplayNameTest {
                         || mapper.readTree(cleared.body()).get("displayName").isNull()),
                 cleared.body());
         assertNull(users.findByEmail("ws@example.org").orElseThrow().getDisplayName());
+    }
+
+    @Test
+    void unicodeWhitespaceAndLengthAreNormalizedBeforeValidation() throws Exception {
+        Fixture f = seed();
+        login("admin-a@example.org", "supersecret-password-a", 200);
+        String name = "a".repeat(255);
+        String padding = "\u00a0\u2003\u202f\u3000\t";
+        var created = post("/api/v1/organizations/" + f.orgA().getId() + "/members",
+                mapper.writeValueAsString(java.util.Map.of("email", "unicode-space@example.org",
+                        "password", "supersecret-space-1", "role", "MEMBER",
+                        "displayName", padding + name + padding)));
+        assertEquals(200, created.statusCode(), created.body());
+        assertEquals(name, mapper.readTree(created.body()).get("displayName").asText());
+        UUID membershipId = UUID.fromString(mapper.readTree(created.body()).get("membershipId").asText());
+        String path = "/api/v1/organizations/" + f.orgA().getId() + "/members/" + membershipId;
+        var renamed = patch(path, mapper.writeValueAsString(java.util.Map.of(
+                "displayName", padding + "Ada\u00a0Lovelace" + padding)));
+        assertEquals(200, renamed.statusCode(), renamed.body());
+        assertEquals("Ada\u00a0Lovelace", mapper.readTree(renamed.body()).get("displayName").asText());
+        var cleared = patch(path, mapper.writeValueAsString(java.util.Map.of("displayName", padding)));
+        assertEquals(200, cleared.statusCode(), cleared.body());
+        assertTrue(mapper.readTree(cleared.body()).get("displayName").isNull());
+        assertNull(users.findByEmail("unicode-space@example.org").orElseThrow().getDisplayName());
+    }
+
+    @Test
+    void bootstrapNormalizesUnicodeWhitespace() {
+        clean();
+        var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
+                "bootstrap-unicode@example.org", "supersecret-bootstrap-1", "\u2003\u00a0Ada\u202f\u3000",
+                "versuch", "Versuchsorganisation", null);
+        runner.run(null);
+        assertEquals("Ada", users.findByEmail("bootstrap-unicode@example.org").orElseThrow().getDisplayName());
+    }
+
+    @Test
+    void openApiDescribesNullableDisplayNames() throws Exception {
+        JsonNode schemas = mapper.readTree(get("/api/v1/openapi").body()).at("/components/schemas");
+        for (String schema : java.util.List.of("MemberView", "SessionView", "CreateMemberRequest", "UpdateMemberRequest")) {
+            JsonNode type = schemas.get(schema).at("/properties/displayName/type");
+            assertTrue(type.isArray(), schema + " must accept both a string and null: " + type);
+            assertTrue(type.toString().contains("\"string\""), schema);
+            assertTrue(type.toString().contains("\"null\""), schema);
+        }
     }
 
     @Test

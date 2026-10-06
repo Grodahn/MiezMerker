@@ -127,7 +127,7 @@ export async function fetchSession(): Promise<SessionUser | null> {
   const user: SessionUser = {
     userId: data.userId,
     email: data.email,
-    displayName: (data as { displayName?: string | null }).displayName ?? null,
+    displayName: data.displayName ?? null,
     memberships: data.memberships ?? [],
   };
   storeUser(user);
@@ -145,7 +145,7 @@ export async function login(email: string, password: string): Promise<SessionUse
     const user: SessionUser = {
       userId: data.userId,
       email: data.email,
-      displayName: (data as { displayName?: string | null }).displayName ?? null,
+      displayName: data.displayName ?? null,
       memberships: data.memberships ?? [],
     };
     // The server rotates the CSRF token after authentication.

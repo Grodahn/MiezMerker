@@ -89,7 +89,21 @@ public class AppUser {
         if (displayName == null) {
             return null;
         }
-        String trimmed = displayName.trim();
+        // String.trim() only handles ASCII whitespace, and strip() excludes
+        // non-breaking spaces. Accept Unicode spacing at both ends of a name.
+        int start = 0;
+        int end = displayName.length();
+        while (start < end && isNameWhitespace(displayName.codePointAt(start))) {
+            start += Character.charCount(displayName.codePointAt(start));
+        }
+        while (start < end && isNameWhitespace(displayName.codePointBefore(end))) {
+            end -= Character.charCount(displayName.codePointBefore(end));
+        }
+        String trimmed = displayName.substring(start, end);
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static boolean isNameWhitespace(int codePoint) {
+        return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint);
     }
 }

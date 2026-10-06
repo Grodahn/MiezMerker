@@ -56,7 +56,8 @@ public class MemberController {
     }
 
     @Schema(name = "MemberView")
-    public record MemberView(UUID membershipId, UUID userId, String email, String displayName,
+    public record MemberView(UUID membershipId, UUID userId, String email,
+            @Schema(type = "string", nullable = true) String displayName,
             String role, String status) {}
 
     @Schema(name = "CreateMemberRequest")
@@ -66,18 +67,31 @@ public class MemberController {
                     description = "Initial password: at least 12 characters, at most 72 UTF-8 bytes") String password,
             @NotNull MembershipRole role,
             @Size(max = 255, message = "displayName must not exceed 255 characters")
-            @Schema(description = "Optional human-readable display name (global AppUser.displayName, "
+            @Schema(type = "string", nullable = true,
+                    description = "Optional human-readable display name (global AppUser.displayName, "
                     + "trimmed; blank means no name; shown in every organization of this user)") String displayName) {
         // password is required when the user does not exist yet; optional when adding a
         // membership for an existing user. Validation of presence happens in the handler.
+        public CreateMemberRequest {
+            displayName = AppUser.normalizeDisplayName(displayName);
+        }
     }
 
     @Schema(name = "UpdateMemberRequest")
     public record UpdateMemberRequest(MembershipRole role, MembershipStatus status,
             @Size(max = 255, message = "displayName must not exceed 255 characters")
-            @Schema(description = "Optional display name update for the underlying global AppUser. "
+            @Schema(type = "string", nullable = true,
+                    description = "Optional display name update for the underlying global AppUser. "
                     + "Absent/null leaves the name unchanged; blank clears it to null; "
-                    + "a value is trimmed and stored globally (visible in all organizations).") String displayName) {}
+                    + "a value is trimmed and stored globally (visible in all organizations).") String displayName) {
+        public UpdateMemberRequest {
+            // Preserve the difference between null (no update) and blank (clear).
+            if (displayName != null) {
+                String normalized = AppUser.normalizeDisplayName(displayName);
+                displayName = normalized == null ? "" : normalized;
+            }
+        }
+    }
 
     private static MemberView toView(OrganizationMembership m) {
         return new MemberView(m.getId(), m.getUser().getId(), m.getUser().getEmail(),

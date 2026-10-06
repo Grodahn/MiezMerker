@@ -226,7 +226,10 @@
             "description": "Optional human-readable display name (global AppUser.displayName, trimmed; blank means no name; shown in every organization of this user)",
             "maxLength": 255,
             "minLength": 0,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "email": {
             "format": "email",
@@ -570,7 +573,10 @@
       "MemberView": {
         "properties": {
           "displayName": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "email": {
             "type": "string"
@@ -853,7 +859,10 @@
       "SessionView": {
         "properties": {
           "displayName": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "email": {
             "type": "string"
@@ -933,7 +942,10 @@
             "description": "Optional display name update for the underlying global AppUser. Absent/null leaves the name unchanged; blank clears it to null; a value is trimmed and stored globally (visible in all organizations).",
             "maxLength": 255,
             "minLength": 0,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "role": {
             "enum": [
