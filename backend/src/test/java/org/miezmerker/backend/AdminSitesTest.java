@@ -418,7 +418,7 @@ class AdminSitesTest {
 
     @Test
     void memberCannotMutateViaAdminButRestStillAllowsCare() throws Exception {
-        Fixture f = seed();
+        seed();
         formLogin("a35-member-a@example.org", "supersecret-password-m");
         // No CSRF fetch possible via admin (403); use a forged body to prove the
         // gate, not the token, denies the member.
@@ -428,17 +428,9 @@ class AdminSitesTest {
         // either way. With a token it must still be 403 (ADMIN-only).
         assertEquals(403, denied.statusCode(), denied.body());
         assertEquals(0, sites.count());
-
-        // REST/PWA maintenance stays MEMBER-capable (#11): direct service-level
-        // proof without weakening admin.
-        var member = users.findById(
-                memberships.findByOrganizationIdWithRefsForTest(f.orgA()).stream()
-                        .filter(m -> m.getRole() == MembershipRole.MEMBER).findFirst()
-                        .orElseThrow().getUser().getId()).orElseThrow();
-        assertEquals(MembershipRole.MEMBER,
-                memberships.findByOrganizationIdWithRefsForTest(f.orgA()).stream()
-                        .filter(m -> m.getUser().getId().equals(member.getId())).findFirst()
-                        .orElseThrow().getRole());
+        // REST/PWA routine care stays MEMBER-capable (#11): covered by
+        // Issue9IngestTest.memberCanReadIngestAndProvideRoutineCare, so the
+        // Admin gate must not weaken REST permissions to make pages work.
     }
 
     // --- Detail ---
