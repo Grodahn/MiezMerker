@@ -8,6 +8,8 @@ export type MembershipStatus = 'PENDING' | 'ACTIVE' | 'DISABLED';
 export interface SessionUser {
   userId: string;
   email: string;
+  // #32: global AppUser.displayName (null for pre-#32 users). UI falls back to email.
+  displayName?: string | null;
   memberships: components['schemas']['MembershipView'][];
 }
 
@@ -125,6 +127,7 @@ export async function fetchSession(): Promise<SessionUser | null> {
   const user: SessionUser = {
     userId: data.userId,
     email: data.email,
+    displayName: data.displayName ?? null,
     memberships: data.memberships ?? [],
   };
   storeUser(user);
@@ -142,6 +145,7 @@ export async function login(email: string, password: string): Promise<SessionUse
     const user: SessionUser = {
       userId: data.userId,
       email: data.email,
+      displayName: data.displayName ?? null,
       memberships: data.memberships ?? [],
     };
     // The server rotates the CSRF token after authentication.

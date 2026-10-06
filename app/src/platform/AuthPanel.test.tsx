@@ -45,3 +45,9 @@ test('failed logout displays an error and keeps the account visible', async () =
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Abmelden fehlgeschlagen');
   expect(screen.getByText('Angemeldet als a@example.org')).toBeTruthy();
 });
+
+test('session display name is shown with email fallback', async () => {
+  get.mockResolvedValue({ data: { userId: 'u1', email: 'ada@example.org', displayName: 'Ada Lovelace', memberships: [] } });
+  render(<AuthPanel/>);
+  expect(await screen.findByText('Angemeldet als Ada Lovelace')).toBeTruthy();
+});

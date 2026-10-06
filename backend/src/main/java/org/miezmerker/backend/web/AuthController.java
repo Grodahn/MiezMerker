@@ -68,7 +68,9 @@ public class AuthController {
 
     @Schema(name = "SessionView")
     public record SessionView(
-            UUID userId, String email, List<MembershipView> memberships) {}
+            UUID userId, String email,
+            @Schema(type = "string", nullable = true) String displayName,
+            List<MembershipView> memberships) {}
 
     @PostMapping(value = "/login", consumes = "application/json", produces = "application/json")
     @Operation(operationId = "login", summary = "Email/password login, establishes a server-side session")
@@ -143,7 +145,7 @@ public class AuthController {
                 .filter(m -> m.getOrganization().getStatus() == OrganizationStatus.ACTIVE)
                 .map(this::toView)
                 .toList();
-        return new SessionView(user.getId(), user.getEmail(), views);
+        return new SessionView(user.getId(), user.getEmail(), user.getDisplayName(), views);
     }
 
     private MembershipView toView(OrganizationMembership m) {

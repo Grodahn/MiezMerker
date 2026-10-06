@@ -18,8 +18,12 @@ function Members({ organizationId }: { organizationId: string }) {
   const members = useLoad(useCallback(async (signal: AbortSignal) => result(await api.GET(
     '/api/v1/organizations/{organizationId}/members', { ...requestOptions(signal), params: { path: { organizationId } } })), [organizationId]));
   return <><p>ADMIN: Mitglieder der aktiven Organisation. Neue Benutzer werden in der Versuchsphase über den dokumentierten Bootstrap-/Adminmechanismus verwaltet.</p>
-    <LoadState {...members}/>{members.data && (members.data.length ? <Table label="Mitglieder" headings={['E-Mail', 'Rolle', 'Status']}>
-      {members.data.map(member => <tr key={member.membershipId}><td>{member.email}</td><td>{member.role}</td><td>{member.status}</td></tr>)}
+    <LoadState {...members}/>{members.data && (members.data.length ? <Table label="Mitglieder" headings={['Name', 'E-Mail', 'Rolle', 'Status']}>
+      {members.data.map(member => {
+        // #32: global AppUser.displayName; pre-#32 users without a name fall back to email.
+        const name = member.displayName?.trim() ? member.displayName : member.email;
+        return <tr key={member.membershipId}><td>{name}</td><td>{member.email}</td><td>{member.role}</td><td>{member.status}</td></tr>;
+      })}
     </Table> : <p>Keine Mitglieder vorhanden.</p>)}</>;
 }
 function ScopedManagement({ path, organizationId, admin }: { path: string; organizationId: string; admin: boolean }) {

@@ -49,7 +49,7 @@ class BootstrapTest {
         organizations.deleteAll();
 
         var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
-                "bootstrap-admin@example.org", "supersecret-bootstrap-1", "versuch",
+                "bootstrap-admin@example.org", "supersecret-bootstrap-1", null, "versuch",
                 "Versuchsorganisation", null);
         runner.run(null);
         assertTrue(users.findByEmail("bootstrap-admin@example.org").isPresent());
@@ -77,7 +77,7 @@ class BootstrapTest {
         users.deleteAll();
         organizations.deleteAll();
         var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
-                "too-long@example.org", "ä".repeat(37), "versuch", "V", null);
+                "too-long@example.org", "ä".repeat(37), null, "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> runner.run(null));
         assertEquals(0, users.count());
         assertEquals(0, organizations.count());
@@ -107,7 +107,7 @@ class BootstrapTest {
         users.deleteAll();
         organizations.deleteAll();
         var weak = new BootstrapRunner(users, organizations, memberships, passwords, validator,
-                "weak@example.org", "short", "versuch", "V", null);
+                "weak@example.org", "short", null, "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> weak.run(null));
         assertTrue(users.findByEmail("weak@example.org").isEmpty());
     }
@@ -125,7 +125,7 @@ class BootstrapTest {
         users.deleteAll();
         organizations.deleteAll();
         var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
-                "invalid-address", "supersecret-bootstrap-1", "versuch", "V", null);
+                "invalid-address", "supersecret-bootstrap-1", null, "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> runner.run(null));
         assertEquals(0, users.count());
         assertEquals(0, organizations.count());
@@ -149,7 +149,7 @@ class BootstrapTest {
                 { "valid", "Name", "a".repeat(501) }
         }) {
             var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
-                    "valid@example.org", "supersecret-bootstrap-1", metadata[0], metadata[1], metadata[2]);
+                    "valid@example.org", "supersecret-bootstrap-1", null, metadata[0], metadata[1], metadata[2]);
             assertThrows(IllegalStateException.class, () -> runner.run(null));
             assertEquals(0, users.count());
             assertEquals(0, organizations.count());
@@ -173,7 +173,7 @@ class BootstrapTest {
         organization.setStatus(org.miezmerker.backend.domain.OrganizationStatus.DISABLED);
         organizations.save(organization);
         var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
-                "valid@example.org", "supersecret-bootstrap-1", "disabled", "Disabled", null);
+                "valid@example.org", "supersecret-bootstrap-1", null, "disabled", "Disabled", null);
         assertThrows(IllegalStateException.class, () -> runner.run(null));
         assertEquals(0, users.count());
         assertEquals(0, memberships.count());
