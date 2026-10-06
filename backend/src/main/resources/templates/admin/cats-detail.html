@@ -1,0 +1,13 @@
+<!DOCTYPE html><html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Katzen')}"><title>Katzen · MiezMerker Admin</title></head><body>
+<div th:replace="~{admin/layout :: topbar}"></div><div th:replace="~{admin/layout :: nav('cats')}"></div>
+<style>.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:.6rem;border-bottom:1px solid #d1d5db}td{overflow-wrap:anywhere}caption{text-align:left;font-weight:600}</style>
+<main><p>Aktive Organisation: <strong th:text="${activeOrg.displayName}">Organisation</strong></p>
+<h1 th:text="${cat.name ?: 'Unbenannte Katze'}">Katze</h1><p><a th:href="@{/admin/cats/{id}/edit(id=${cat.id})}" class="btn">Bearbeiten</a></p>
+<div class="card"><dl><dt>Chip-ID</dt><dd th:text="${cat.chipId}">Chip</dd><dt>Status</dt><dd th:text="${cat.status ?: '–'}">Status</dd><dt>Notiz</dt><dd style="white-space:pre-wrap" th:text="${cat.notes ?: '–'}">Notiz</dd>
+<dt>Letzte verlässliche Sichtung (UTC)</dt><dd th:text="${cat.sighting ?: 'unbekannt – keine verlässliche Uhrzeit'}">Zeit</dd><dt>Letzter Server-Empfang (UTC)</dt><dd th:text="${cat.received ?: 'unbekannt'}">Empfang</dd><dt>Beobachtungen</dt><dd th:text="${cat.count}">0</dd></dl>
+<p th:if="${cat.uncertain > 0}">Uhrzeit unbekannt/ungültig bei <span th:text="${cat.uncertain}">0</span> Beobachtungen. UNKNOWN wird nicht als präzise Sichtung ausgegeben.</p></div>
+<h2>Bekannte Futterstellen</h2><p>Futterstellen zum Zeitpunkt der Beobachtungen; ein späterer Geräteumzug verändert sie nicht.</p><p th:if="${#lists.isEmpty(cat.knownSites)}">Keine bekannte Futterstelle.</p><ul><li th:each="site : ${cat.knownSites}"><a th:href="@{/admin/sites/{id}(id=${site.id})}" th:text="${site.name}">Site</a></li></ul>
+<h2>Letzte gespeicherte Besuche</h2><p>Bis zu 10 gespeicherte Besuche für diesen Chip. Beobachtungen ohne verlässliche Zeit oder bekannte Futterstelle erscheinen nicht als Besuch.</p><p th:if="${#lists.isEmpty(visits)}">Keine gespeicherten Besuche.</p>
+<div class="table-wrap" th:unless="${#lists.isEmpty(visits)}"><table><caption>Besuche dieses Chips (UTC)</caption><thead><tr><th scope="col">Historische Futterstelle</th><th scope="col">Start</th><th scope="col">Ende</th><th scope="col">Beobachtungen</th></tr></thead><tbody><tr th:each="visit : ${visits}"><td th:text="${visit.siteName}">Site</td><td th:text="${visit.start}">Start</td><td th:text="${visit.end}">Ende</td><td th:text="${visit.observations}">0</td></tr></tbody></table></div><p><a href="/admin/cats">Zurück zur Katzenliste</a></p>
+</main><div th:replace="~{admin/layout :: footer}"></div></body></html>

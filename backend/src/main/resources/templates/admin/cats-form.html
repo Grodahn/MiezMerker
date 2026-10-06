@@ -1,0 +1,9 @@
+<!DOCTYPE html><html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Katzen')}"><title>Katzen · MiezMerker Admin</title></head><body>
+<div th:replace="~{admin/layout :: topbar}"></div><div th:replace="~{admin/layout :: nav('cats')}"></div>
+<main><p>Aktive Organisation: <strong th:text="${activeOrg.displayName}">Organisation</strong></p>
+<h1 th:text="${catId == null ? 'Katze aus unbekanntem Chip anlegen' : 'Katze bearbeiten'}">Katze bearbeiten</h1><p>Chip-ID: <code th:text="${chipId}">Chip</code></p>
+<div th:if="${errors != null}" class="alert alert-error" role="alert"><p>Bitte Eingaben prüfen:</p><ul><li th:each="error : ${errors}" th:text="${error}">Fehler</li></ul></div>
+<div class="card"><form th:action="${formAction}" method="post"><input type="hidden" name="formOrganizationId" th:value="${activeOrg.id}"/><input th:if="${catId == null}" type="hidden" name="chipId" th:value="${chipId}"/><input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div><label for="cat-name">Name (optional)</label><input id="cat-name" name="name" maxlength="255" th:value="${formName}"/></div><div><label for="cat-status">Status (optional)</label><input id="cat-status" name="status" maxlength="64" th:value="${formStatus}"/></div><div><label for="cat-notes">Notiz (optional)</label><textarea id="cat-notes" name="notes" maxlength="2000" rows="5" th:text="${formNotes}"></textarea></div><button class="btn" type="submit">Speichern</button> <a href="/admin/cats">Abbrechen</a></form></div>
+</main><div th:replace="~{admin/layout :: footer}"></div></body></html>

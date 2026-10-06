@@ -90,3 +90,9 @@ Wiederverwendbare Thymeleaf-Fragmente in `templates/admin/layout.html`
 Die Backend-Suite umfasst 136 Tests (inkl. `TenancyAuthTest`, `DisplayNameTest`);
 bestehende REST-/PWA-APIs, Cookies (`HttpOnly`/`Secure`/`SameSite=Lax`) und
 CSRF-Semantik sind unverändert.
+
+## Katzenverwaltung (#37)
+
+`/admin/cats` ist jetzt implementiert. Details zu Pflege, unbekannten Chips,
+Zeit-/Tenant-Semantik und historischen Futterstellen stehen in
+[issue37-admin-cats.md](issue37-admin-cats.md). PWA `/cats` bleibt erhalten.

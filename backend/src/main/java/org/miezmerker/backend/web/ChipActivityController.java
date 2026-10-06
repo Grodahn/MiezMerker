@@ -3,16 +3,11 @@ package org.miezmerker.backend.web;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
+import org.miezmerker.backend.service.ChipActivityService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,10 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ChipActivityController {
     private final TenantService tenants;
-    @PersistenceContext private EntityManager entities;
+    private final ChipActivityService activity;
 
-    public ChipActivityController(TenantService tenants) {
+    public ChipActivityController(TenantService tenants, ChipActivityService activity) {
         this.tenants = tenants;
+        this.activity = activity;
     }
 
     @Schema(name = "ChipActivityView")
@@ -44,24 +40,8 @@ public class ChipActivityController {
     public List<ChipActivityView> list(@PathVariable UUID organizationId,
             @AuthenticationPrincipal AppUserDetails principal) {
         tenants.requireActive(TenantService.currentUserId(principal), organizationId);
-        String reliable = "o.clockStatus in ('SYNCED', 'RTC_ONLY', 'KNOWN') "
-                + "and o.observedAtMs > 0 and o.observedAtMs < 9224318016000000";
-        var rows = entities.createQuery("select o.chipId, "
-                + "max(case when " + reliable + " then o.observedAtMs else null end), "
-                + "max(o.receivedAt), count(o), "
-                + "sum(case when " + reliable + " then 0 else 1 end) "
-                + "from RawObservation o where o.organization.id = :org "
-                + "group by o.chipId order by o.chipId", Object[].class)
-                .setParameter("org", organizationId).getResultList();
-        Map<String, List<String>> sites = new HashMap<>();
-        entities.createQuery("select distinct o.chipId, o.feedingSite.id "
-                + "from RawObservation o where o.organization.id = :org "
-                + "and o.feedingSite is not null order by o.chipId, o.feedingSite.id", Object[].class)
-                .setParameter("org", organizationId).getResultList().forEach(row ->
-                    sites.computeIfAbsent((String) row[0], ignored -> new ArrayList<>())
-                            .add(row[1].toString()));
-        return rows.stream().map(row -> new ChipActivityView((String) row[0],
-                (Long) row[1], ((Instant) row[2]).toString(), (Long) row[3], (Long) row[4],
-                sites.getOrDefault((String) row[0], List.of()))).toList();
+        return activity.list(principal.getId(), organizationId).stream().map(a ->
+                new ChipActivityView(a.chipId(), a.lastSeenAtMillis(), a.lastReceivedAt(),
+                        a.observationCount(), a.uncertainClockCount(), a.feedingSiteIds())).toList();
     }
 }
