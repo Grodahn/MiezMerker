@@ -152,6 +152,30 @@ test('session expiration hides protected content and shows login without stale d
   expect(screen.queryByText('CollectorShell')).toBeNull();
 });
 
+test('session expiration preserves offline-sync eligibility when a valid credential exists', async () => {
+  setPath('/sync');
+  apiGet.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/auth/session') return sessionResponse(verifiedUser);
+    if (path === '/api/v1/auth/csrf') return { data: { token: 'csrf' } };
+    return { data: [], response: { ok: true, status: 200 } };
+  });
+  credentialLookup.mockResolvedValue('valid-credential');
+  const { App } = await import('./App');
+  render(<App />);
+  expect(await screen.findByText('CollectorShell')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Anmelden' })).toBeNull();
+  apiGet.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/auth/session') return { error: {}, response: { status: 401 } };
+    if (path === '/api/v1/auth/csrf') return { data: { token: 'csrf' } };
+    return { data: [], response: { ok: true, status: 200 } };
+  });
+  const { fetchSession } = await import('./platform/auth');
+  await act(async () => { await fetchSession().catch(() => {}); });
+  expect(await screen.findByText('CollectorShell')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Anmelden' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Futterstellen' })).toBeNull();
+});
+
 test('logout immediately hides shell and discards management state', async () => {
   setPath('/sites');
   apiGet.mockImplementation(async (path: string) => {

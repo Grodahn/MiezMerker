@@ -144,8 +144,10 @@ export async function fetchSession(): Promise<SessionUser | null> {
       }
       throw new Error('Sitzung konnte nicht geladen werden');
     }
+    // #31: preserve the restored snapshot so offline-sync eligibility can
+    // survive a backend session expiration; only logout clears it.
     state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: false };
-    storeUser(null);
+    emit();
     return null;
   }
   const user: SessionUser = {
@@ -166,12 +168,12 @@ export function markOfflineChecked(): void {
 
 export function markSessionExpired(): void {
   // Central #31 transition for expired/missing backend sessions observed via
-  // 401 on management APIs. Clears organization view-state upstream through
-  // the auth subscription (generation + abort in management context) and
-  // forces the app-shell gate back to login/offline-sync-only.
+  // 401 on management APIs. Preserves the restored snapshot so offline-sync
+  // eligibility (#8) can survive; only logout clears it. The gate locks
+  // management because sessionVerified is false.
   sessionGeneration++;
   state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: false };
-  storeUser(null);
+  emit();
 }
 
 export async function login(email: string, password: string): Promise<SessionUser> {

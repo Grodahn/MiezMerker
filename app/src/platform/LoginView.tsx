@@ -26,8 +26,7 @@ export function LoginView({ online }: { online: boolean }) {
 
   return <section aria-label="Anmeldung"><h1>Anmelden</h1>
     <p>Bitte anmelden, um fortzufahren.</p>
-    {!online && <p role="status">Offline: Die Verwaltung benötigt eine Serververbindung.
-      Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential unter /sync verfügbar.</p>}
+    {!online && <p role="status">Offline: Die Verwaltung benötigt eine Serververbindung.</p>}
     <form onSubmit={event => void submit(event)}>
       <label>E-Mail<input type="email" autoComplete="username" required value={email}
         onChange={event => setEmail(event.target.value)}/></label>

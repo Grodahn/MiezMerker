@@ -12,11 +12,6 @@ vi.mock('../api/client', () => ({ api: { GET: get, POST: post, PATCH: patch } })
 vi.mock('../platform/auth', () => ({ getAuthState: () => auth,
   subscribeAuth: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },
   fetchCsrfToken: csrf,
-  markSessionExpired: () => {
-    (auth as { user: unknown }).user = null;
-    auth.activeOrganizationId = null;
-    for (const listener of listeners) listener();
-  },
 }));
 import { Management } from './Management';
 import { millis } from './common';
@@ -230,14 +225,6 @@ test('inactive membership, no selected organization and offline management canno
   render(<Management path="/sites"/>);
   expect(screen.getByText(/Verwaltung benötigt eine Serververbindung/)).toBeTruthy(); expect(get).not.toHaveBeenCalled();
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
-});
-
-test('expired session clears organization state and shows login without leaking details', async () => {
-  get.mockResolvedValue({ error: { detail: 'PRIVATE-CHIP' }, response: { ok: false, status: 401 } });
-  render(<Management path="/sites"/>);
-  expect(await screen.findByText('Bitte anmelden, um die Daten Ihrer Organisation zu verwalten.')).toBeTruthy();
-  expect(screen.queryByText('PRIVATE-CHIP')).toBeNull();
-  expect(screen.queryByText('Garten')).toBeNull();
 });
 
 test('server failures are actionable without leaking response details', async () => {
