@@ -2,10 +2,14 @@
 // offline-sync-only and authenticated app without duplicating the auth
 // state model in auth.ts. Defense-in-depth only; backend remains authoritative.
 import { useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { liveQuery } from 'dexie';
 import {
   fetchSession,
   getAuthState,
   markOfflineChecked,
+  markSessionExpired,
+  markSessionPending,
   subscribeAuth,
   type AuthState,
 } from './auth';
@@ -25,7 +29,10 @@ export function resolveGateStatus(
 ): GateStatus {
   // Neutral loading until the backend session check resolved. Prevents
   // private-content flashing before authorization is established.
-  if (!auth.sessionChecked) return 'loading';
+  const activeMembership = auth.user?.memberships.some(m => m.organizationId === auth.activeOrganizationId
+    && m.status === 'ACTIVE' && (m.role === 'ADMIN' || m.role === 'MEMBER'));
+  const offlineAuthorized = Boolean(activeMembership && offlineEligible && isCollectorPath(path));
+  if (!auth.sessionChecked) return offlineAuthorized ? 'offline-sync' : 'loading';
   if (auth.user && auth.sessionVerified && online) return 'authenticated';
   // Offline field-sync exception (#8): previously established AppDevice
   // identity + ACTIVE membership/org context + still-valid offline credential
@@ -37,22 +44,23 @@ export function resolveGateStatus(
     if (auth.user && auth.activeOrganizationId && isCollectorPath(path)) return 'loading';
     return 'login';
   }
-  if (auth.user && auth.activeOrganizationId && offlineEligible && isCollectorPath(path)) {
+  if (offlineAuthorized) {
     return 'offline-sync';
   }
   return 'login';
 }
 
-export async function checkOfflineSyncEligible(
+export async function offlineSyncExpiresAt(
   userId: string | undefined,
   organizationId: string | null | undefined,
-): Promise<boolean> {
-  if (!userId || !organizationId) return false;
+): Promise<number | null> {
+  if (!userId || !organizationId) return null;
   const database = new OfflineIdentityDatabase();
   try {
-    return (await new OfflineIdentity(database).credential(userId, organizationId)) !== null;
+    if (!await new OfflineIdentity(database).credential(userId, organizationId)) return null;
+    return (await database.credentials.get([userId, organizationId]))?.expiresAt ?? null;
   } catch {
-    return false;
+    return null;
   } finally {
     try { database.close(); } catch { /* Closed database must not break gating. */ }
   }
@@ -62,20 +70,40 @@ export function useAppGate(path: string): { status: GateStatus; online: boolean;
   const [auth, setAuth] = useState<AuthState>(() => getAuthState());
   const [online, setOnline] = useState<boolean>(() =>
     typeof navigator === 'undefined' ? true : navigator.onLine);
-  const [offlineEligible, setOfflineEligible] = useState<boolean | null>(null);
+  const [offlineCredential, setOfflineCredential] = useState<{ context: string; expiresAt: number | null } | null>(null);
+  const [departed, setDeparted] = useState(false);
+  const [clockVersion, tick] = useState(0);
+  const credentialContext = JSON.stringify([auth.user?.userId, auth.activeOrganizationId]);
+  // Look up credentials while online too, so a connectivity change can keep an
+  // already-authorized BLE sync mounted without waiting for another IDB read.
+  const needsCredential = Boolean(auth.user && auth.activeOrganizationId);
+  const offlineEligible = !needsCredential ? false
+    : offlineCredential?.context !== credentialContext ? null
+      : offlineCredential.expiresAt !== null && Date.now() < offlineCredential.expiresAt;
 
   useEffect(() => subscribeAuth(() => setAuth({ ...getAuthState() })), []);
 
   useEffect(() => {
     const update = () => {
+      // Invalidate the old verification before React can remount management.
+      if (navigator.onLine) markSessionPending();
+      else markSessionExpired();
       setOnline(navigator.onLine);
       setAuth({ ...getAuthState() });
+      if (navigator.onLine) void fetchSession().catch(() => {});
     };
+    // Clear all private content (including account/collector UI) before bfcache.
+    const hide = () => flushSync(() => setDeparted(true));
+    const show = (event: PageTransitionEvent) => { if (event.persisted) window.location.reload(); };
     window.addEventListener('online', update);
     window.addEventListener('offline', update);
+    window.addEventListener('pagehide', hide);
+    window.addEventListener('pageshow', show);
     return () => {
       window.removeEventListener('online', update);
       window.removeEventListener('offline', update);
+      window.removeEventListener('pagehide', hide);
+      window.removeEventListener('pageshow', show);
     };
   }, []);
 
@@ -97,24 +125,25 @@ export function useAppGate(path: string): { status: GateStatus; online: boolean;
     return () => { active = false; };
   }, []);
 
-  // Offline-credential eligibility for the #8 exception. Only checked when a
-  // snapshot could allow sync-only; otherwise immediately ineligible so the
-  // gate does not stay in loading.
+  // Bind eligibility to the exact account/org and observe credential renewal
+  // or removal in other tabs. A timer closes the shell at credential expiry.
   useEffect(() => {
-    let active = true;
-    const needsCheck = Boolean(auth.user && auth.activeOrganizationId
-      && !(auth.user && auth.sessionVerified && online));
-    if (!needsCheck) {
-      setOfflineEligible(false);
-      return () => { active = false; };
-    }
-    setOfflineEligible(null);
-    void checkOfflineSyncEligible(auth.user?.userId, auth.activeOrganizationId)
-      .then(eligible => { if (active) setOfflineEligible(eligible); })
-      .catch(() => { if (active) setOfflineEligible(false); });
-    return () => { active = false; };
-  }, [auth.user?.userId, auth.activeOrganizationId, auth.sessionVerified, auth.sessionChecked, online]);
+    if (!needsCredential) { setOfflineCredential(null); return; }
+    const subscription = liveQuery(() => offlineSyncExpiresAt(auth.user?.userId, auth.activeOrganizationId))
+      .subscribe({
+        next: expiresAt => setOfflineCredential({ context: credentialContext, expiresAt }),
+        error: () => setOfflineCredential({ context: credentialContext, expiresAt: null }),
+      });
+    return () => subscription.unsubscribe();
+  }, [auth.user?.userId, auth.activeOrganizationId, needsCredential, credentialContext]);
 
-  const status = resolveGateStatus(auth, online, offlineEligible, path);
+  useEffect(() => {
+    const expiresAt = offlineCredential?.expiresAt;
+    if (!expiresAt || !offlineEligible) return;
+    const timer = window.setTimeout(() => tick(value => value + 1), Math.min(expiresAt - Date.now(), 2_147_483_646) + 1);
+    return () => window.clearTimeout(timer);
+  }, [offlineCredential, offlineEligible, clockVersion]);
+
+  const status = departed ? 'loading' : resolveGateStatus(auth, online, offlineEligible, path);
   return { status, online, offlineEligible };
 }

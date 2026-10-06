@@ -6,7 +6,7 @@ function identity() {
   const membership = auth.user?.memberships.find(m =>
     m.organizationId === auth.activeOrganizationId && m.status === 'ACTIVE');
   return { userId: auth.user?.userId, organizationId: membership?.organizationId,
-    admin: membership?.role === 'ADMIN', role: membership?.role };
+    admin: membership?.role === 'ADMIN', role: membership?.role, verified: auth.sessionVerified };
 }
 let current = identity();
 let snapshot = { ...current, generation: 0 };
@@ -15,7 +15,7 @@ const listeners = new Set<() => void>();
 subscribeAuth(() => {
   const next = identity();
   if (next.userId === current.userId && next.organizationId === current.organizationId &&
-      next.role === current.role) return;
+      next.role === current.role && next.verified === current.verified) return;
   current = next;
   snapshot = { ...next, generation: snapshot.generation + 1 };
   for (const listener of listeners) listener();

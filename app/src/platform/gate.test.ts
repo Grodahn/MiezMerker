@@ -1,5 +1,8 @@
-import { describe, expect, test } from 'vitest';
-import { isCollectorPath, resolveGateStatus } from './gate';
+import 'fake-indexeddb/auto';
+import { liveQuery } from 'dexie';
+import { describe, expect, test, vi } from 'vitest';
+import { isCollectorPath, offlineSyncExpiresAt, resolveGateStatus } from './gate';
+import { OfflineIdentity, OfflineIdentityDatabase } from './offline-identity';
 import type { AuthState } from './auth';
 
 function auth(overrides: Partial<AuthState>): AuthState {
@@ -9,7 +12,9 @@ function auth(overrides: Partial<AuthState>): AuthState {
   };
 }
 
-const user = { userId: 'u', email: 'a@example.org', memberships: [] };
+const user = { userId: 'u', email: 'a@example.org', memberships: [
+  { organizationId: 'org', status: 'ACTIVE' as const, role: 'MEMBER' as const },
+] };
 
 describe('centralized app-shell gate (#31)', () => {
   test('collector paths are / and /sync only', () => {
@@ -27,7 +32,7 @@ describe('centralized app-shell gate (#31)', () => {
     const pending = auth({ user, activeOrganizationId: 'org', sessionChecked: false, sessionVerified: false });
     for (const path of ['/', '/sync', '/nodes', '/sites', '/admin/members']) {
       expect(resolveGateStatus(pending, true, false, path)).toBe('loading');
-      expect(resolveGateStatus(pending, true, true, path)).toBe('loading');
+      expect(resolveGateStatus(pending, true, true, path)).toBe(isCollectorPath(path) ? 'offline-sync' : 'loading');
       expect(resolveGateStatus(pending, true, null, path)).toBe('loading');
     }
   });
@@ -82,4 +87,31 @@ describe('centralized app-shell gate (#31)', () => {
     expect(resolveGateStatus(snapshot, false, null, '/')).toBe('loading');
     expect(resolveGateStatus(snapshot, false, null, '/nodes')).toBe('login');
   });
+
+  test('an offline credential cannot replace an ACTIVE membership', () => {
+    for (const status of ['PENDING', 'DISABLED'] as const) {
+      const snapshot = auth({ user: { ...user, memberships: [{ organizationId: 'org', role: 'MEMBER', status }] },
+        activeOrganizationId: 'org', sessionChecked: true });
+      expect(resolveGateStatus(snapshot, false, true, '/sync')).toBe('login');
+    }
+  });
+});
+
+test('offline eligibility observes credential removal through another database connection', async () => {
+  const database = new OfflineIdentityDatabase();
+  const identity = new OfflineIdentity(database);
+  const keys = await identity.keys('u');
+  await database.identities.put({ userId: 'u', deviceId: 'device', keys: keys.keyHandles() });
+  const expiresAt = Date.now() + 60_000;
+  await database.credentials.put({ userId: 'u', organizationId: 'org', deviceId: 'device',
+    credential: 'bound-credential', expiresAt });
+  const observed: (number | null)[] = [];
+  const subscription = liveQuery(() => offlineSyncExpiresAt('u', 'org')).subscribe(value => observed.push(value));
+  try {
+    await vi.waitFor(() => expect(observed.at(-1)).toBe(expiresAt));
+    await identity.forgetCredentials('u');
+    await vi.waitFor(() => expect(observed.at(-1)).toBeNull());
+  } finally {
+    subscription.unsubscribe(); await database.delete();
+  }
 });

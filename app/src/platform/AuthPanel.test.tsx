@@ -15,7 +15,7 @@ afterEach(cleanup);
 
 test('user can log in, choose an organization and log out', async () => {
   render(<AuthPanel/>);
-  await waitFor(() => expect(get).toHaveBeenCalledWith('/api/v1/auth/session'));
+  await waitFor(() => expect(get).toHaveBeenCalledWith('/api/v1/auth/session', expect.objectContaining({ cache: 'no-store' })));
   get.mockResolvedValue({ data: { token: 'csrf' } });
   post.mockResolvedValueOnce({ data: { userId: 'u1', email: 'admin@example.org', memberships: [
     { membershipId: 'm1', organizationId: 'o1', organizationName: 'Org A', role: 'ADMIN', status: 'ACTIVE' },
@@ -35,7 +35,7 @@ test('user can log in, choose an organization and log out', async () => {
   expect(getAuthState().activeOrganizationId).toBeNull();
 });
 
-test('failed logout displays an error and keeps the account visible', async () => {
+test('failed server logout displays an error without restoring local access', async () => {
   get.mockResolvedValue({ data: { userId: 'u1', email: 'a@example.org', memberships: [] } });
   render(<AuthPanel/>);
   await screen.findByText('Angemeldet als a@example.org');
@@ -43,5 +43,6 @@ test('failed logout displays an error and keeps the account visible', async () =
   post.mockResolvedValue({ error: {}, response: { status: 403 } });
   fireEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Abmelden fehlgeschlagen');
-  expect(screen.getByText('Angemeldet als a@example.org')).toBeTruthy();
+  expect(screen.queryByText('Angemeldet als a@example.org')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
 });

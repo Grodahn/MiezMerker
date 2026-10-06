@@ -49,14 +49,15 @@ Logout/Sessionablauf, #11-Schutz bleibt).
 
 ## Start, Login, Logout, Ablauf
 
-- **Initial load:** Gate zeigt neutral `Anmeldung wird geprüft …` bis
-  `sessionChecked` (online `fetchSession`, offline `markOfflineChecked`) plus
-  ggf. Credential-Lookup abgeschlossen ist. Kein Flash von Navigation oder
-  privaten Inhalten.
+- **Initial load:** Gate zeigt neutral `Anmeldung wird geprüft …`, bis die
+  Online-Session geprüft oder die Offline-Sync-Berechtigung nachgewiesen ist.
+  Verwaltungsinhalte benötigen immer eine abgeschlossene Online-Verifikation.
+  Kein Flash von Verwaltungsnavigation oder privaten Verwaltungsinhalten.
 - **Login:** `LoginView` nutzt `login()` wie bisher (Session-/CSRF-Cookies,
   Organisations-Restore/-Wahl in `auth.ts`); nach Erfolg rendert das Gate ohne
   Reload die passende Shell.
-- **Logout:** `logout()` löscht Session/Snapshot, `forgetCredentials` der
+- **Logout:** `logout()` löscht den lokalen Benutzer/Snapshot sofort und
+  beendet anschließend die Server-Session; `forgetCredentials` der
   Erneuerung entfernt Credentials (AppDevice-Key und Outbox bleiben gemäß
   bestehender Offline-Security-Semantik erhalten); Gate zeigt sofort Login,
   geschützte Navigation/Inhalte verschwinden, Management-State wird durch
@@ -65,6 +66,26 @@ Logout/Sessionablauf, #11-Schutz bleibt).
   Defense-in-Depth; Tenant-/Rollenprüfungen serverseitig bleiben autoritativ.
 
 ## Prüfungen
+
+Review-Fixes für PR #39:
+
+- Beim Reconnect wird die alte Online-Verifikation vor dem Rendern verworfen;
+  nur eine neue Serverantwort öffnet die Verwaltung. Der Session-Check hat
+  einen Timeout und umgeht den HTTP-Cache.
+- `pagehide` verwirft die gesamte geschützte Shell inklusive Benutzerkonto und
+  Collector, bevor der Browser sie in der History einfriert. Ein persistiertes
+  `pageshow` lädt die Identität neu.
+- Logout entfernt den lokalen Benutzer und Snapshot vor dem ersten Netzwerk-
+  Await. Auch ein fehlgeschlagener Server-Logout stellt private Inhalte nicht
+  automatisch wieder her. Credential-Cleanup berücksichtigt einen kalten
+  Offline-Start vor der ersten Erneuerung.
+- Offline-Berechtigung ist an Benutzer und Organisation gebunden, verlangt
+  eine ACTIVE Membership und beobachtet Credential-Änderungen in IndexedDB.
+  Ein Timer schließt die Offline-Shell beim Ablauf des Credentials.
+- Session-Verifikationswechsel invalidieren auch bei erhaltener Offline-
+  Identität Verwaltungs-Requests und View-State. Eine gültig autorisierte
+  Collector-Instanz bleibt bei Online/Offline-Wechseln erhalten; bei fehlender
+  Online-Session steht auf `/sync` ein Login zur Wiederaufnahme des Uploads bereit.
 
 - Unit: `gate.test.ts` (reine Statuslogik), `App.test.tsx` (frisch/login-only
   auf allen Routen, Login ohne Reload, Ablauf/Logout ohne Stale-Daten,

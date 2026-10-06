@@ -2,8 +2,9 @@ import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-const { apiGet, apiPost, credentialLookup } = vi.hoisted(() => ({
-  apiGet: vi.fn(), apiPost: vi.fn(), credentialLookup: vi.fn(),
+const { apiGet, apiPost, credentialLookup, credentialExpiry, collectorMount, collectorUnmount } = vi.hoisted(() => ({
+  apiGet: vi.fn(), apiPost: vi.fn(), credentialLookup: vi.fn(), credentialExpiry: vi.fn(),
+  collectorMount: vi.fn(), collectorUnmount: vi.fn(),
 }));
 
 vi.mock('./api/client', () => ({
@@ -15,13 +16,20 @@ vi.mock('./api/client', () => ({
 }));
 
 vi.mock('./platform/offline-identity', () => ({
-  OfflineIdentityDatabase: class { close() {} },
+  OfflineIdentityDatabase: class {
+    credentials = { get: credentialExpiry };
+    close() {}
+  },
   OfflineIdentity: class { credential = credentialLookup; },
 }));
 
-vi.mock('./collector/CollectorShell', () => ({
-  CollectorShell: () => <div>CollectorShell</div>,
-}));
+vi.mock('./collector/CollectorShell', async () => {
+  const { useEffect } = await import('react');
+  return { CollectorShell: () => {
+    useEffect(() => { collectorMount(); return collectorUnmount; }, []);
+    return <div>CollectorShell</div>;
+  } };
+});
 
 function setPath(path: string) {
   window.history.replaceState({}, '', path);
@@ -47,10 +55,13 @@ beforeEach(async () => {
   localStorage.clear();
   sessionStorage.clear();
   cleanup();
+  collectorMount.mockReset(); collectorUnmount.mockReset();
   apiGet.mockReset();
   apiPost.mockReset();
   credentialLookup.mockReset();
   credentialLookup.mockResolvedValue(null);
+  credentialExpiry.mockReset();
+  credentialExpiry.mockImplementation(async () => ({ expiresAt: Date.now() + 60_000 }));
   setOnline(true);
   apiGet.mockImplementation(async (path: string) => {
     if (path === '/api/v1/auth/session') return { error: {}, response: { status: 401 } };
@@ -60,7 +71,114 @@ beforeEach(async () => {
   apiPost.mockResolvedValue({ response: { ok: true, status: 200 }, data: {} });
 });
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+test('reconnect waits for fresh verification and cannot reveal an expired session', async () => {
+  setPath('/sites');
+  apiGet.mockImplementation(async (path: string) => path === '/api/v1/auth/session'
+    ? sessionResponse(verifiedUser)
+    : { data: [], response: { ok: true, status: 200 } });
+  const { App } = await import('./App');
+  render(<App />);
+  await screen.findByText('Futterstellen der aktiven Organisation.');
+  act(() => { setOnline(false); window.dispatchEvent(new Event('offline')); });
+  expect(screen.queryByRole('navigation')).toBeNull();
+  let resolveSession!: (value: unknown) => void;
+  apiGet.mockImplementation((path: string) => path === '/api/v1/auth/session'
+    ? new Promise(resolve => { resolveSession = resolve; })
+    : Promise.resolve({ data: [], response: { ok: true, status: 200 } }));
+  act(() => { setOnline(true); window.dispatchEvent(new Event('online')); });
+  expect(screen.queryByRole('navigation')).toBeNull();
+  expect(screen.queryByText('Futterstellen der aktiven Organisation.')).toBeNull();
+  await act(async () => { resolveSession({ error: {}, response: { status: 401 } }); });
+  expect(await screen.findByRole('button', { name: 'Anmelden' })).toBeTruthy();
+});
+
+test('logout hides private content before the server responds', async () => {
+  setPath('/sites');
+  apiGet.mockImplementation(async (path: string) => path === '/api/v1/auth/session'
+    ? sessionResponse(verifiedUser)
+    : path === '/api/v1/auth/csrf' ? { data: { token: 'csrf' } }
+      : { data: [{ id: 'site-a', name: 'Private A site' }], response: { ok: true, status: 200 } });
+  const { App } = await import('./App');
+  render(<App />);
+  await screen.findByText('Private A site');
+  let finishLogout!: (value: unknown) => void;
+  apiPost.mockImplementation(() => new Promise(resolve => { finishLogout = resolve; }));
+  const { logout } = await import('./platform/auth');
+  let pending!: Promise<void>;
+  await act(async () => { pending = logout(); await Promise.resolve(); });
+  expect(screen.queryByText('Private A site')).toBeNull();
+  expect(screen.queryByRole('navigation')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
+  await act(async () => { finishLogout({ response: { ok: true, status: 200 } }); await pending; });
+});
+
+test('pagehide clears the entire protected shell before browser history freezes it', async () => {
+  setPath('/sync');
+  apiGet.mockResolvedValue(sessionResponse(verifiedUser));
+  const { App } = await import('./App');
+  render(<App />);
+  await screen.findByText('CollectorShell');
+  act(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  expect(screen.queryByRole('navigation')).toBeNull();
+  expect(screen.queryByText('CollectorShell')).toBeNull();
+  expect(screen.queryByText(/staff@example.org/)).toBeNull();
+});
+
+test('offline shell closes when its credential expires without another auth event', async () => {
+  setOnline(false);
+  setPath('/sync');
+  localStorage.setItem('miezmerker-offline-session', JSON.stringify({ user: verifiedUser, activeOrganizationId: 'org-a' }));
+  credentialLookup.mockResolvedValue('valid-credential');
+  credentialExpiry.mockResolvedValue({ expiresAt: Date.now() + 1000 });
+  const { App } = await import('./App');
+  vi.useFakeTimers();
+  render(<App />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+  expect(screen.getByText('CollectorShell')).toBeTruthy();
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(screen.queryByText('CollectorShell')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
+});
+
+test('valid offline authorization keeps the collector mounted through disconnect and reconnect', async () => {
+  setPath('/sync');
+  apiGet.mockResolvedValue(sessionResponse(verifiedUser));
+  credentialLookup.mockResolvedValue('valid-credential');
+  const { App } = await import('./App');
+  render(<App />);
+  await screen.findByText('CollectorShell');
+  await waitFor(() => expect(credentialExpiry).toHaveBeenCalled());
+  act(() => { setOnline(false); window.dispatchEvent(new Event('offline')); });
+  expect(screen.getByText('CollectorShell')).toBeTruthy();
+  expect(collectorMount).toHaveBeenCalledTimes(1);
+  expect(collectorUnmount).not.toHaveBeenCalled();
+  let finish!: (value: unknown) => void;
+  apiGet.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  act(() => { setOnline(true); window.dispatchEvent(new Event('online')); });
+  expect(screen.getByText('CollectorShell')).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Futterstellen' })).toBeNull();
+  await act(async () => { finish({ error: {}, response: { status: 401 } }); });
+  expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
+  expect(collectorMount).toHaveBeenCalledTimes(1);
+  expect(collectorUnmount).not.toHaveBeenCalled();
+});
+
+test('credential eligibility from A is never reused while B is being checked', async () => {
+  setOnline(false); setPath('/sync');
+  const user = { ...verifiedUser, memberships: [...verifiedUser.memberships,
+    { membershipId: 'm2', organizationId: 'org-b', organizationName: 'Org B', role: 'MEMBER', status: 'ACTIVE' }] };
+  localStorage.setItem('miezmerker-offline-session', JSON.stringify({ user, activeOrganizationId: 'org-a' }));
+  credentialLookup.mockImplementation(async (_user: string, org: string) => org === 'org-a' ? 'valid-credential' : null);
+  const { App } = await import('./App');
+  render(<App />);
+  await screen.findByText('CollectorShell');
+  const { selectOrganization } = await import('./platform/auth');
+  act(() => { selectOrganization('org-b'); });
+  expect(screen.queryByText('CollectorShell')).toBeNull();
+  expect(await screen.findByRole('button', { name: 'Anmelden' })).toBeTruthy();
+});
 
 test('initial load shows neutral loading without navigation or protected content', async () => {
   setPath('/nodes');
@@ -172,7 +290,7 @@ test('session expiration preserves offline-sync eligibility when a valid credent
   const { fetchSession } = await import('./platform/auth');
   await act(async () => { await fetchSession().catch(() => {}); });
   expect(await screen.findByText('CollectorShell')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Anmelden' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'Futterstellen' })).toBeNull();
 });
 

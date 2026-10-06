@@ -122,7 +122,7 @@ export async function fetchSession(): Promise<SessionUser | null> {
   const generation = ++sessionGeneration;
   let outcome: { data?: unknown; error?: unknown; response?: { status?: number } };
   try {
-    outcome = await api.GET('/api/v1/auth/session');
+    outcome = await api.GET('/api/v1/auth/session', { signal: AbortSignal.timeout(10_000), cache: 'no-store' });
   } catch (failure) {
     // Offline/network failure must not clear a restored snapshot; it only
     // marks the initial check as done so the #31 gate can fall back to
@@ -166,6 +166,13 @@ export function markOfflineChecked(): void {
   emit();
 }
 
+export function markSessionPending(): void {
+  // A previous verification cannot authorize a reconnect or resumed document.
+  sessionGeneration++;
+  state = { ...state, csrfToken: null, sessionChecked: false, sessionVerified: false };
+  emit();
+}
+
 export function markSessionExpired(): void {
   // Central #31 transition for expired/missing backend sessions observed via
   // 401 on management APIs. Preserves the restored snapshot so offline-sync
@@ -198,11 +205,20 @@ export async function login(email: string, password: string): Promise<SessionUse
 
 export async function logout(): Promise<void> {
   return changeAuthentication(async () => {
-    const token = await fetchCsrfToken();
-    const { response } = await api.POST('/api/v1/auth/logout', { headers: { 'X-XSRF-TOKEN': token } });
-    if (!response.ok && response.status !== 401) throw new Error('Abmelden fehlgeschlagen');
+    // Hide private content and invalidate offline access before any network wait.
+    // A failed server logout must not restore the local protected view.
     state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: false };
     storeUser(null);
+    const token = await fetchCsrfToken();
+    try {
+      const { response } = await api.POST('/api/v1/auth/logout', {
+        signal: AbortSignal.timeout(10_000), headers: { 'X-XSRF-TOKEN': token },
+      });
+      if (!response.ok && response.status !== 401) throw new Error('Abmelden fehlgeschlagen');
+    } finally {
+      state = { ...state, csrfToken: null };
+      emit();
+    }
   });
 }
 

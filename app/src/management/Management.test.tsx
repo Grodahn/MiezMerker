@@ -6,7 +6,7 @@ const { get, post, patch, csrf, auth, listeners } = vi.hoisted(() => ({
   auth: { user: { userId: 'user', email: 'staff@example.org', memberships: [
     { organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' },
     { organizationId: 'org-b', status: 'ACTIVE', role: 'MEMBER' },
-  ] }, activeOrganizationId: 'org-a' as string | null }, listeners: new Set<() => void>(),
+  ] }, activeOrganizationId: 'org-a' as string | null, sessionVerified: true }, listeners: new Set<() => void>(),
 }));
 vi.mock('../api/client', () => ({ api: { GET: get, POST: post, PATCH: patch } }));
 vi.mock('../platform/auth', () => ({ getAuthState: () => auth,
@@ -29,10 +29,35 @@ beforeEach(() => {
     { organizationId: 'org-b', status: 'ACTIVE', role: 'MEMBER' },
   ] };
   auth.activeOrganizationId = 'org-a';
+  auth.sessionVerified = true;
   changed();
   get.mockImplementation(async () => ok([])); post.mockResolvedValue(ok({})); patch.mockResolvedValue(ok({}));
 });
 afterEach(cleanup);
+
+test('verification loss aborts pending work even when the offline identity is preserved', async () => {
+  const { contextSignal } = await import('./context');
+  const controller = contextSignal();
+  auth.sessionVerified = false;
+  changed();
+  expect(controller.signal.aborted).toBe(true);
+  expect(auth.user.userId).toBe('user');
+  expect(auth.activeOrganizationId).toBe('org-a');
+});
+
+test('a batched verification loss and recovery discards management drafts', async () => {
+  get.mockImplementation(async () => ok([site]));
+  render(<Management path="/sites"/>);
+  await screen.findByText('Garten');
+  fireEvent.click(screen.getByRole('button', { name: 'Futterstelle anlegen' }));
+  fireEvent.change(screen.getByLabelText('Name / Bezeichnung'), { target: { value: 'Private draft' } });
+  act(() => {
+    auth.sessionVerified = false; changed();
+    auth.sessionVerified = true; changed();
+  });
+  expect(screen.queryByLabelText('Name / Bezeichnung')).toBeNull();
+  await screen.findByText('Garten');
+});
 
 test.each([
   ['/sites', 'Noch keine Futterstellen vorhanden.'], ['/nodes', 'Noch keine Nodes vorhanden.'],
