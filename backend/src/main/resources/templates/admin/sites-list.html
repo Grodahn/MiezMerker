@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Futterstellen')}">
+<title>Futterstellen · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('sites')}"></div>
+<main>
+<h1>Futterstellen</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
+<div class="card">
+<p>Futterstellen-Stammdaten der aktiven Organisation. Dieselben Daten wie in der PWA unter <code>/sites</code> (bleibt bis #38 bestehen).</p>
+<p><a class="btn" th:href="@{/admin/sites/new}">Futterstelle anlegen</a>
+<a th:href="@{/admin/}">Zurück zur Übersicht</a></p>
+</div>
+<div th:if="${siteCount == 0}" class="card">
+<p>Noch keine Futterstellen vorhanden. Legen Sie die erste Futterstelle an.</p>
+</div>
+<div th:if="${siteCount > 0}" class="card table-scroll" role="region" aria-label="Futterstellen" tabindex="0">
+<style>
+.table-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}
+th{font-weight:700;background:#f9fafb}
+small.muted{display:block;opacity:.75;font-size:.85rem}
+</style>
+<table>
+<caption class="sr-only">Futterstellen</caption>
+<thead><tr><th scope="col">Name</th><th scope="col">Ort / Beschreibung</th><th scope="col">Nodes</th><th scope="col">Aktionen</th></tr></thead>
+<tbody>
+<tr th:each="s : ${sites}">
+<td th:text="${s.name}">Name</td>
+<td>
+<span th:text="${s.locationLabel != null ? s.locationLabel : 'Kein Ort hinterlegt'}">Ort</span>
+<small class="muted" th:if="${s.locationLat != null}" th:text="'Koordinaten: ' + ${s.locationLat} + ', ' + ${s.locationLng}">Koordinaten</small>
+<small class="muted" th:if="${s.description != null}" th:text="${s.description}">Beschreibung</small>
+</td>
+<td th:text="${s.currentNodeCount} + ' aktuell'">0 aktuell</td>
+<td>
+<a th:href="@{/admin/sites/{id}(id=${s.id})}">Details</a>
+·
+<a th:href="@{/admin/sites/{id}/edit(id=${s.id})}">Bearbeiten</a>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

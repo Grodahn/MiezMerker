@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Futterstelle')}">
+<title>Futterstelle · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('sites')}"></div>
+<main>
+<style>
+.table-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}
+th{font-weight:700;background:#f9fafb}
+small.muted{display:block;opacity:.75;font-size:.85rem}
+</style>
+<h1 th:text="${siteName}">Futterstelle</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
+<div class="card">
+<h2>Stammdaten</h2>
+<dl>
+<dt>Name</dt><dd th:text="${siteName}">Name</dd>
+<dt>Beschreibung</dt><dd th:text="${siteDescription != null ? siteDescription : 'Keine Beschreibung hinterlegt'}">Beschreibung</dd>
+<dt>Ort / Wegbeschreibung</dt><dd th:text="${siteLocationLabel != null ? siteLocationLabel : 'Kein Ort hinterlegt'}">Ort</dd>
+<dt>Koordinaten</dt><dd th:text="${siteLocationLat != null ? siteLocationLat + ', ' + siteLocationLng : 'Keine Koordinaten hinterlegt'}">Koordinaten</dd>
+<dt>Angelegt</dt><dd th:text="${siteCreatedAt}">Zeit</dd>
+<dt>Zuletzt geändert</dt><dd th:text="${siteUpdatedAt}">Zeit</dd>
+</dl>
+<p>
+<a class="btn" th:href="@{/admin/sites/{id}/edit(id=${siteId})}">Bearbeiten</a>
+<a th:href="@{/admin/sites}">Zurück zur Liste</a>
+</p>
+</div>
+<div class="card">
+<h2>Aktuell zugeordnete Nodes (<span th:text="${currentNodeCount}">0</span>)</h2>
+<p><small>Aktuelle Zuordnung aus zeitbasierten Deployments (gültig jetzt). Historie bleibt unverändert; Umzüge nur über die bestehende atomare Deployment-Pflege.</small></p>
+<p th:if="${currentNodeCount == 0}">Keine aktuell zugeordneten Nodes.</p>
+<div th:if="${currentNodeCount > 0}" class="table-scroll" role="region" aria-label="Aktuelle Nodes" tabindex="0">
+<table>
+<caption class="sr-only">Aktuelle Nodes</caption>
+<thead><tr><th scope="col">Node</th><th scope="col">Firmware / Notiz</th><th scope="col">Letzter Serverkontakt</th></tr></thead>
+<tbody>
+<tr th:each="n : ${currentNodes}">
+<td><code th:text="${n.nodeId}">node</code></td>
+<td>
+<span th:text="${n.firmwareVersion != null ? n.firmwareVersion : 'Unbekannte Firmware'}">fw</span>
+<small class="muted" th:if="${n.statusNote != null}" th:text="${n.statusNote}">Notiz</small>
+</td>
+<td th:text="${n.lastContactAt != null ? n.lastContactAt : 'Noch kein Kontakt'}">Kontakt</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="card">
+<h2>Deployment-Historie (<span th:text="${deploymentCount}">0</span>)</h2>
+<p><small>Intervalle: <code>valid_from</code> einschließlich, <code>valid_until</code> ausschließlich (<code>null</code> = ohne Enddatum). Historische Intervalle werden durch Stammdaten-Änderungen nie umgedeutet.</small></p>
+<p th:if="${deploymentCount == 0}">Keine Deployments für diese Futterstelle.</p>
+<div th:if="${deploymentCount > 0}" class="table-scroll" role="region" aria-label="Deployment-Historie" tabindex="0">
+<table>
+<caption class="sr-only">Deployment-Historie</caption>
+<thead><tr><th scope="col">Node</th><th scope="col">Gültig ab</th><th scope="col">Gültig bis</th></tr></thead>
+<tbody>
+<tr th:each="d : ${deployments}">
+<td><code th:text="${d.nodeId}">node</code></td>
+<td th:text="${d.validFrom}">ab</td>
+<td th:text="${d.validUntil != null ? d.validUntil : 'Ohne Enddatum'}">bis</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="card">
+<h2>Letzte Aktivität / Rohbeobachtungen</h2>
+<p><small>Die zehn zuletzt am Server eingegangenen Reads dieser historischen Futterstelle (frozen <code>feeding_site_id</code> bei Erfassung). Serverempfang (<code>received_at</code>) ist exakt; Sichtungszeit nur bei verlässlicher Uhr (SYNCED/RTC_ONLY/KNOWN). UNKNOWN wird ehrlich als „Uhrzeit unbekannt“ gezeigt, nie als genaue Zeit.</small></p>
+<p>Gesamt: <span th:text="${observationTotal}">0</span> Rohbeobachtungen mit dieser historischen Zuordnung.</p>
+<p th:if="${#lists.isEmpty(recentObservations)}">Keine Rohbeobachtungen vorhanden.</p>
+<div th:if="${!#lists.isEmpty(recentObservations)}" class="table-scroll" role="region" aria-label="Rohbeobachtungen" tabindex="0">
+<table>
+<caption class="sr-only">Rohbeobachtungen</caption>
+<thead><tr><th scope="col">Sichtung / Empfang</th><th scope="col">Chip / Node</th><th scope="col">Technik</th></tr></thead>
+<tbody>
+<tr th:each="o : ${recentObservations}">
+<td>
+<span th:text="${o.clockUnknown ? 'Uhrzeit unbekannt' : o.observedDisplay}">Zeit</span>
+<small class="muted" th:text="'Serverempfang: ' + ${o.receivedAt}">Empfang</small>
+<small class="muted" th:text="'Clock: ' + ${o.clockStatus}">Clock</small>
+<small class="muted" th:if="${o.clockUnknown}">Keine verlässliche Dauer / zeitliche Zuordnung.</small>
+</td>
+<td>
+<code th:text="${o.chipId}">chip</code>
+<small class="muted" th:text="'Node: ' + ${o.nodeId}">node</small>
+<small class="muted" th:text="'Sequence: ' + ${o.sequence}">seq</small>
+</td>
+<td><small class="muted" th:text="'Deployment: ' + (${o.deploymentId != null ? o.deploymentId : 'Nicht zugeordnet'})">dep</small></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

@@ -17,6 +17,9 @@ public interface NodeDeploymentRepository extends JpaRepository<NodeDeployment, 
 
     List<NodeDeployment> findByNodeNodeId(UUID nodeId);
 
+    List<NodeDeployment> findByOrganizationIdAndFeedingSiteId(UUID organizationId,
+            UUID feedingSiteId);
+
     Optional<NodeDeployment> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
     @Query("select d from NodeDeployment d where d.node.nodeId = :nodeId "

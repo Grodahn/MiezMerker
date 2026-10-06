@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head(${mode == 'edit' ? 'Futterstelle bearbeiten' : 'Futterstelle anlegen'})}">
+<title>Futterstelle · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('sites')}"></div>
+<main>
+<h1 th:text="${mode == 'edit' ? 'Futterstelle bearbeiten' : 'Futterstelle anlegen'}">Futterstelle</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
+<p th:if="${mode == 'edit'}" class="card">Bearbeitung von <strong th:text="${siteName}">Name</strong>. IDs, Organisation und historische Deployments/Rohdaten bleiben unverändert.</p>
+<div th:if="${errors != null and !#lists.isEmpty(errors)}" class="alert alert-error" role="alert">
+<p>Bitte Eingaben prüfen:</p>
+<ul><li th:each="e : ${errors}" th:text="${e}">Fehler</li></ul>
+</div>
+<div class="card">
+<form th:action="${formAction}" method="post">
+<input type="hidden" th:if="${!isEdit}" name="formOrganizationId" th:value="${activeOrg.id}"/>
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label for="site-name">Name / Bezeichnung</label>
+<input id="site-name" name="name" type="text" required maxlength="255" th:value="${formName}" autocomplete="off"/>
+</div>
+<div>
+<label for="site-description">Beschreibung</label>
+<textarea id="site-description" name="description" maxlength="2000" rows="3" th:text="${formDescription}"></textarea>
+</div>
+<div>
+<label for="site-location">Ort / Wegbeschreibung</label>
+<input id="site-location" name="locationLabel" type="text" maxlength="255" th:value="${formLocationLabel}" autocomplete="off"/>
+</div>
+<div>
+<label for="site-lat">Breitengrad (optional)</label>
+<input id="site-lat" name="locationLat" type="number" min="-90" max="90" step="any" th:value="${formLocationLat}" inputmode="decimal"/>
+</div>
+<div>
+<label for="site-lng">Längengrad (optional)</label>
+<input id="site-lng" name="locationLng" type="number" min="-180" max="180" step="any" th:value="${formLocationLng}" inputmode="decimal"/>
+</div>
+<p><small>Breiten- und Längengrad nur gemeinsam angeben. Keine neue Adress-/GPS-Pflicht: beide leer lassen ist zulässig.</small></p>
+<div th:if="${isEdit}">
+<label><input type="checkbox" name="clearLocation" th:checked="${formClearLocation}"/> Standort vollständig entfernen (Ort und Koordinaten)</label>
+</div>
+<div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+<button class="btn" type="submit">Speichern</button>
+<a class="btn btn-secondary" th:if="${mode == 'edit'}" th:href="@{/admin/sites/{id}(id=${siteId})}">Abbrechen</a>
+<a class="btn btn-secondary" th:if="${mode != 'edit'}" th:href="@{/admin/sites}">Abbrechen</a>
+</div>
+</form>
+</div>
+<p><a th:href="@{/admin/sites}">Zurück zur Liste</a></p>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>
