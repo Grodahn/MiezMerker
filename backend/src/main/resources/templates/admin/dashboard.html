@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Übersicht')}">
+<title>Übersicht · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('dashboard')}"></div>
+<main>
+<h1>Backoffice-Übersicht</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong>
+<span th:text="' (' + ${activeOrg.slug} + ')'"> (slug)</span></p>
+<div class="grid">
+<a class="card cardlink" th:href="@{/admin/members}"><h2>Mitglieder</h2><p>Name, E-Mail, Rolle, Status. Verwaltung folgt in #34.</p></a>
+<a class="card cardlink" th:href="@{/admin/sites}"><h2>Futterstellen</h2><p>Liste, Anlage, Detail, Nodes. Verwaltung folgt in #35.</p></a>
+<a class="card cardlink" th:href="@{/admin/cats}"><h2>Katzen</h2><p>Chips, Status, Sichtungen. Verwaltung folgt in #37.</p></a>
+<a class="card cardlink" th:href="@{/admin/observations}"><h2>Rohbeobachtungen</h2><p>Technische Rohdaten, Filter. Ansicht folgt in #36.</p></a>
+<a class="card cardlink" th:href="@{/admin/visits}"><h2>Besuche</h2><p>Abgeleitete Besuche, Provenance. Ansicht folgt in #36.</p></a>
+</div>
+<div class="card" th:if="${adminOrgs != null and #lists.size(adminOrgs) > 1}">
+<h2>Organisationskontext</h2>
+<p>Mehrere ACTIVE ADMIN-Mitgliedschaften gefunden. Aktiver Kontext ist serverseitig in der Admin-Session gespeichert.</p>
+<p><a th:href="@{/admin/org}">Organisation wechseln</a></p>
+</div>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Kein Zugang')}">
+<title>Kein Zugang · MiezMerker Admin</title>
+</head>
+<body>
+<header class="topbar">
+<div><div class="org">MiezMerker Admin</div>
+<div class="user" th:if="${userLabel != null}" th:text="${userLabel}">Benutzer</div>
+<div class="user" th:if="${userLabel == null}">Nicht angemeldet</div>
+</div>
+<form th:if="${userLabel != null}" th:action="@{/admin/logout}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<button class="btn" type="submit">Abmelden</button>
+</form>
+</header>
+<main>
+<div class="card">
+<h1>403 · Kein Admin-Zugang</h1>
+<p>Nur Benutzer mit mindestens einer <strong>ACTIVE ADMIN</strong>-Mitgliedschaft in einer aktiven Organisation dürfen das Admin-Backend verwenden.</p>
+<ul>
+<li>MEMBER-only: kein Zugang</li>
+<li>PENDING / DISABLED: kein Zugang</li>
+<li>Fremde Organisations-IDs umgehen die Mandantenprüfung nicht</li>
+</ul>
+<p th:if="${userLabel == null}"><a th:href="@{/admin/login}">Zum Admin-Login</a></p>
+<p th:if="${userLabel != null}"><a th:href="@{/admin/login}">Erneut anmelden</a> · <a th:href="@{/admin/}">Übersicht versuchen</a></p>
+</div>
+</main>
+</body>
+</html>

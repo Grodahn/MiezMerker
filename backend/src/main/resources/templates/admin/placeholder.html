@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head(${section})}">
+<title>Platzhalter · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('')}"></div>
+<main>
+<h1 th:text="${section}">Bereich</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
+<div class="card">
+<p th:text="${hint}">Folgt in einem Folge-Ticket.</p>
+<p><a th:href="@{/admin/}">Zurück zur Übersicht</a></p>
+</div>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

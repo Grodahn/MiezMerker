@@ -12,7 +12,7 @@ implementation contract. Subsequent tickets add features within these boundaries
 | simulator | Inject simulated ports into the actual firmware-core library | CMake / CTest, no hardware |
 | protocol | BLE logical record schema/fixture and wire boundaries; future GATT codecs | Schema/fixture checked by app tests |
 | app | **One** React/TypeScript/Vite installable PWA: collector and administration | npm ci / tests / build / browser tests |
-| backend | Java/Spring Boot HTTP API; Security, JPA, PostgreSQL, Flyway, OpenAPI | Maven wrapper verify |
+| backend | Java/Spring Boot HTTP API + server-rendered ADMIN backoffice (`/admin`, Thymeleaf, ADMIN-only); Security, JPA, PostgreSQL, Flyway, OpenAPI | Maven wrapper verify |
 | docs | Domain, trust boundaries, ADRs and acceptance review | Documentation review |
 | hardware | Schematics/BOM/reader/power work | Documentation placeholder today |
 

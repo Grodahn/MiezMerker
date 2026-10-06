@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Login')}">
+<title>Login · MiezMerker Admin</title>
+</head>
+<body>
+<header class="topbar">
+<div><div class="org">MiezMerker Admin</div><div class="user">Backoffice-Anmeldung</div></div>
+</header>
+<main>
+<div class="card" style="max-width:480px;margin:2rem auto">
+<h1>Admin-Login</h1>
+<p>Dieselben Benutzer wie in der Feld-PWA. Nur <strong>ACTIVE ADMIN</strong>-Mitglieder erhalten Zugang.</p>
+<div th:if="${loginError != null}" class="alert alert-error" th:text="${loginError}">Fehler</div>
+<div th:if="${param.error != null and loginError == null}" class="alert alert-error">Anmeldung fehlgeschlagen. E-Mail und Passwort prüfen.</div>
+<div th:if="${loginInfo != null}" class="alert alert-info" th:text="${loginInfo}">Info</div>
+<div th:if="${param.logout != null and loginInfo == null}" class="alert alert-info">Erfolgreich abgemeldet.</div>
+<div th:if="${param.expired != null and loginInfo == null}" class="alert alert-info">Sitzung abgelaufen. Bitte erneut anmelden.</div>
+<form th:action="@{/admin/login}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label for="email">E-Mail</label>
+<input id="email" name="email" type="email" autocomplete="username" required maxlength="320"/>
+</div>
+<div>
+<label for="password">Passwort</label>
+<input id="password" name="password" type="password" autocomplete="current-password" required/>
+</div>
+<div style="margin-top:1rem">
+<button class="btn" type="submit">Anmelden</button>
+</div>
+</form>
+<p style="opacity:.7;font-size:.9rem">MEMBER-only, PENDING oder DISABLED erhalten keinen Admin-Zugang (403).</p>
+</div>
+</main>
+</body>
+</html>
