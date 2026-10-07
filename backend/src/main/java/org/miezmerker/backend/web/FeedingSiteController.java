@@ -12,6 +12,7 @@ import org.miezmerker.backend.repo.FeedingSiteRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
 import org.miezmerker.backend.service.FeedingSiteService;
+import org.miezmerker.backend.service.FeedingSiteCatActivityService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -41,12 +43,15 @@ public class FeedingSiteController {
     private final FeedingSiteRepository sites;
     private final TenantService tenants;
     private final FeedingSiteService feedingSites;
+    private final FeedingSiteCatActivityService activity;
 
     public FeedingSiteController(FeedingSiteRepository sites,
-            TenantService tenants, FeedingSiteService feedingSites) {
+            TenantService tenants, FeedingSiteService feedingSites,
+            FeedingSiteCatActivityService activity) {
         this.sites = sites;
         this.tenants = tenants;
         this.feedingSites = feedingSites;
+        this.activity = activity;
     }
 
     @Schema(name = "FeedingSiteView")
@@ -100,6 +105,25 @@ public class FeedingSiteController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         return toView(feedingSites.get(principal.getId(), organizationId, siteId));
+    }
+
+    @GetMapping(value = "/{siteId}/cat-activity", produces = "application/json")
+    @Operation(operationId = "listFeedingSiteCatActivity",
+            summary = "Compact feeding-site cat/chip activity (ACTIVE membership)",
+            description = "Latest reliable sighting is max end_at of persisted visit-gap-v1 visits; "
+                    + "null until a reliable visit exists. Raw activity contributes chip identity and "
+                    + "separate server receipt time only. Uses frozen site attribution, never current "
+                    + "deployments. UNKNOWN/unattributed observations are not assigned to a site. "
+                    + "Ordered by reliable sighting descending (nulls last), then chipId ascending. "
+                    + "limit 1..1000 (default 100), offset >= 0. Foreign/missing sites return 404.")
+    public List<FeedingSiteCatActivityView> catActivity(@PathVariable UUID organizationId,
+            @PathVariable UUID siteId, @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "0") int offset,
+            @AuthenticationPrincipal AppUserDetails principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        return activity.list(principal.getId(), organizationId, siteId, limit, offset);
     }
 
     @PostMapping(consumes = "application/json", produces = "application/json")

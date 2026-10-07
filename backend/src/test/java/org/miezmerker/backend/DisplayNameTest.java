@@ -162,7 +162,8 @@ class DisplayNameTest {
                 insert.setObject(6, lastLoginAt.atOffset(java.time.ZoneOffset.UTC));
                 insert.executeUpdate();
             }
-            var result = Flyway.configure().dataSource(url, "sa", "").load().migrate();
+            // This regression targets V8, independently of later domain/index migrations.
+            var result = Flyway.configure().dataSource(url, "sa", "").target("8").load().migrate();
             assertEquals(1, result.migrationsExecuted);
             try (var query = connection.createStatement();
                     var row = query.executeQuery("SELECT * FROM app_users")) {

@@ -265,6 +265,8 @@ Katzen bleiben bewusst in beiden Oberflächen. Nodes nutzt weiterhin
 Futterstellenkontext; Futterstellen-Stammdatenpflege ist Admin-UI.
 [Endgültige Aufteilung und Routing](docs/issue38-field-pwa.md).
 Bedienung und API-Ergänzungen: [docs/issue11-management.md](docs/issue11-management.md).
+Die kompakte [Katzenaktivität pro Futterstelle (#54)](docs/issue54-site-cat-activity.md)
+liefert letzte verlässliche Visit-Zeiten und getrennte Empfangsmetadaten für die spätere Feld-PWA.
 Der gemergte Collector (#8) unterstützt Offline-BLE und getrennten Backend-Upload;
 physische Abnahme und Board-Anbindung stehen weiter aus (siehe Collector-Dokumentation).
 

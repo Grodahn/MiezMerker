@@ -367,6 +367,51 @@
         },
         "type": "object"
       },
+      "FeedingSiteCatActivityView": {
+        "description": "One chip's activity at its frozen feeding site",
+        "properties": {
+          "catId": {
+            "description": "Current organization-scoped Cat ID; null for unknown chips",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catName": {
+            "description": "Current Cat name; may be null even for a registered Cat",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chipId": {
+            "type": "string"
+          },
+          "lastReceivedAt": {
+            "description": "Latest server receipt of a raw observation with this frozen site (UTC); not a sighting timestamp",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastReliableSightingAt": {
+            "description": "Latest persisted visit-gap-v1 end time (UTC); null when no reliable visit exists. Never server receipt time.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visitCount": {
+            "description": "Number of persisted visit-gap-v1 visits at this site",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "FeedingSiteView": {
         "properties": {
           "createdAt": {
@@ -2417,6 +2462,71 @@
           }
         },
         "summary": "ACTIVE member updates a feeding site of their own organization",
+        "tags": [
+          "feeding-site-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/feeding-sites/{siteId}/cat-activity": {
+      "get": {
+        "description": "Latest reliable sighting is max end_at of persisted visit-gap-v1 visits; null until a reliable visit exists. Raw activity contributes chip identity and separate server receipt time only. Uses frozen site attribution, never current deployments. UNKNOWN/unattributed observations are not assigned to a site. Ordered by reliable sighting descending (nulls last), then chipId ascending. limit 1..1000 (default 100), offset >= 0. Foreign/missing sites return 404.",
+        "operationId": "listFeedingSiteCatActivity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "siteId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeedingSiteCatActivityView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Compact feeding-site cat/chip activity (ACTIVE membership)",
         "tags": [
           "feeding-site-controller"
         ]
