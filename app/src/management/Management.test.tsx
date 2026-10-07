@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 const { get, post, patch, csrf, auth, listeners } = vi.hoisted(() => ({
@@ -65,22 +65,23 @@ test.each([
   expect(await screen.findByText(new RegExp(text))).toBeTruthy();
 });
 
-test('node assignment is one atomic call and displays temporal history', async () => {
+test('node detail shows deployment history without any move control', async () => {
   get.mockImplementation(async (path: string) => ok(path.endsWith('/feeding-sites') ? [site, { ...site, id: 'site-b', name: 'Scheune' }]
     : path.endsWith('/nodes') ? [node] : path.endsWith('/deployments') ? [
       { id: 'deployment-a', nodeId: node.nodeId, feedingSiteId: site.id, validFrom: '2025-01-01T00:00:00Z' },
     ] : []));
   render(<Management path="/nodes"/>);
   await screen.findByText('Garten');
-  fireEvent.click(screen.getByRole('button', { name: 'Details / zuordnen' }));
-  expect(screen.getByRole('heading', { name: 'Deployment-Historie' })).toBeTruthy();
-  expect(screen.getByText('Offen')).toBeTruthy();
-  fireEvent.change(screen.getByLabelText('Neue Futterstelle'), { target: { value: 'site-b' } });
-  fireEvent.change(screen.getByLabelText('Gültig ab (lokale Uhrzeit)'), { target: { value: '2026-10-02T12:00:00' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Zuordnung speichern' }));
-  await vi.waitFor(() => expect(post).toHaveBeenCalledWith('/api/v1/organizations/{organizationId}/deployments/move',
-    expect.objectContaining({ body: { nodeId: node.nodeId, feedingSiteId: 'site-b', validFrom: new Date('2026-10-02T12:00:00').toISOString() } })));
-  expect(patch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+  // The list table stays mounted behind the detail, so scope read
+  // assertions to the detail region instead of matching ambiguous text.
+  const detail = await screen.findByRole('region', { name: 'Node-Details' });
+  expect(within(detail).getByRole('heading', { name: 'Deployment-Historie' })).toBeTruthy();
+  expect(within(detail).getByText('Offen')).toBeTruthy();
+  expect(within(detail).getByText('Garten')).toBeTruthy();
+  expect(screen.queryByLabelText('Neue Futterstelle')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Zuordnung speichern' })).toBeNull();
+  expect(post).not.toHaveBeenCalled();
 });
 
 test('cats include observed unknown chips and separate last sighting from late server receipt', async () => {

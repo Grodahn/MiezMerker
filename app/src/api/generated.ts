@@ -373,7 +373,7 @@ export interface paths {
         /** List deployments of an organization, optionally filtered by node */
         get: operations["listDeployments"];
         put?: never;
-        /** ACTIVE member assigns a node to a feeding site for a validity range */
+        /** ACTIVE ADMIN assigns a node to a feeding site for a validity range */
         post: operations["createDeployment"];
         delete?: never;
         options?: never;
@@ -390,7 +390,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** ACTIVE member atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged */
+        /** ACTIVE ADMIN atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged */
         post: operations["moveDeployment"];
         delete?: never;
         options?: never;
@@ -409,11 +409,11 @@ export interface paths {
         get: operations["getDeployment"];
         put?: never;
         post?: never;
-        /** ADMIN deletes a deployment (stored observation attributions are kept) */
+        /** ACTIVE ADMIN deletes a deployment (stored observation attributions are kept) */
         delete: operations["deleteDeployment"];
         options?: never;
         head?: never;
-        /** ACTIVE member closes or reopens a deployment by setting validUntil */
+        /** ACTIVE ADMIN closes or reopens a deployment by setting validUntil */
         patch: operations["closeDeployment"];
         trace?: never;
     };

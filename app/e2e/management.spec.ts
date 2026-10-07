@@ -12,7 +12,7 @@ const end = '2025-01-01T00:00:30Z';
 async function backend(page: Page) {
   const sites: components['schemas']['FeedingSiteView'][] = [{ id: siteId, organizationId: orgA, name: 'Garten' }, { id: 'site-b', organizationId: orgA, name: 'Scheune' }];
   const cats: components['schemas']['CatView'][] = [];
-  const deployments: components['schemas']['DeploymentView'][] = [];
+  const deployments: components['schemas']['DeploymentView'][] = [{ id: 'deployment-0', organizationId: orgA, nodeId, feedingSiteId: siteId, validFrom: start, validUntil: null, createdAt: start }];
   const observations: components['schemas']['RawObservationView'][] = [];
   const visits: components['schemas']['VisitView'][] = [];
   const requests: { path: string; method: string; query: string; body: unknown }[] = [];
@@ -35,12 +35,7 @@ async function backend(page: Page) {
     }
     if (path.endsWith('/nodes')) return send([{ nodeId, organizationId: orgA, state: 'CLAIMED',
       firmwareVersion: '1.0', protocolVersion: '1', lastContactAt: end }]);
-    if (path.endsWith('/deployments/move')) {
-      const open = deployments.find(d => !d.validUntil);
-      if (open) open.validUntil = body.validFrom;
-      const created = { ...body, id: `deployment-${deployments.length}`, organizationId: orgA };
-      deployments.push(created); return send(created);
-    }
+    if (path.endsWith('/deployments/move')) return send({}, 403);
     if (path.endsWith('/deployments')) return send(deployments);
     if (path.endsWith('/cats')) {
       if (method === 'POST') { const created = { ...body, id: 'cat', organizationId: orgA }; cats.push(created); return send(created); }
@@ -71,19 +66,14 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     for (const label of ['Mitglieder', 'Futterstellen', 'Rohbeobachtungen', 'Besuche']) {
       await expect(nav.getByRole('link', { name: label, exact: true })).toHaveCount(0);
     }
-    await page.getByRole('button', { name: 'Details / zuordnen' }).click();
-    await page.getByLabel('Neue Futterstelle').selectOption(siteId);
-    await page.getByLabel('Gültig ab (lokale Uhrzeit)').fill('2024-12-31T00:00');
-    await page.getByRole('button', { name: 'Zuordnung speichern' }).click();
     await expect(page.getByRole('cell', { name: 'Garten', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Details / zuordnen' }).click();
-    await page.getByLabel('Neue Futterstelle').selectOption('site-b');
-    await page.getByLabel('Gültig ab (lokale Uhrzeit)').fill('2025-01-02T00:00');
-    await page.getByRole('button', { name: 'Zuordnung speichern' }).click();
-    await page.getByRole('button', { name: 'Details / zuordnen' }).click();
+    await page.getByRole('button', { name: 'Details' }).click();
+    await expect(page.getByText('Aktuelle Futterstelle: Garten')).toBeVisible();
+    await expect(page.getByText(/Die Futterstellenzuordnung wird im Admin-Backend verwaltet/)).toBeVisible();
+    await expect(page.getByLabel('Neue Futterstelle')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Zuordnung speichern' })).toHaveCount(0);
     const history = page.getByRole('region', { name: 'Deployment-Historie' });
     await expect(history.getByRole('cell', { name: 'Garten', exact: true })).toBeVisible();
-    await expect(history.getByRole('cell', { name: 'Scheune', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     state.observations.push({ id: readId, chipId: 'CHIP-NEW' });
     state.visits.push({ id: 'visit', chipId: 'CHIP-NEW', feedingSiteId: siteId,
@@ -106,7 +96,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     }
     await page.goto('/sync');
     await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
-    expect(state.requests.filter(r => r.method === 'POST' && r.path.endsWith('/deployments/move'))).toHaveLength(2);
+    expect(state.requests.filter(r => r.path.endsWith('/deployments/move'))).toHaveLength(0);
     expect(state.requests.some(r => r.path.endsWith('/members') || r.path.endsWith('/visits/recompute') || r.path === '/api/v1/observations')).toBe(false);
     const cached = await page.evaluate(async () => {
       const urls: string[] = [];

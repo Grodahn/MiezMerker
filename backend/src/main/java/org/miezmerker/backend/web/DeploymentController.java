@@ -27,8 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Historical node deployments (#9). Reads require ACTIVE membership; every
- * care requires ACTIVE membership; deletion requires ADMIN.
+ * Historical node deployments (#9, #51). Reads require ACTIVE membership;
+ * every write (create, close/update, move, delete) requires ACTIVE ADMIN.
  * Writes serialize on the node row so concurrent moves
  * cannot create overlapping history. Moving a node never rewrites stored
  * observation attributions.
@@ -109,7 +109,7 @@ public class DeploymentController {
 
     @PostMapping(consumes = "application/json", produces = "application/json")
     @Operation(operationId = "createDeployment",
-            summary = "ACTIVE member assigns a node to a feeding site for a validity range")
+            summary = "ACTIVE ADMIN assigns a node to a feeding site for a validity range")
     public DeploymentView create(@PathVariable UUID organizationId,
             @Valid @RequestBody CreateDeploymentRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
@@ -123,7 +123,7 @@ public class DeploymentController {
     @PatchMapping(value = "/{deploymentId}", consumes = "application/json",
             produces = "application/json")
     @Operation(operationId = "closeDeployment",
-            summary = "ACTIVE member closes or reopens a deployment by setting validUntil")
+            summary = "ACTIVE ADMIN closes or reopens a deployment by setting validUntil")
     public DeploymentView close(@PathVariable UUID organizationId,
             @PathVariable UUID deploymentId,
             @RequestBody CloseDeploymentRequest request,
@@ -137,7 +137,7 @@ public class DeploymentController {
 
     @DeleteMapping("/{deploymentId}")
     @Operation(operationId = "deleteDeployment",
-            summary = "ADMIN deletes a deployment (stored observation attributions are kept)")
+            summary = "ACTIVE ADMIN deletes a deployment (stored observation attributions are kept)")
     public void delete(@PathVariable UUID organizationId, @PathVariable UUID deploymentId,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
@@ -148,7 +148,7 @@ public class DeploymentController {
 
     @PostMapping(value = "/move", consumes = "application/json", produces = "application/json")
     @Operation(operationId = "moveDeployment",
-            summary = "ACTIVE member atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged")
+            summary = "ACTIVE ADMIN atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged")
     public DeploymentView move(@PathVariable UUID organizationId,
             @Valid @RequestBody MoveDeploymentRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
