@@ -719,6 +719,13 @@
           "claimedAt": {
             "type": "string"
           },
+          "displayName": {
+            "description": "Optional human-readable bowl label (Node.displayName, trimmed; blank means no name; never unique, never part of BLE/crypto identity)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "fingerprint": {
             "type": "string"
           },
@@ -1012,6 +1019,15 @@
       },
       "UpdateNodeRequest": {
         "properties": {
+          "displayName": {
+            "description": "Optional bowl label update. Absent/null leaves the name unchanged; blank clears it to null; a value is trimmed (max 100 characters, Unicode allowed) and never unique.",
+            "maxLength": 100,
+            "minLength": 0,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "firmwareVersion": {
             "maxLength": 64,
             "minLength": 0,
@@ -1496,7 +1512,7 @@
             "description": "OK"
           }
         },
-        "summary": "ACTIVE member updates node metadata (firmware/protocol version, status note)",
+        "summary": "ACTIVE member updates node metadata (firmware/protocol version, status note, bowl display name)",
         "tags": [
           "node-controller"
         ]
