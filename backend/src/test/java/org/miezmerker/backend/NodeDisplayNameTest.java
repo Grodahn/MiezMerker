@@ -176,7 +176,7 @@ class NodeDisplayNameTest {
 
     @Test
     void migrationPreservesExistingNodesWithNullDisplayName() throws Exception {
-        // Legacy organization/node/deployment/visit inserted before V9,
+        // Legacy organization/node/deployment/visit inserted before V10,
         // rather than into an already migrated DB.
         // Note: no legacy raw_observations row is inserted here on purpose.
         // Direct JDBC inserts into its IN-list constrained clock_status column
@@ -265,11 +265,11 @@ class NodeDisplayNameTest {
             }
             var result = Flyway.configure().dataSource(url, "sa", "").load().migrate();
             assertTrue(result.success);
-            // V9 itself must have applied; later migrations may add to the count.
+            // V10 itself must have applied; later migrations may add to the count.
             try (var applied = connection.createStatement();
                     var versions = applied.executeQuery(
                             "SELECT count(*) FROM \"flyway_schema_history\""
-                                    + " WHERE \"version\" = '9' AND \"success\" = true")) {
+                                    + " WHERE \"version\" = '10' AND \"success\" = true")) {
                 assertTrue(versions.next());
                 assertEquals(1, versions.getInt(1));
             }
