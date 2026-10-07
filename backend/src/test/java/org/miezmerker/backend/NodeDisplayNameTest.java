@@ -264,7 +264,15 @@ class NodeDisplayNameTest {
                 insertVisit.executeUpdate();
             }
             var result = Flyway.configure().dataSource(url, "sa", "").load().migrate();
-            assertEquals(1, result.migrationsExecuted);
+            assertTrue(result.success);
+            // V9 itself must have applied; later migrations may add to the count.
+            try (var applied = connection.createStatement();
+                    var versions = applied.executeQuery(
+                            "SELECT count(*) FROM \"flyway_schema_history\""
+                                    + " WHERE \"version\" = '9' AND \"success\" = true")) {
+                assertTrue(versions.next());
+                assertEquals(1, versions.getInt(1));
+            }
             try (var query = connection.createStatement();
                     var row = query.executeQuery(
                             "SELECT node_id, organization_id, fingerprint,"
