@@ -20,13 +20,20 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Historical node-to-feeding-site assignments (#9).
+ * Historical node-to-feeding-site assignments (#9, #51).
  *
  * <p>Intervals use inclusive {@code valid_from} and exclusive {@code valid_until}
  * ({@code null} = currently open). Intervals of one node must never overlap; a
  * move closes the old interval and opens a new one. Deployment writes serialize
  * on the node row so concurrent moves cannot create overlapping history.
  * Stored observation attributions are frozen at ingest and never rewritten.
+ *
+ * <p>Authorization (#51): deployment reads require ACTIVE membership;
+ * every deployment write (create, close/update, move, delete) requires
+ * ACTIVE ADMIN. The check lives here in the service/domain boundary so
+ * direct service calls fail closed even if a future controller forgets
+ * its own check. Field users may read current/historical site context
+ * but must not alter assignments.
  */
 @Service
 public class DeploymentService {
@@ -49,7 +56,7 @@ public class DeploymentService {
     @Transactional
     public NodeDeployment create(UUID userId, UUID organizationId, UUID nodeId,
             UUID feedingSiteId, Instant validFrom, Instant validUntil) {
-        tenants.requireActive(userId, organizationId);
+        tenants.requireAdmin(userId, organizationId);
         Organization org = organizations.findById(organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (validFrom == null) {
@@ -92,7 +99,7 @@ public class DeploymentService {
     @Transactional
     public NodeDeployment close(UUID userId, UUID organizationId, UUID deploymentId,
             Instant validUntil) {
-        tenants.requireActive(userId, organizationId);
+        tenants.requireAdmin(userId, organizationId);
         NodeDeployment deployment = deployments.findByIdAndOrganizationId(deploymentId,
                 organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -125,7 +132,7 @@ public class DeploymentService {
     @Transactional
     public NodeDeployment move(UUID userId, UUID organizationId, UUID nodeId,
             UUID feedingSiteId, Instant validFrom) {
-        tenants.requireActive(userId, organizationId);
+        tenants.requireAdmin(userId, organizationId);
         if (validFrom == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "validFrom is required");
         }

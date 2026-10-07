@@ -746,6 +746,7 @@ class Issue9IngestTest {
                 List.of(item(n.nodeId(), 1, "chip-m", at, "SYNCED"))).get("inserted").asInt());
 
         // #11: normal care is available to ACTIVE MEMBER; administration stays ADMIN.
+        // #51: deployment writes are ADMIN-only (reads stay MEMBER).
         UUID memberSite = createSite(s.orgA().getId(), "Member site");
         UUID memberCat = createCat(s.orgA().getId(), "chip-member");
         String orgPath = "/api/v1/organizations/" + s.orgA().getId();
@@ -755,7 +756,7 @@ class Issue9IngestTest {
                 "{\"name\":\"Miez\",\"notes\":\"Member note\"}").statusCode());
         assertEquals(200, patch("/api/v1/nodes/" + n.nodeId(),
                 "{\"statusNote\":\"member note\"}").statusCode());
-        assertEquals(200, post(orgPath + "/deployments/move", mapper.writeValueAsString(Map.of(
+        assertEquals(403, post(orgPath + "/deployments/move", mapper.writeValueAsString(Map.of(
                 "nodeId", n.nodeId(), "feedingSiteId", memberSite, "validFrom", Instant.now().toString()))).statusCode());
         assertEquals(403, delete(orgPath + "/feeding-sites/" + memberSite).statusCode());
         assertEquals(403, delete(orgPath + "/cats/" + memberCat).statusCode());
@@ -979,7 +980,7 @@ class Issue9IngestTest {
         ingest(s.orgA().getId(), List.of(item(node.nodeId(), 1, "chip-history",
                 start.plusSeconds(60).toEpochMilli(), "SYNCED")));
         assertEquals(200, post(orgPath + "/visits/recompute", "{}").statusCode());
-        login("a9-member-a@example.org", "supersecret-password-m");
+        // #51: the move itself is ACTIVE ADMIN; MEMBER reads below still work.
         var moved = post(orgPath + "/deployments/move", mapper.writeValueAsString(Map.of(
                 "nodeId", node.nodeId(), "feedingSiteId", newSite,
                 "validFrom", start.plusSeconds(120).toString())));
@@ -1014,7 +1015,7 @@ class Issue9IngestTest {
         NodeKeys node = claimNode(s.orgA().getId());
         Instant start = Instant.parse("2025-01-01T00:00:00Z");
         UUID deployment = createDeployment(s.orgA().getId(), node.nodeId(), site, start, null);
-        login("a9-member-a@example.org", "supersecret-password-m");
+        // #51: interval/tenant validation runs as ACTIVE ADMIN.
         String path = "/api/v1/organizations/" + s.orgA().getId() + "/deployments/move";
         assertEquals(404, post(path, mapper.writeValueAsString(Map.of("nodeId", node.nodeId(),
                 "feedingSiteId", foreignSite, "validFrom", start.plusSeconds(60).toString()))).statusCode());
@@ -1026,6 +1027,11 @@ class Issue9IngestTest {
                 "feedingSiteId", site, "validFrom", start.plusSeconds(60).toString()))).statusCode());
         assertNull(deployments.findById(deployment).orElseThrow().getValidUntil());
         assertEquals(1, deployments.findByNodeNodeId(node.nodeId()).size());
+        // #51: MEMBER of the same org is rejected before any validation runs.
+        login("a9-member-a@example.org", "supersecret-password-m");
+        assertEquals(403, post(path, mapper.writeValueAsString(Map.of("nodeId", node.nodeId(),
+                "feedingSiteId", target, "validFrom", start.plusSeconds(60).toString()))).statusCode());
+        assertNull(deployments.findById(deployment).orElseThrow().getValidUntil());
         assertEquals(403, post("/api/v1/organizations/" + s.orgB().getId() + "/deployments/move",
                 mapper.writeValueAsString(Map.of("nodeId", foreignNode.nodeId(), "feedingSiteId", foreignSite,
                         "validFrom", start.toString()))).statusCode());

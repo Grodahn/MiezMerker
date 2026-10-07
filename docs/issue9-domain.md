@@ -91,8 +91,12 @@ Historical assignment of a Node to a FeedingSite with a validity interval.
 
 - Intervals for one node must not overlap; enforced by serializing deployment writes
   on the node row (pessimistic lock) and a `CHECK (valid_until IS NULL OR valid_until > valid_from)`.
+  Concurrent ACTIVE ADMIN moves are serialized the same way; MEMBER writes are
+  rejected with `403` before any interval logic runs (#51).
 - A move closes the old interval and opens a new one.
-- CRUD: read/care=ACTIVE, delete=ADMIN (#11)
+- CRUD (#51): read=ACTIVE MEMBER, create/close/move/delete=ACTIVE ADMIN.
+  The field PWA may display current/historical assignment context but must
+  not alter it; reassignment belongs to the Admin workflow (#52).
 - Deleting a deployment referenced by observations returns `409`; its historical
   attribution stays intact. Unreferenced deployments can be deleted.
 
@@ -158,8 +162,8 @@ timestamp. Raw values are never clamped or rewritten to fit that range.
    deferred to #10.
 
 2. **Deployment overlap prevention**: Overlap freedom is enforced by
-   application-level serialization on the node row. Concurrent ACTIVE member calls to
-   create/close deployments for the same node are serialized; no database
+   application-level serialization on the node row. Concurrent ACTIVE ADMIN calls to
+   create/close/move deployments for the same node are serialized; no database
    exclusion constraint exists on `(node_id, valid_from, valid_until)` because
    PostgreSQL lacks built-in range exclusion without `btree_gist`/`btree_gin`
    and the business rule is adequately enforced by the pessimistic lock.
@@ -188,8 +192,11 @@ timestamp. Raw values are never clamped or rewritten to fit that range.
 | `/api/v1/organizations/{orgId}/feeding-sites/{siteId}` | GET, PATCH, DELETE | ACTIVE care / ADMIN delete | |
 | `/api/v1/organizations/{orgId}/cats` | GET, POST | ACTIVE | |
 | `/api/v1/organizations/{orgId}/cats/{catId}` | GET, PATCH, DELETE | ACTIVE care / ADMIN delete | |
-| `/api/v1/organizations/{orgId}/deployments` | GET, POST | ACTIVE | |
-| `/api/v1/organizations/{orgId}/deployments/{deploymentId}` | GET, PATCH, DELETE | ACTIVE care / ADMIN delete | |
+| `/api/v1/organizations/{orgId}/deployments` | GET | ACTIVE | |
+| `/api/v1/organizations/{orgId}/deployments` | POST | ACTIVE ADMIN | Initial assignment (#51) |
+| `/api/v1/organizations/{orgId}/deployments/move` | POST | ACTIVE ADMIN | Atomic move (#51) |
+| `/api/v1/organizations/{orgId}/deployments/{deploymentId}` | GET | ACTIVE | |
+| `/api/v1/organizations/{orgId}/deployments/{deploymentId}` | PATCH, DELETE | ACTIVE ADMIN | (#51) |
 | `/api/v1/observations/ingest` | POST | ACTIVE | Idempotent batch |
 | `/api/v1/observations` | GET | ACTIVE | Filter: org, node, site, chip, time |
 | `/api/v1/observations/{observationId}` | GET | ACTIVE | Tenant-gated |
@@ -230,7 +237,7 @@ The integration test suite `Issue9IngestTest` covers:
 - Deployment boundary cases (inclusive `valid_from`, exclusive `valid_until`)
 - UNKNOWN clock observations stored without attribution
 - Raw timestamp/clock status immutability
-- Member vs ADMIN role boundaries
+- Member vs ADMIN role boundaries (deployments: MEMBER reads, ADMIN writes per #51)
 - Node metadata management tenant-scoped
 - Deployment requires claimed node of same organization
 - Combined filters (organization + node + chip + time)
@@ -249,5 +256,11 @@ and repeats the check. Never hand-edit frontend DTOs.
 
 Routine care now permits ACTIVE MEMBER as required by #11; claiming, deletion,
 membership administration and visit recomputation remain ADMIN-only.
-Atomic deployment moves, organization-scoped chip activity and optional newest-first
+Organization-scoped chip activity and optional newest-first
 receipt ordering are documented in `docs/issue11-management.md` and exported OpenAPI.
+
+> #51 supersedes #11 for deployments: `POST /deployments`, `PATCH
+> /deployments/{id}`, `POST /deployments/move` and `DELETE
+> /deployments/{id}` require ACTIVE ADMIN. Reads stay ACTIVE MEMBER.
+> Atomic deployment moves keep the #11 interval semantics; only the
+> authorization gate changed.
