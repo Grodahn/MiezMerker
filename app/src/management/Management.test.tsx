@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 const { get, post, patch, csrf, auth, listeners } = vi.hoisted(() => ({
@@ -73,9 +73,12 @@ test('node detail shows deployment history without any move control', async () =
   render(<Management path="/nodes"/>);
   await screen.findByText('Garten');
   fireEvent.click(screen.getByRole('button', { name: 'Details' }));
-  expect(screen.getByRole('heading', { name: 'Deployment-Historie' })).toBeTruthy();
-  expect(screen.getByText('Offen')).toBeTruthy();
-  expect(screen.getByText('Garten')).toBeTruthy();
+  // The list table stays mounted behind the detail, so scope read
+  // assertions to the detail region instead of matching ambiguous text.
+  const detail = await screen.findByRole('region', { name: 'Node-Details' });
+  expect(within(detail).getByRole('heading', { name: 'Deployment-Historie' })).toBeTruthy();
+  expect(within(detail).getByText('Offen')).toBeTruthy();
+  expect(within(detail).getByText('Garten')).toBeTruthy();
   expect(screen.queryByLabelText('Neue Futterstelle')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Zuordnung speichern' })).toBeNull();
   expect(post).not.toHaveBeenCalled();
