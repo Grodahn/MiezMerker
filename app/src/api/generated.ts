@@ -454,6 +454,26 @@ export interface paths {
         patch: operations["updateFeedingSite"];
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/feeding-sites/{siteId}/cat-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compact feeding-site cat/chip activity (ACTIVE membership)
+         * @description Latest reliable sighting is max end_at of persisted visit-gap-v1 visits; null until a reliable visit exists. Raw activity contributes chip identity and separate server receipt time only. Uses frozen site attribution, never current deployments. UNKNOWN/unattributed observations are not assigned to a site. Ordered by reliable sighting descending (nulls last), then chipId ascending. limit 1..1000 (default 100), offset >= 0. Foreign/missing sites return 404.
+         */
+        get: operations["listFeedingSiteCatActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}/members": {
         parameters: {
             query?: never;
@@ -693,6 +713,32 @@ export interface components {
             label?: string;
             lastSeenAt?: string;
             revokedAt?: string;
+        };
+        /** @description One chip's activity at its frozen feeding site */
+        FeedingSiteCatActivityView: {
+            /**
+             * Format: uuid
+             * @description Current organization-scoped Cat ID; null for unknown chips
+             */
+            catId?: string | null;
+            /** @description Current Cat name; may be null even for a registered Cat */
+            catName?: string | null;
+            chipId?: string;
+            /**
+             * Format: date-time
+             * @description Latest server receipt of a raw observation with this frozen site (UTC); not a sighting timestamp
+             */
+            lastReceivedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Latest persisted visit-gap-v1 end time (UTC); null when no reliable visit exists. Never server receipt time.
+             */
+            lastReliableSightingAt?: string | null;
+            /**
+             * Format: int64
+             * @description Number of persisted visit-gap-v1 visits at this site
+             */
+            visitCount?: number;
         };
         FeedingSiteView: {
             createdAt?: string;
@@ -1813,6 +1859,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedingSiteView"];
+                };
+            };
+        };
+    };
+    listFeedingSiteCatActivity: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+                siteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedingSiteCatActivityView"][];
                 };
             };
         };
