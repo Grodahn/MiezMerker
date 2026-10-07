@@ -58,7 +58,7 @@ export function Nodes({ organizationId, admin }: { organizationId: string; admin
     {admin && <p>Neue Nodes werden mit dem vorhandenen <a href="/sync">Vor-Ort-Sync / ADMIN-Claiming</a> angelegt.</p>}
     <button onClick={list.reload}>Aktualisieren</button><LoadState {...list}/>
     {data && (data.nodes.length ? <Table label="Nodes" headings={['Node', 'Aktuelle Futterstelle', 'Versionen', 'Letzter Kontakt / Hinweise', 'Details']}>
-      {data.nodes.map(node => <tr key={node.nodeId}><td>{node.displayName ? <>{node.displayName}<small><code>{node.nodeId}</code> · {node.state}</small></> : <><code>{node.nodeId}</code><small>{node.state}</small>}</td>
+      {data.nodes.map(node => <tr key={node.nodeId}><td>{node.displayName ? <>{node.displayName}<small><code>{node.nodeId}</code> · {node.state}</small></> : <><code>{node.nodeId}</code><small>{node.state}</small></>}</td>
         <td>{siteName(data.sites, currentDeployment(data.history, node.nodeId)?.feedingSiteId)}</td>
         <td>Firmware: {node.firmwareVersion || 'Unbekannt'}<small>Protokoll: {node.protocolVersion || 'Unbekannt'}</small></td>
         <td>{time(node.lastContactAt)}<small className="preserve-lines">{node.statusNote}</small></td>
