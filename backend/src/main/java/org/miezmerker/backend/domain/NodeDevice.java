@@ -15,6 +15,13 @@ import java.util.UUID;
 @Entity
 @Table(name = "nodes")
 public class NodeDevice {
+    /**
+     * Maximum stored length for {@link #displayName}. Unicode allowed, no ASCII
+     * restriction. 100 characters comfortably fit bowl labels such as
+     * "Silberner Napf am Unterstand" while staying short enough for a label.
+     */
+    public static final int MAX_DISPLAY_NAME_LENGTH = 100;
+
     @Id
     private UUID nodeId;
 
@@ -43,6 +50,15 @@ public class NodeDevice {
 
     @Column(name = "status_note", length = 500)
     private String statusNote;
+
+    /**
+     * Optional human-readable bowl label for #50 (e.g. "Der Grüne",
+     * "Silberner Napf"). Pure product metadata: never unique, never part of
+     * the BLE/crypto identity, never snapshotted into observations or visits.
+     * Nullable for pre-#50 rows; blank-only input normalizes to {@code null}.
+     */
+    @Column(name = "display_name", length = 100)
+    private String displayName;
 
     @Column(name = "last_contact_at")
     private Instant lastContactAt;
@@ -75,6 +91,7 @@ public class NodeDevice {
     public String getFirmwareVersion() { return firmwareVersion; }
     public String getProtocolVersion() { return protocolVersion; }
     public String getStatusNote() { return statusNote; }
+    public String getDisplayName() { return displayName; }
     public Instant getLastContactAt() { return lastContactAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getClaimedAt() { return claimedAt; }
@@ -88,6 +105,40 @@ public class NodeDevice {
     }
 
     public void setStatusNote(String statusNote) { this.statusNote = statusNote; }
+
+    /**
+     * Stores the trimmed bowl label; blank-only input clears to {@code null}.
+     * Length validation happens at the API boundary (400), never by silent
+     * truncation. Internal spacing is preserved.
+     */
+    public void setDisplayName(String displayName) {
+        this.displayName = normalizeDisplayName(displayName);
+    }
+
+    /**
+     * Trims Unicode whitespace at both ends; blank-only input becomes
+     * {@code null}. Mirrors the #32 AppUser display-name semantics without
+     * coupling the Node aggregate to the user identity.
+     */
+    public static String normalizeDisplayName(String displayName) {
+        if (displayName == null) {
+            return null;
+        }
+        int start = 0;
+        int end = displayName.length();
+        while (start < end && isNameWhitespace(displayName.codePointAt(start))) {
+            start += Character.charCount(displayName.codePointAt(start));
+        }
+        while (start < end && isNameWhitespace(displayName.codePointBefore(end))) {
+            end -= Character.charCount(displayName.codePointBefore(end));
+        }
+        String trimmed = displayName.substring(start, end);
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static boolean isNameWhitespace(int codePoint) {
+        return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint);
+    }
 
     public void touchContact() { this.lastContactAt = Instant.now(); }
 
