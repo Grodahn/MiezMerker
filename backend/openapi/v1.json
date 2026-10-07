@@ -2055,7 +2055,7 @@
             "description": "OK"
           }
         },
-        "summary": "ACTIVE member assigns a node to a feeding site for a validity range",
+        "summary": "ACTIVE ADMIN assigns a node to a feeding site for a validity range",
         "tags": [
           "deployment-controller"
         ]
@@ -2097,7 +2097,7 @@
             "description": "OK"
           }
         },
-        "summary": "ACTIVE member atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged",
+        "summary": "ACTIVE ADMIN atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged",
         "tags": [
           "deployment-controller"
         ]
@@ -2131,7 +2131,7 @@
             "description": "OK"
           }
         },
-        "summary": "ADMIN deletes a deployment (stored observation attributions are kept)",
+        "summary": "ACTIVE ADMIN deletes a deployment (stored observation attributions are kept)",
         "tags": [
           "deployment-controller"
         ]
@@ -2219,7 +2219,7 @@
             "description": "OK"
           }
         },
-        "summary": "ACTIVE member closes or reopens a deployment by setting validUntil",
+        "summary": "ACTIVE ADMIN closes or reopens a deployment by setting validUntil",
         "tags": [
           "deployment-controller"
         ]
