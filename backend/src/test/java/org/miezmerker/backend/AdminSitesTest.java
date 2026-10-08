@@ -35,6 +35,7 @@ import org.miezmerker.backend.repo.NodeDeploymentRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.repo.RawObservationRepository;
+import org.miezmerker.backend.support.TestDatabaseCleaner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -68,6 +69,7 @@ class AdminSitesTest {
     @Autowired CatRepository cats;
     @Autowired FeedingSiteRepository sites;
     @Autowired PasswordEncoder passwords;
+    @Autowired TestDatabaseCleaner cleaner;
     @Autowired jakarta.persistence.EntityManagerFactory entityManagerFactory;
 
     HttpClient client;
@@ -181,16 +183,7 @@ class AdminSitesTest {
             AppUser multiAdmin) {}
 
     Fixture seed() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
 
         Organization orgA = organizations.save(new Organization("org-a35", "Org A", null));
         Organization orgB = organizations.save(new Organization("org-b35", "Org B", null));

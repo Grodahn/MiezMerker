@@ -20,6 +20,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.util.Assert;
 import org.miezmerker.backend.admin.AdminAuthSuccessHandler;
 import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
@@ -45,9 +46,15 @@ public class BoundaryConfiguration {
     }
 
     @Bean
-    PasswordEncoder passwordEncoder() {
+    PasswordEncoder passwordEncoder(
+            @Value("${miezmerker.security.bcrypt-strength:12}") int strength) {
         // Adaptive BCrypt (Spring Security standard). No custom password crypto.
-        return new BCryptPasswordEncoder(12);
+        // Production default is cost 12; only the explicit test profile lowers
+        // it (see application-test.yaml). BCrypt hashes embed their own cost,
+        // so matches() keeps verifying hashes created with any other cost.
+        Assert.isTrue(strength >= 4 && strength <= 31,
+                "miezmerker.security.bcrypt-strength must be between 4 and 31");
+        return new BCryptPasswordEncoder(strength);
     }
 
     @Bean

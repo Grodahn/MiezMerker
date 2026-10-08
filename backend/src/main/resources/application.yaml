@@ -31,6 +31,10 @@ springdoc:
     path: /api/v1/openapi
   paths-to-match: /api/v1/**
 miezmerker:
+  security:
+    # BCrypt cost for password hashing. Default 12; only the "test" profile
+    # lowers it (application-test.yaml). Uncomment to override explicitly.
+    # bcrypt-strength: 12
   visits:
     # Default gap for visit-gap-v1 in seconds. Explicit hypothesis, not a hard
     # business rule; every recompute may override it per request and the used

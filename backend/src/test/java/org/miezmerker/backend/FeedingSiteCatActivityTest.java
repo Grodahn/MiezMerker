@@ -35,6 +35,7 @@ import org.miezmerker.backend.repo.NodeDeploymentRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.repo.RawObservationRepository;
+import org.miezmerker.backend.support.TestDatabaseCleaner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -64,6 +65,7 @@ class FeedingSiteCatActivityTest {
     @Autowired RawObservationRepository observations;
     @Autowired DerivedVisitRepository derivedVisits;
     @Autowired PasswordEncoder passwords;
+    @Autowired TestDatabaseCleaner cleaner;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
@@ -112,16 +114,7 @@ class FeedingSiteCatActivityTest {
     record Seed(Organization orgA, Organization orgB) {}
 
     Seed seed() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
         Organization orgA = organizations.save(new Organization("org-a10", "Org A", null));
         Organization orgB = organizations.save(new Organization("org-b10", "Org B", null));
         AppUser adminA = users.save(

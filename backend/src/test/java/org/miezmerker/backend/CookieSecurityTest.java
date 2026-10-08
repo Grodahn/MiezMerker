@@ -25,6 +25,18 @@ class CookieSecurityTest {
     @Autowired AppUserRepository users;
     @Autowired PasswordEncoder passwords;
 
+    // No test profile: the autowired encoder is the production default, so it
+    // must keep BCrypt cost 12 (#59). The test profile lowers it to 4 via
+    // application-test.yaml; see PasswordEncoderStrengthTest.
+    @Test
+    void productionPasswordEncoderKeepsCostTwelve() {
+        String hash = passwords.encode("cookie-test-password");
+        assertTrue(hash.matches("^\\$2[aby]\\$12\\$.*"),
+                "production default must stay BCrypt cost 12, got: " + hash);
+        assertTrue(passwords.matches("cookie-test-password", hash));
+        assertFalse(passwords.matches("wrong-password-xyz", hash));
+    }
+
     @Test
     void sessionAndCsrfCookiesAreSecureByDefault() throws Exception {
         var user = users.save(new AppUser("secure-cookie@example.org", passwords.encode("cookie-test-password")));

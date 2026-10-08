@@ -8,3 +8,9 @@ server:
     session:
       cookie:
         secure: false
+miezmerker:
+  security:
+    # Test-only BCrypt cost (#59): real BCrypt hashing/matching semantics at a
+    # fraction of the production cost (12). Active only via the "test" profile;
+    # production defaults keep cost 12 (see BoundaryConfiguration).
+    bcrypt-strength: 4
