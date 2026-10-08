@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Näpfe')}">
+<title>Näpfe · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('nodes')}"></div>
+<main>
+<h1>Näpfe</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
+<div class="card">
+<p>Physische Näpfe (Nodes) der aktiven Organisation. Anzeigenamen stehen im Vordergrund, technische Node-UUIDs ergänzend. Zuordnung und Historie auf der Detailseite pflegen.</p>
+<p><a th:href="@{/admin/}">Zurück zur Übersicht</a></p>
+</div>
+<div th:if="${nodeCount == 0}" class="card">
+<p>Noch keine Näpfe in dieser Organisation. Neue Näpfe werden über den Sync-/Claim-Flow registriert und erscheinen danach hier.</p>
+</div>
+<div th:if="${nodeCount > 0}" class="card table-scroll" role="region" aria-label="Näpfe" tabindex="0">
+<style>
+.table-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}
+th{font-weight:700;background:#f9fafb}
+small.muted{display:block;opacity:.75;font-size:.85rem}
+</style>
+<table>
+<caption class="sr-only">Näpfe</caption>
+<thead><tr><th scope="col">Napf</th><th scope="col">Aktuelle Futterstelle</th><th scope="col">Status</th><th scope="col">Aktionen</th></tr></thead>
+<tbody>
+<tr th:each="n : ${nodes}">
+<td>
+<span th:text="${n.displayOrFallback}">Napf</span>
+<small class="muted"><code th:text="${n.nodeId}">node</code></small>
+</td>
+<td th:text="${n.currentSiteName != null ? n.currentSiteName : 'Nicht zugeordnet'}">Ort</td>
+<td>
+<span th:text="${n.firmwareVersion != null ? n.firmwareVersion : 'Unbekannte Firmware'}">fw</span>
+<small class="muted" th:if="${n.statusNote != null}" th:text="${n.statusNote}">Notiz</small>
+<small class="muted" th:text="${n.lastContactAt != null ? 'Kontakt: ' + n.lastContactAt : 'Noch kein Kontakt'}">Kontakt</small>
+</td>
+<td>
+<a th:href="@{/admin/nodes/{id}(id=${n.nodeId})}">Details</a>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

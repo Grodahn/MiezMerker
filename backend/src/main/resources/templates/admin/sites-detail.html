@@ -42,7 +42,8 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 <thead><tr><th scope="col">Node</th><th scope="col">Firmware / Notiz</th><th scope="col">Letzter Serverkontakt</th></tr></thead>
 <tbody>
 <tr th:each="n : ${currentNodes}">
-<td><code th:text="${n.nodeId}">node</code></td>
+<td><a th:href="@{/admin/nodes/{id}(id=${n.nodeId})}" th:text="${n.displayName != null ? n.displayName : 'Unbenannter Napf'}">Napf</a>
+<small class="muted"><code th:text="${n.nodeId}">node</code></small></td>
 <td>
 <span th:text="${n.firmwareVersion != null ? n.firmwareVersion : 'Unbekannte Firmware'}">fw</span>
 <small class="muted" th:if="${n.statusNote != null}" th:text="${n.statusNote}">Notiz</small>
