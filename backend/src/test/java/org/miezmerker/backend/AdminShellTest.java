@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.CookieManager;
 import java.net.URI;
@@ -50,6 +52,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 @Import(AdminShellTest.SessionTestConfiguration.class)
+@Tag("admin")
+@Tag("auth")
 class AdminShellTest {
     @Value("${local.server.port}") int port;
 

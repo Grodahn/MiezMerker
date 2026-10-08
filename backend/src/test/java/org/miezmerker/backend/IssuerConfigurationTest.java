@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
@@ -12,6 +14,7 @@ import org.miezmerker.backend.crypto.CredentialIssuerService;
 import org.miezmerker.backend.crypto.EcKeyUtils;
 import static org.junit.jupiter.api.Assertions.*;
 
+@Tag("auth")
 class IssuerConfigurationTest {
     @Test
     void configuredDerKeysSurviveRestartAndMismatchedKeysFailAtStartup() throws Exception {

@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import com.nimbusds.jwt.JWTClaimsSet;
 import java.security.KeyPair;
 import java.security.interfaces.ECPrivateKey;
@@ -21,6 +23,7 @@ import org.miezmerker.backend.crypto.NodeClaimVerifier;
  * <p>ECDSA signatures themselves use random nonces; the committed signatures are single
  * valid examples, not expected byte-identical outputs of future sign operations.
  */
+@Tag("auth")
 class InteropVectorTest {
     private static final java.nio.file.Path FIXTURE = java.nio.file.Path.of("..", "protocol",
             "fixtures", "offline-credential-v1.json");

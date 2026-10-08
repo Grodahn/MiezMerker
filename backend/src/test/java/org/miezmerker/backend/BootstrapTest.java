@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import org.junit.jupiter.api.Test;
 import org.miezmerker.backend.bootstrap.BootstrapRunner;
 import org.miezmerker.backend.repo.AppUserRepository;
@@ -21,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Tag("auth")
 class BootstrapTest {
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;

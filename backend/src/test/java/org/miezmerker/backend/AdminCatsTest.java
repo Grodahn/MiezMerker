@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import java.net.CookieManager;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -47,6 +49,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Real HTTP acceptance tests for #37, with session login and CSRF. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Tag("admin")
+@Tag("auth")
+@Tag("visits")
 class AdminCatsTest {
     @Value("${local.server.port}") int port;
     String formOrganizationId;

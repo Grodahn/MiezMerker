@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -56,6 +58,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Tag("ingest")
 class Issue9IngestTest {
     @Value("${local.server.port}") int port;
 

@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import org.mockito.Mockito;
 import org.mockito.ArgumentMatchers;
 import java.net.CookieManager;
@@ -49,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Tag("visits")
 class FeedingSiteCatActivityTest {
     @Autowired jakarta.persistence.EntityManagerFactory entityManagerFactory;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
