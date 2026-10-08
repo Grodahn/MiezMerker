@@ -21,7 +21,6 @@ export type SetupFailureKind =
   | 'unauthorized'
   | 'offline'
   | 'validation'
-  | 'no-sites'
   | 'conflict-existing'
   | 'foreign'
   | 'backend';
@@ -139,28 +138,32 @@ export async function fetchNodeSetupState(
   assertAdminMayProvision(organizationId);
   requireOnline();
   const signal = options.signal ?? AbortSignal.timeout(10_000);
-  const get = api.GET as (...args: never[]) => Promise<{ data?: unknown; error?: unknown; response?: Response }>;
-  const nodeReq = await get('/api/v1/nodes/{nodeId}' as never, {
-    params: { path: { nodeId } },
+  // Destructure (like platform/node-identity.ts): openapi-fetch returns a
+  // discriminated union where property access on the narrowed object can
+  // collapse to never; destructured bindings stay accessible in both branches.
+  const nodeRes = await api.GET('/api/v1/nodes/{nodeId}', {
     signal,
-  } as never);
-  if (nodeReq.error || !nodeReq.data) {
-    throw toSetupError(nodeReq.response?.status,
+    params: { path: { nodeId } },
+  });
+  const { data: nodeData, error: nodeError, response: nodeResponse } = nodeRes;
+  if (nodeError || !nodeData) {
+    throw toSetupError((nodeResponse as Response | undefined)?.status,
       'Napf-Status konnte nicht geladen werden. Bitte erneut versuchen.', { nodeId });
   }
-  const node = nodeReq.data as NodeView;
+  const node = nodeData;
   if (node.organizationId && node.organizationId !== organizationId) {
     throw new SetupError('foreign', `Node ${nodeId} gehört einer anderen Organisation.`);
   }
-  const depReq = await get('/api/v1/organizations/{organizationId}/deployments' as never, {
-    params: { path: { organizationId }, query: { nodeId } },
+  const depRes = await api.GET('/api/v1/organizations/{organizationId}/deployments', {
     signal,
-  } as never);
-  if (depReq.error || !depReq.data) {
-    throw toSetupError(depReq.response?.status,
+    params: { path: { organizationId }, query: { nodeId } },
+  });
+  const { data: depData, error: depError, response: depResponse } = depRes;
+  if (depError || !depData) {
+    throw toSetupError((depResponse as Response | undefined)?.status,
       'Zuordnungen konnten nicht geladen werden. Bitte erneut versuchen.', { nodeId });
   }
-  const all = (depReq.data ?? []) as DeploymentView[];
+  const all = depData ?? [];
   const active = all.find(d => !d.validUntil) ?? null;
   return {
     nodeId,
@@ -178,16 +181,16 @@ export async function listFeedingSiteOptions(
 ): Promise<FeedingSiteView[]> {
   assertAdminMayProvision(organizationId);
   requireOnline();
-  const get = api.GET as (...args: never[]) => Promise<{ data?: unknown; error?: unknown; response?: Response }>;
-  const res = await get('/api/v1/organizations/{organizationId}/feeding-sites' as never, {
-    params: { path: { organizationId } },
+  const siteRes = await api.GET('/api/v1/organizations/{organizationId}/feeding-sites', {
     signal: options.signal ?? AbortSignal.timeout(10_000),
-  } as never);
-  if (res.error || !res.data) {
-    throw toSetupError(res.response?.status,
+    params: { path: { organizationId } },
+  });
+  const { data: siteData, error: siteError, response: siteResponse } = siteRes;
+  if (siteError || !siteData) {
+    throw toSetupError((siteResponse as Response | undefined)?.status,
       'Futterstellen konnten nicht geladen werden. Bitte erneut versuchen.');
   }
-  return (res.data ?? []) as FeedingSiteView[];
+  return siteData ?? [];
 }
 
 // Saves the human-readable bowl label via the existing #50 PATCH.
@@ -203,19 +206,19 @@ export async function saveBowlName(
   requireOnline();
   const normalized = validateBowlName(displayName);
   const headers = await csrfHeaders();
-  const patch = api.PATCH as (...args: never[]) => Promise<{ data?: unknown; error?: unknown; response?: Response }>;
-  const res = await patch('/api/v1/nodes/{nodeId}' as never, {
+  const patchRes = await api.PATCH('/api/v1/nodes/{nodeId}', {
     signal: AbortSignal.timeout(10_000),
     params: { path: { nodeId } },
     headers,
     body: { displayName: normalized },
-  } as never);
-  if (res.error || !res.data) {
-    throw toSetupError(res.response?.status,
+  });
+  const { data: patchData, error: patchError, response: patchResponse } = patchRes;
+  if (patchError || !patchData) {
+    throw toSetupError((patchResponse as Response | undefined)?.status,
       'Napf-Name konnte nicht gespeichert werden. Claim bleibt gültig; bitte erneut versuchen.',
       { nodeId });
   }
-  return (res.data as NodeView).displayName ?? normalized;
+  return patchData.displayName ?? normalized;
 }
 
 export interface InitialDeploymentOutcome {
@@ -239,18 +242,17 @@ export async function ensureInitialDeployment(
     throw new SetupError('validation', 'Bitte eine vorhandene Futterstelle auswählen.');
   }
   const headers = await csrfHeaders();
-  const get = api.GET as (...args: never[]) => Promise<{ data?: unknown; error?: unknown; response?: Response }>;
-  const post = api.POST as (...args: never[]) => Promise<{ data?: unknown; error?: unknown; response?: Response }>;
   const listOnce = async (): Promise<DeploymentView[]> => {
-    const res = await get('/api/v1/organizations/{organizationId}/deployments' as never, {
-      params: { path: { organizationId }, query: { nodeId } },
+    const listRes = await api.GET('/api/v1/organizations/{organizationId}/deployments', {
       signal: AbortSignal.timeout(10_000),
-    } as never);
-    if (res.error || !res.data) {
-      throw toSetupError(res.response?.status,
+      params: { path: { organizationId }, query: { nodeId } },
+    });
+    const { data: listData, error: listError, response: listResponse } = listRes;
+    if (listError || !listData) {
+      throw toSetupError((listResponse as Response | undefined)?.status,
         'Zuordnungen konnten nicht geprüft werden. Bitte erneut versuchen.', { nodeId });
     }
-    return (res.data ?? []) as DeploymentView[];
+    return listData ?? [];
   };
   // Frontend pre-check (not concurrency-safe alone): avoids the POST when an
   // open assignment is already visible.
@@ -260,16 +262,17 @@ export async function ensureInitialDeployment(
     return { deployment: openBefore, created: false, alreadyAssigned: true };
   }
   const validFrom = options.validFrom ?? new Date().toISOString();
-  const created = await post('/api/v1/organizations/{organizationId}/deployments' as never, {
+  const createRes = await api.POST('/api/v1/organizations/{organizationId}/deployments', {
     signal: AbortSignal.timeout(10_000),
     params: { path: { organizationId } },
     headers,
     body: { nodeId, feedingSiteId, validFrom },
-  } as never);
-  if (!created.error && created.data) {
-    return { deployment: created.data as DeploymentView, created: true, alreadyAssigned: false };
+  });
+  const { data: createData, error: createError, response: createResponse } = createRes;
+  if (!createError && createData) {
+    return { deployment: createData, created: true, alreadyAssigned: false };
   }
-  const status = created.response?.status;
+  const status = (createResponse as Response | undefined)?.status;
   if (status === 409) {
     // Lost response (Scenario C) or concurrent ADMIN: the backend invariant
     // rejected the overlap. Surface the persisted state, never blind-retry.

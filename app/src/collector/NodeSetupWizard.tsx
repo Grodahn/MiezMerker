@@ -18,6 +18,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
   const [nameMessage, setNameMessage] = useState('');
   const [nameError, setNameError] = useState('');
   const [sites, setSites] = useState<FeedingSiteView[]>([]);
+  const [sitesError, setSitesError] = useState('');
   const [selectedSite, setSelectedSite] = useState('');
   const [deployment, setDeployment] = useState<DeploymentView | null>(null);
   const [deployBusy, setDeployBusy] = useState(false);
@@ -28,31 +29,39 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
   const reload = async () => {
     setLoading(true);
     setLoadError('');
+    setNameMessage('');
+    setNameError('');
+    setDeployMessage('');
+    setDeployError('');
+    setSitesError('');
+    // The node state is authoritative and required; the site list is needed
+    // only for selection. A site-list failure must not hide an otherwise
+    // resumable name/deployment state (offline name saving stays possible).
+    const state = await fetchNodeSetupState(organizationId, nodeId).catch((e: unknown) => {
+      setLoadError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Laden fehlgeschlagen.');
+      return null;
+    });
+    if (!state) {
+      setLoading(false);
+      return;
+    }
+    setClaimed(state.claimed);
+    setSavedName(state.displayName);
+    // Preserve an already saved name across interruptions (Scenario B):
+    // prefill it so a retry never discards it.
+    setNameInput(state.displayName ?? '');
+    setDeployment(state.activeDeployment);
+    if (isSetupComplete(state)) setComplete(true);
     try {
-      const [state, options] = await Promise.all([
-        fetchNodeSetupState(organizationId, nodeId),
-        listFeedingSiteOptions(organizationId).catch((e: unknown) => {
-          // Sites are needed for selection; a site-list failure must not hide
-          // an otherwise resumable name/deployment state.
-          if (e instanceof SetupError) throw e;
-          throw new SetupError('backend', 'Futterstellen konnten nicht geladen werden.');
-        }),
-      ]);
-      setClaimed(state.claimed);
-      setSavedName(state.displayName);
-      // Preserve an already saved name across interruptions (Scenario B):
-      // prefill it so a retry never discards it.
-      setNameInput(state.displayName ?? '');
-      setDeployment(state.activeDeployment);
+      const options = await listFeedingSiteOptions(organizationId);
       setSites(options);
-      if (options.length === 0) {
-        setDeployError('');
-      } else if (!state.activeDeployment && !selectedSite) {
+      setSitesError('');
+      if (!state.activeDeployment && !selectedSite && options.length > 0) {
         setSelectedSite(options[0]?.id ?? '');
       }
-      if (isSetupComplete(state)) setComplete(true);
     } catch (e) {
-      setLoadError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Laden fehlgeschlagen.');
+      setSites([]);
+      setSitesError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Futterstellen konnten nicht geladen werden.');
     } finally {
       setLoading(false);
     }
@@ -65,6 +74,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     setNameError('');
     setDeployMessage('');
     setDeployError('');
+    setSitesError('');
     setComplete(false);
     setSavedName(null);
     setNameInput('');
@@ -85,11 +95,17 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       setSavedName(saved);
       setNameInput(saved);
       setNameMessage(`Napf-Name gespeichert: ${saved}`);
-      const state = await fetchNodeSetupState(organizationId, nodeId);
-      setDeployment(state.activeDeployment);
-      if (isSetupComplete({ displayName: saved, activeDeployment: state.activeDeployment })) {
-        setComplete(true);
-        props.onComplete?.();
+      // Best-effort refresh: the save above is already confirmed, so a
+      // refresh failure must not mask it as an error.
+      try {
+        const state = await fetchNodeSetupState(organizationId, nodeId);
+        setDeployment(state.activeDeployment);
+        if (isSetupComplete({ displayName: saved, activeDeployment: state.activeDeployment })) {
+          setComplete(true);
+          props.onComplete?.();
+        }
+      } catch (e) {
+        setNameError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Status-Refresh fehlgeschlagen.');
       }
     } catch (e) {
       setNameError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Speichern fehlgeschlagen.');
@@ -111,13 +127,19 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       } else {
         setDeployMessage('Einrichtung abgeschlossen!');
       }
-      const state = await fetchNodeSetupState(organizationId, nodeId);
-      setSavedName(state.displayName);
-      if (state.displayName) setNameInput(state.displayName);
-      setDeployment(state.activeDeployment);
-      if (isSetupComplete(state)) {
-        setComplete(true);
-        props.onComplete?.();
+      // Best-effort refresh: the assignment above is already confirmed
+      // (created or deduplicated to the persisted state).
+      try {
+        const state = await fetchNodeSetupState(organizationId, nodeId);
+        setSavedName(state.displayName);
+        if (state.displayName) setNameInput(state.displayName);
+        setDeployment(state.activeDeployment);
+        if (isSetupComplete(state)) {
+          setComplete(true);
+          props.onComplete?.();
+        }
+      } catch (e) {
+        setDeployError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Status-Refresh fehlgeschlagen.');
       }
     } catch (e) {
       setDeployError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Zuordnung fehlgeschlagen.');
@@ -160,16 +182,19 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       <h3>2. Futterstelle</h3>
       {deployment
         ? <p>Bestehende Zuordnung wird nicht überschrieben. Spätere Umzüge erfolgen im Admin-Backend.</p>
-        : sites.length === 0
-          ? <p role="alert">Keine Futterstellen vorhanden. Bitte zuerst im Admin-Backend eine Futterstelle anlegen. Es wird keine Futterstelle in der PWA erstellt.</p>
-          : <><label>Bestehende Futterstelle wählen
-            <select value={selectedSite} onChange={e => setSelectedSite(e.target.value)}>
-              {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-          <button type="button" disabled={deployBusy || nameBusy || !selectedSite} onClick={() => void submitDeployment()}>
-            {deployBusy ? 'Speichere …' : 'Einrichtung abschließen'}
-          </button></>}
+        : sitesError
+          ? <div role="alert"><p>{sitesError}</p>
+            <button type="button" onClick={() => void reload()}>Erneut versuchen</button></div>
+          : sites.length === 0
+            ? <p role="alert">Keine Futterstellen vorhanden. Bitte zuerst im Admin-Backend eine Futterstelle anlegen. Es wird keine Futterstelle in der PWA erstellt.</p>
+            : <><label>Bestehende Futterstelle wählen
+              <select value={selectedSite} onChange={e => setSelectedSite(e.target.value)}>
+                {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={deployBusy || nameBusy || !selectedSite} onClick={() => void submitDeployment()}>
+              {deployBusy ? 'Speichere …' : 'Einrichtung abschließen'}
+            </button></>}
       {deployMessage && <p role="status">{deployMessage}</p>}
       {deployError && <div role="alert"><p>{deployError}</p>
         <button type="button" onClick={() => void submitDeployment()}>Erneut versuchen</button></div>}
