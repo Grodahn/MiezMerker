@@ -38,3 +38,19 @@ Keep all test expectations and coverage. New backend test classes must receive
 appropriate JUnit tags; new CTests should receive relevant labels. Never treat
 an unexpectedly empty test selection as a successful test run. Preserve native
 failure exit codes, and do not mask failures with shell pipelines or log filters.
+
+## Field-PWA visual assets and UX
+
+For MiezMerker field-PWA UI changes (#63 and subtickets), follow
+[the approved Round-2 design and asset contract](docs/ui-ux/approved-round-2.md).
+Keep the four-area mobile Bottom Navigation and context-free Home; show Node,
+FeedingSite and last-seen Cat context only after a confirmed read.
+
+**Every replaceable graphic** (brand/logo, illustrations, icons, avatars,
+FeedingSite/Node photos where available, placeholders and status imagery)
+must be referenced via the shared centralized asset registry/adapter from
+#64, not hardcoded as image paths, data URIs or inline brand SVGs across
+components. Changing a graphic must require only changing an asset file or
+central mapping, never screen business logic. Use reliable placeholders
+instead of inventing animal photos or backend image fields. Preserve offline,
+auth/tenant, BLE/ACK and server-upload status truth.
