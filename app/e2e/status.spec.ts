@@ -102,7 +102,7 @@ test('long Bluetooth waits explain recovery and respect reduced motion without b
 
 test('offline login displays an honest connection state and no server success', async ({ page, context }) => {
   await backend(page); await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hallo!', exact: true })).toBeVisible();
   await context.setOffline(true);
   await expect(page.getByRole('status').filter({ hasText: 'Offline' })).toContainText('Serververbindung');
   await expect(page.getByRole('navigation')).toHaveCount(0);

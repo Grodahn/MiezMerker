@@ -7,7 +7,7 @@ The visual direction remains [approved Round 2](approved-round-2.md).
 
 | Route | Current content | Follow-up |
 | --- | --- | --- |
-| `/` | Explicit minimal Home entry, link to Sync; no fabricated data | #66 |
+| `/` | Location-neutral Home with cat illustration, primary Sync CTA and Futterstellen/Katzen links | #66 implemented |
 | `/sync` | Existing Collector, including provisioning and outbox | #67 |
 | `/feeding-sites` | Explicit transition with link to existing Nodes | #68 |
 | `/cats` | Existing usable Cat management, central fallback avatar | #69 |
@@ -68,7 +68,7 @@ valid image format), or import a new file in **assets.ts** and change its entry:
 | Consumer | Central entry to replace |
 | --- | --- |
 | Header/logo | `assets.brand.logo` |
-| Transitional Home | `assets.illustrations.home` |
+| Home | `assets.illustrations.home` |
 | Collector Sync illustration | `assets.illustrations.sync` |
 | Cat table fallback | `assets.placeholders.cat` |
 | Transitional FeedingSite | `assets.placeholders.feedingSite` |
@@ -95,5 +95,13 @@ callers own state and retries. `collector/CollectorStatus.tsx` keeps local ACK
 completion and backend confirmation separate. Other data screens use the same
 presentation through `management/common.tsx`.
 
-#48 owns final Login styling; #66–#69 own final
-Home/Sync/FeedingSite/Cat content. Use these tokens, primitives and registry there.
+#48 owns final Login styling; #67–#69 own final
+Sync/FeedingSite/Cat content. Use these tokens, primitives and registry there.
+
+Home (`app/src/home/Home.tsx`) uses shared branding from the shell, decorative
+cat art, a native `/sync` link labelled “Futterstelle auslesen”, and two secondary
+links. It reads no site/cat data and starts no Bluetooth operation. The existing
+collector requires its own explicit user action to open the chooser. Home stays
+behind the existing online session gate, including on reload and browser history.
+Its scoped CSS keeps the primary action visible on small phone viewports; large
+text and shorter windows can scroll inside the shell without covering navigation.

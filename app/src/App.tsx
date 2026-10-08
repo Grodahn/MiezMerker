@@ -5,7 +5,8 @@ import { isCollectorPath, useAppGate } from './platform/gate';
 import { Management, managementAreas } from './management/Management';
 import { ApplicationShell } from './ui/ApplicationShell';
 import { documentNavigation } from './ui/navigation';
-import { HomeEntry, FeedingSitesEntry } from './ui/TransitionalPages';
+import { Home } from './home/Home';
+import { FeedingSitesEntry } from './ui/TransitionalPages';
 import { Status } from './ui/Status';
 
 const subscribePath = (update: () => void) => {
@@ -18,7 +19,7 @@ function AllowedShell({ path, authenticated, online }: { path: string; authentic
       <Status kind="offline" title="Offline-Betrieb" message="Verwaltung ist ohne gültige Online-Sitzung gesperrt. Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential verfügbar."/>
       {online && <LoginView online={online}/>}
     </>}</div>
-    {isCollectorPath(path) ? <CollectorShell/> : path === '/' ? <HomeEntry/> : path === '/feeding-sites' ? <FeedingSitesEntry/>
+    {isCollectorPath(path) ? <CollectorShell/> : path === '/' ? <Home/> : path === '/feeding-sites' ? <FeedingSitesEntry/>
       : <Management path={path}/>}
   </ApplicationShell>;
 }
