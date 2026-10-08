@@ -1,9 +1,15 @@
 name: Offline credential interoperability
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
+# Same policy as Foundation CI, scoped per workflow so the two workflows
+# never cancel each other; main commits are never auto-cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   node-verifier:
     runs-on: ubuntu-latest

@@ -1,9 +1,17 @@
 name: Foundation CI
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
+# New commits to the same PR/branch cancel superseded runs. The group is
+# scoped per workflow so Foundation CI never cancels the interoperability
+# workflow (and vice versa), and different PRs stay independent. Main
+# commits are never auto-cancelled, keeping branch checks compatible.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   firmware:
     runs-on: ubuntu-latest
@@ -38,9 +46,32 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: app/package-lock.json
+      # H2 strategy (#61): PostgreSQL below is the authoritative full suite on
+      # every run. H2 runs the full suite only on main; on pull requests it
+      # runs an explicit compatibility/smoke selection that still produces the
+      # required downstream artifacts (packaged JAR, target/openapi.json):
+      # - FoundationTest: system endpoints plus the OpenAPI export consumed by api:check.
+      # - DatabaseSchemaTest: Flyway migration verification on H2.
+      # - NodeClaimTest: node claiming plus the JPA native query
+      #   (node_claim_lock ... for update) against the H2 dialect.
+      # - FeedingSiteCatActivityTest: the other hand-written SQL site (the
+      #   JdbcTemplate CTE over raw_observations/derived_visits with union,
+      #   nulls last and limit/offset) plus RawObservation/DerivedVisit
+      #   correctness and tenant isolation on H2.
+      # The explicit -Dtest list fails closed: backend/pom.xml hardcodes
+      # failIfNoTests and failIfNoSpecifiedTests, so an empty or unmatched
+      # selection breaks the build instead of silently passing; full behavior
+      # coverage stays on PostgreSQL.
       - name: Backend build and portable tests; export OpenAPI
         working-directory: backend
-        run: ./mvnw -B -ntp verify
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            ./mvnw -B -ntp verify
+          else
+            ./mvnw -B -ntp verify "-Dtest=FoundationTest,DatabaseSchemaTest,NodeClaimTest,FeedingSiteCatActivityTest"
+          fi
+      # Authoritative integration suite: always the complete suite against
+      # PostgreSQL, the production database. Never filtered or reduced.
       - name: Backend tests against PostgreSQL
         working-directory: backend
         env:
@@ -52,9 +83,7 @@ jobs:
         run: npm ci
       - name: Check backend spec and generated TypeScript client for drift
         working-directory: app
-        run: |
-          npm run api:check
-          npm run api:check
+        run: npm run api:check
       - working-directory: app
         run: npm test
       - working-directory: app
@@ -70,6 +99,16 @@ jobs:
           done
           cat backend.log
           exit 1
+      # Playwright browsers are cached by package-lock hash; the install step
+      # still runs every time, so a @playwright/test upgrade reconciles a
+      # stale cache instead of silently using the wrong browser.
+      - name: Cache Playwright browsers
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - working-directory: app
         run: npx playwright install --with-deps chromium
       - name: Offline collector and same-origin integration
