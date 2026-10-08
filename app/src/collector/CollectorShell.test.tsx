@@ -59,6 +59,15 @@ test('a completed credential check with renewal deferred until sync is not an en
   expect(screen.queryByRole('progressbar', { name: 'Offline-Berechtigung' })).toBeNull();
 });
 
+test('an abort after device selection is a read cancellation, not a cancelled chooser', async () => {
+  requestDevice.mockResolvedValue({});
+  runFieldSync.mockRejectedValue(new DOMException('transfer aborted', 'AbortError'));
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Node auswählen & synchronisieren' }));
+  await screen.findByText('Auslesen abgebrochen');
+  expect(screen.queryByText('Auswahl abgebrochen')).toBeNull();
+});
+
 test('old upload completion cannot overwrite a newly selected organization', async () => {
   let finish!: (value: unknown) => void;
   upload.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));

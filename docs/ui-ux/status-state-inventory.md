@@ -16,17 +16,24 @@ This inventory defines the variants before implementation; no new screen flow is
 | Bluetooth unavailable | bluetooth / „Bluetooth nicht verfügbar“ | Enable Bluetooth where the reported error supports this; unsupported browser, denied permission and unreachable device have separate messages. |
 | Offline | offline / „Upload wartet auf Verbindung“ | Offline BLE still requires valid offline authorization. No server-success claim. |
 | Local success | syncSuccess / „Napf ausgelesen“ | Only existing `fertig` (durable local records and completed ACK). Backend state stays independent. |
-| Upload pending / partial | offline / „Upload noch ausstehend“ | Show existing pending/confirmed counts separately. A failed upload does not undo the local copy. |
-| Backend success | syncSuccess / „Daten an Server übertragen“ | Only existing complete upload state with zero pending records and confirmed uploaded records. Empty outbox with no uploaded records says „Keine ausstehenden Uploads“. |
+| Upload pending / partial | info / „Upload noch ausstehend“ | Show existing pending/confirmed counts separately. Pending does not imply offline. Until the store has been checked, show „Uploadstatus noch nicht geprüft“ rather than invented zero counts. An upload failure does not prove a successful local read. |
+| Backend success | syncSuccess / „Daten an Server übertragen“ | Only existing complete upload state with zero pending records and confirmed uploaded records. Results and counters explicitly describe the last checked upload snapshot; later local reads require their own upload check. Empty checked outbox with no uploaded records says „Keine ausstehenden Uploads“. |
 | Credentials / session | error / „Bitte erneut anmelden“ | Invalid, missing or expired offline credentials are not transport failures; preserve the existing gate. |
 | Claim / incomplete setup | info / „Einrichtung noch offen“ | UI only; existing role restrictions, claim receipts and provisioning handlers remain authoritative. |
 | Unknown clock / unavailable data | info / „Keine verlässliche Sichtungszeit“ | Clearly explains UNKNOWN or invalid clock. Existing activity API aggregates both and does not expose the individual clock code. Never replace observation time with receipt time. Load failure must not appear as an empty list. |
 
-Accessibility: polite live regions for ordinary updates, assertive for
+Accessibility: polite live regions exist before their initial content is inserted;
+real progress counts participate in announcements. Assertive regions are used for
 errors; actions outside the announcement, native buttons/links, visible focus,
 text alongside decorative graphics, progressbar with an accessible name,
 no auto-focus on updates, and no movement with reduced motion. Loading help is
 informational and does not cancel or complete operations.
+
+Recovery preserves operation context: chooser cancellation differs from an aborted
+read or a missing GATT service. Native disabled-adapter details are retained.
+Unsupported protocol/firmware messages are not relabelled as browser support errors.
+Setup permission/session failures direct to access recovery; a failed refresh after
+a confirmed assignment retries the read, without repeating the write or claiming again.
 
 Extension contract for #76: presentation accepts optional scope labels, real
 completed/total progress and independent state instances. A future caller can

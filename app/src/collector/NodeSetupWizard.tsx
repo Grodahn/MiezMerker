@@ -150,9 +150,13 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     }
   };
 
+  const loadFailure = errorStatus(loadError);
+  const sitesFailure = errorStatus(sitesError);
+  const deployFailure = errorStatus(deployError);
+  const reloadDeployment = Boolean(deployment) || /neu laden/i.test(deployError);
   if (loading) return <div aria-label="Napf-Einrichtung"><Status kind="loading" title="Einrichtungsstatus wird geladen …"/></div>;
   if (loadError) return <div aria-label="Napf-Einrichtung">
-    <Status {...errorStatus(loadError)} action={{ label: 'Erneut versuchen', onClick: () => void reload() }}/>
+    <Status {...loadFailure} action={loadFailure.retry ? { label: 'Erneut versuchen', onClick: () => void reload() } : undefined}/>
   </div>;
 
   return <div aria-label="Napf-Einrichtung">
@@ -185,7 +189,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       {deployment
         ? <p>Bestehende Zuordnung wird nicht überschrieben. Spätere Umzüge erfolgen im Admin-Backend.</p>
         : sitesError
-          ? <Status {...errorStatus(sitesError)} action={{ label: 'Erneut versuchen', onClick: () => void reload() }}/>
+          ? <Status {...sitesFailure} action={sitesFailure.retry ? { label: 'Erneut versuchen', onClick: () => void reload(), disabled: deployBusy || nameBusy } : undefined}/>
           : sites.length === 0
             ? <Status {...statusMessages.emptySites}/>
             : <><label>Bestehende Futterstelle wählen
@@ -198,7 +202,10 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
             </button></>}
       {deployBusy && <Status kind="loading" title="Zuordnung wird gespeichert …"/>}
       {deployMessage && <Status kind="success" title="Zuordnung gespeichert" message={deployMessage}/>}
-      {deployError && <Status {...errorStatus(deployError)} action={{ label: 'Erneut versuchen', onClick: () => void submitDeployment(), disabled: deployBusy || nameBusy }}/>}
+      {deployError && <Status {...deployFailure} action={deployFailure.retry ? {
+        label: reloadDeployment ? 'Einrichtungsstatus erneut laden' : 'Erneut versuchen',
+        onClick: () => void (reloadDeployment ? reload() : submitDeployment()), disabled: deployBusy || nameBusy,
+      } : undefined}/>}
     </div>
 
     <button type="button" onClick={() => void reload()}>Status neu laden</button>

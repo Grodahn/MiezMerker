@@ -52,14 +52,15 @@ test('unknown clock explains receipt time instead of claiming a precise sighting
   await expect(page.getByText(/Serverempfang:/)).toBeVisible();
 });
 
-for (const [name, title] of [
+for (const [name, title, message = 'selection'] of [
   ['NotFoundError', 'Geräteauswahl beendet'], ['NotAllowedError', 'Zugriff nicht erlaubt'],
+  ['AbortError', 'Auswahl abgebrochen'], ['NetworkError', 'Bluetooth nicht verfügbar', 'Bluetooth adapter not available'],
 ] as const) {
   test(`Bluetooth ${name} has its own recovery and does not claim local or server success`, async ({ page }) => {
     await backend(page);
-    await page.addInitScript(errorName => Object.defineProperty(navigator, 'bluetooth', { configurable: true,
-      value: { getDevices: async () => [], requestDevice: async () => { throw new DOMException('selection', errorName); } },
-    }), name);
+    await page.addInitScript(({ errorName, message }) => Object.defineProperty(navigator, 'bluetooth', { configurable: true,
+      value: { getDevices: async () => [], requestDevice: async () => { throw new DOMException(message, errorName); } },
+    }), { errorName: name, message });
     await page.goto('/sync');
     await page.getByRole('button', { name: 'Node auswählen & synchronisieren' }).click();
     await expect(page.getByText(title, { exact: true })).toBeVisible();
@@ -69,9 +70,11 @@ for (const [name, title] of [
       const retry = page.getByRole('button', { name: 'Napf erneut auswählen' });
       await retry.focus(); await page.keyboard.press('Enter');
       await expect(page.getByText(/abgebrochen oder kein passendes Gerät/)).toBeVisible();
-    } else {
+    } else if (name === 'NotAllowedError') {
       await expect(page.getByRole('alert').getByText(/Browser-Einstellungen/)).toBeVisible();
       await expect(page.getByRole('button', { name: 'Napf erneut auswählen' })).toHaveCount(0);
+    } else {
+      await expect(page.getByRole('button', { name: 'Napf erneut auswählen' })).toBeEnabled();
     }
   });
 }

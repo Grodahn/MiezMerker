@@ -32,17 +32,21 @@ export function UploadStatus({ view, retry, disabled }: { view: CollectorViewSta
   const status = view.backendState === 'uploading'
     ? { kind: 'loading' as const, title: 'Backend-Upload läuft …', message: view.backendMessage }
     : view.backendState === 'waiting-for-network'
-      ? { ...statusMessages.uploadPending, title: 'Upload wartet auf Verbindung', message: view.backendMessage || statusMessages.uploadPending.message }
+      ? { ...statusMessages.uploadPending, kind: 'offline' as const, title: 'Upload wartet auf Verbindung', message: view.backendMessage || statusMessages.uploadPending.message }
       : view.backendState === 'failed' ? errorStatus(view.backendMessage)
         : view.backendState === 'complete' && view.pendingUploads === 0
           ? view.uploadedCount > 0 ? { ...statusMessages.uploadSuccess, message: view.backendMessage || statusMessages.uploadSuccess.message }
             : statusMessages.noUploads
-          : statusMessages.uploadPending;
+          : view.backendState === 'idle' ? statusMessages.uploadReady : statusMessages.uploadPending;
   const canRetry = view.backendState === 'idle' || view.backendState === 'waiting-for-network' ||
+    (view.backendState === 'complete' && view.pendingUploads > 0) ||
     (view.backendState === 'failed' && 'retry' in status && status.retry === true);
-  return <Status {...status} scope="Backend-Upload (gesamte Organisation)"
+  const snapshot = view.backendState === 'complete';
+  const countsKnown = ['complete', 'waiting-for-network'].includes(view.backendState) || view.pendingUploads > 0 || view.uploadedCount > 0;
+  return <Status {...status} scope={snapshot ? 'Backend-Upload · Letzter geprüfter Uploadstand (gesamte Organisation)' : 'Backend-Upload (gesamte Organisation)'}
     action={canRetry ? { label: 'Backend-Upload erneut versuchen', onClick: retry, disabled } : undefined}>
-    <p>Ausstehend: {view.pendingUploads} · Hochgeladen: {view.uploadedCount}</p>
-    {view.backendState === 'failed' && <p>Der lokale Vor-Ort-Sync bleibt gültig. Noch ausstehende Daten sind nicht als Servererfolg bestätigt.</p>}
+    {countsKnown && <p>{snapshot ? '' : 'Zuletzt geprüft: '}Ausstehend: {view.pendingUploads} · Hochgeladen: {view.uploadedCount}</p>}
+    {snapshot && <p>Neu übernommene Daten werden separat geprüft. Spätere lokale Übernahmen sind durch diesen Stand noch nicht als hochgeladen bestätigt.</p>}
+    {view.backendState === 'failed' && <p>Ein bestätigter Vor-Ort-Sync bleibt gültig. Noch ausstehende Daten sind nicht als Servererfolg bestätigt.</p>}
   </Status>;
 }

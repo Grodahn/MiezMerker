@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest';
 import { assets } from '../assets';
 import { Status } from './Status';
-import { bluetoothSelectionMessage, errorStatus, friendlyError } from './status-messages';
+import { bluetoothErrorMessage, bluetoothSelectionMessage, errorStatus, friendlyError } from './status-messages';
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
@@ -50,6 +50,7 @@ test.each([
   ['HTTP 401', 'Bitte erneut anmelden', undefined],
   ['Offline-Credential abgelaufen', 'Offline-Berechtigung prüfen', undefined],
   ['Bluetooth-Berechtigung verweigert', 'Zugriff nicht erlaubt', undefined],
+  ['Keine aktive Mitgliedschaft für diese Organisation.', 'Zugriff nicht erlaubt', undefined],
   ['Bluetooth deaktiviert', 'Bluetooth nicht verfügbar', true],
   ['Dieser Browser unterstützt kein Web Bluetooth', 'Bluetooth wird nicht unterstützt', undefined],
   ['Timeout', 'Zeitüberschreitung', true],
@@ -67,4 +68,28 @@ test('chooser cancellation, empty/closed chooser and permission rejection differ
   expect(bluetoothSelectionMessage(new DOMException('', 'AbortError'))).toContain('Auswahl abgebrochen');
   expect(bluetoothSelectionMessage(new DOMException('', 'NotAllowedError'))).toContain('Berechtigung verweigert');
   expect(friendlyError('Failed to fetch')).toContain('Keine Verbindung zum Server');
+});
+
+test('unsupported firmware is not labelled as an unsupported browser and claim guidance survives expiry', () => {
+  expect(errorStatus('Firmware protocol unsupported').title).not.toBe('Bluetooth wird nicht unterstützt');
+  expect(errorStatus('Sitzung abgelaufen. Bitte erneut anmelden; der Claim bleibt gültig.').message).toContain('Claim bleibt gültig');
+});
+
+test('polite live regions are mounted before their content; progress updates are announced', () => {
+  vi.useFakeTimers();
+  const { rerender } = render(<Status kind="loading" title="Auslesen" progress={{ value: 1, max: 5 }}/>);
+  expect(screen.getByRole('status').textContent).toBe('');
+  expect(screen.getByText('Auslesen')).toBeTruthy();
+  act(() => { vi.advanceTimersByTime(0); });
+  expect(screen.getByRole('status').textContent).toContain('1 von 5');
+  rerender(<Status kind="loading" title="Auslesen" progress={{ value: 2, max: 5 }}/>);
+  expect(screen.getByRole('status').textContent).toContain('2 von 5');
+});
+
+test('disabled adapter causes are retained and missing services after selection are not chooser cancellation', () => {
+  const disabled = Object.assign(new Error('BLE-Verbindung fehlgeschlagen'), {
+    cause: new DOMException('Bluetooth adapter not available', 'NetworkError'),
+  });
+  expect(errorStatus(bluetoothSelectionMessage(disabled)).title).toBe('Bluetooth nicht verfügbar');
+  expect(bluetoothErrorMessage(new DOMException('Service missing', 'NotFoundError'))).toContain('Bluetooth-Dienst nicht erreichbar');
 });

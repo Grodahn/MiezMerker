@@ -21,6 +21,12 @@ export interface StatusProps {
 export function Status({ kind, title, message, graphic = kind, scope, progress, action, children,
   longWaitMessage = 'Das dauert länger. Bitte Verbindung prüfen. Sie können weiterhin die Navigation verwenden.' }: StatusProps) {
   const titleId = useId();
+  const [liveReady, setLiveReady] = useState(false);
+  useEffect(() => {
+    // Polite regions must exist before their initial text is inserted.
+    const timer = setTimeout(() => setLiveReady(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
   const [longWait, setLongWait] = useState(false);
   useEffect(() => {
     setLongWait(false);
@@ -30,18 +36,23 @@ export function Status({ kind, title, message, graphic = kind, scope, progress, 
   }, [kind]);
   const measured = progress && Number.isFinite(progress.value) && Number.isFinite(progress.max) &&
     progress.max > 0 && progress.value >= 0 && progress.value <= progress.max;
+  const content = <>
+    {scope && <p className="status-scope">{scope}</p>}
+    <p id={titleId} className="status-title">{title}</p>
+    {message && message !== title && <p>{message}</p>}
+    {longWait && kind === 'loading' && <p>{longWaitMessage}</p>}
+    {measured && <p>{progress.value} von {progress.max}</p>}
+  </>;
+  const announce = liveReady || kind === 'error';
   return <Card className={`status-card status-card--${kind}`}>
     <Graphic src={assets.status[graphic]} alt="" className="status-graphic"/>
     <div className="status-content">
       <div role={kind === 'error' ? 'alert' : 'status'} aria-live={kind === 'error' ? 'assertive' : 'polite'} aria-atomic="true">
-        {scope && <p className="status-scope">{scope}</p>}
-        <p id={titleId} className="status-title">{title}</p>
-        {message && message !== title && <p>{message}</p>}
-        {longWait && kind === 'loading' && <p>{longWaitMessage}</p>}
+        {announce && content}
       </div>
+      {!announce && <div>{content}</div>}
       {kind === 'loading' && <progress aria-labelledby={titleId}
         value={measured ? progress.value : undefined} max={measured ? progress.max : undefined}/>}
-      {measured && <p>{progress.value} von {progress.max}</p>}
       {children}
       {action && <Button type="button" variant="secondary" disabled={action.disabled} onClick={action.onClick}>{action.label}</Button>}
     </div>

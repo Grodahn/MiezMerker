@@ -17,7 +17,7 @@ import { BackendUploader } from './backend-upload';
 import { CollectorObservationStore } from './observation-store';
 import { NodeStatus, UploadStatus } from './CollectorStatus';
 import { Status } from '../ui/Status';
-import { bluetoothSelectionMessage, errorStatus, statusMessages, syncHelp } from '../ui/status-messages';
+import { bluetoothErrorMessage, errorStatus, statusMessages, syncHelp } from '../ui/status-messages';
 
 // Single shared MiezMerker PWA under /app. No second collector application.
 // Node→PWA and PWA→Backend are independent; Fertig means safely copied from
@@ -184,7 +184,9 @@ export function CollectorShell(props: {
       uploadedCount: previous.uploadedCount, nodeState: 'connecting', nodeMessage: 'Node auswählen …' }));
     // Invoke requestDevice synchronously in the click handler, before any IDB,
     // permission or network await can consume transient user activation.
+    let selecting = true;
     void createTransport().then(transport => {
+      selecting = false;
       if (!stillActive()) return;
       selectedTransport.current = transport;
       return runFieldSync({
@@ -194,7 +196,7 @@ export function CollectorShell(props: {
         trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
       });
     }).catch((e: unknown) => {
-      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: bluetoothSelectionMessage(e) }));
+      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: bluetoothErrorMessage(e, selecting ? 'selection' : 'operation') }));
     }).finally(() => { if (nodeOperation.current === operation) { nodeOperation.current = null; setRunning(false); } });
   }, [running, claimBusy, createTransport, props]);
 
@@ -214,7 +216,7 @@ export function CollectorShell(props: {
       createTransport: () => transport,
       trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
     }).catch((e: unknown) => {
-      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: bluetoothSelectionMessage(e) }));
+      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: bluetoothErrorMessage(e) }));
     }).finally(() => { if (nodeOperation.current === operation) { nodeOperation.current = null; setRunning(false); } });
   }, [running, claimBusy, props]);
 
