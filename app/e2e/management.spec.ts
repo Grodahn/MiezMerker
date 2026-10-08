@@ -62,8 +62,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     const state = await backend(page);
     await page.goto('/nodes');
     const nav = page.getByRole('navigation', { name: 'Bereiche' });
-    await expect(nav.getByRole('link')).toHaveText(['Vor-Ort-Sync', 'Nodes', 'Katzen']);
-    for (const label of ['Mitglieder', 'Futterstellen', 'Rohbeobachtungen', 'Besuche']) {
+    await expect(nav.getByRole('link')).toHaveText(['Home', 'Sync', 'Futterstellen', 'Katzen']);
+    for (const label of ['Mitglieder', 'Rohbeobachtungen', 'Besuche']) {
       await expect(nav.getByRole('link', { name: label, exact: true })).toHaveCount(0);
     }
     await expect(page.getByRole('cell', { name: 'Garten', exact: true })).toBeVisible();
@@ -86,6 +86,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await editor.getByLabel('Name (optional)').fill('Miez');
     await editor.getByRole('button', { name: 'Speichern' }).click();
     await expect(page.getByRole('cell', { name: /Miez/ })).toBeVisible();
+    await page.locator('.auth-panel > summary').click();
     await page.getByLabel('Aktive Organisation').selectOption(orgB);
     await expect(page.getByRole('cell', { name: /Miez/ })).not.toBeVisible();
     await expect(page.getByText(/Noch keine Katzen oder Chips/)).toBeVisible();

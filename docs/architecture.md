@@ -11,7 +11,7 @@ implementation contract. Subsequent tickets add features within these boundaries
 | firmware-esp32 | ESP-IDF platform composition and future board adapters | Host composition target today; board image in firmware tickets |
 | simulator | Inject simulated ports into the actual firmware-core library | CMake / CTest, no hardware |
 | protocol | BLE logical record schema/fixture and wire boundaries; future GATT codecs | Schema/fixture checked by app tests |
-| app | **One** React/TypeScript/Vite installable field PWA: login, sync, Nodes and Cats | npm ci / tests / build / browser tests |
+| app | **One** React/TypeScript/Vite installable field PWA: Login, Home, Sync, FeedingSites transition and Cats | npm ci / tests / build / browser tests |
 | backend | Java/Spring Boot HTTP API + server-rendered ADMIN backoffice (`/admin`, Thymeleaf, ADMIN-only); Security, JPA, PostgreSQL, Flyway, OpenAPI | Maven wrapper verify |
 | docs | Domain, trust boundaries, ADRs and acceptance review | Documentation review |
 | hardware | Schematics/BOM/reader/power work | Documentation placeholder today |
@@ -22,7 +22,9 @@ ESP32 composition boundary. No duplicate simulated business logic is allowed.
 
 ## Final surfaces after #30
 
-The field PWA serves `/login`, `/sync`, `/nodes` and `/cats`. Offline `/sync`
+The field PWA shows Login until authenticated, then serves `/` (Home), `/sync`,
+`/feeding-sites` (transitional entry) and `/cats`; legacy `/nodes` remains usable.
+See the [#64 shell and route guide](ui-ux/app-shell.md). Offline `/sync`
 requires the established AppDevice identity, active organization context and
 valid device-bound offline credential; offline access does not authorize Admin.
 Nodes consumes FeedingSite labels and deployment history for field work, while
@@ -94,8 +96,8 @@ real upload/aggregation implementations.
 
 ## Field PWA, Admin backend and the offline boundary
 
-After Epic #30 / #38, `/app` exposes login (`/login`), `/sync`, `/nodes`
-and `/cats`. Former `/sites`, `/observations` and `/visits` URLs show a small
+After #64, `/app` retains the #30 / #38 Admin split and exposes Login, Home
+(`/`), `/sync`, `/feeding-sites` (transition), `/cats` and legacy `/nodes`. Former `/sites`, `/observations` and `/visits` URLs show a small
 not-found state inside the authenticated field shell. Nodes and Cats use
 transient, organization-bound server data without mounting collector storage.
 Nodes still reads FeedingSite context and deployments; FeedingSite master-data

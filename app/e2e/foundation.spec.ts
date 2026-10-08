@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('fresh browser without identity sees only login', async ({ page }) => {
-  for (const path of ['/', '/sync', '/nodes', '/cats', '/sites', '/observations', '/visits']) {
+  for (const path of ['/', '/sync', '/feeding-sites', '/nodes', '/cats', '/sites', '/observations', '/visits']) {
     await page.goto(path);
     await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Bereiche' })).not.toBeVisible();

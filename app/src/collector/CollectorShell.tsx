@@ -10,6 +10,8 @@ import type { NodeTransport } from '../platform/node-transport';
 import { initialCollectorView, runFieldSync, type CollectorViewState } from './collector-sync';
 import { ClaimError } from './claim-node';
 import { provisionNode } from './provision-node';
+import { assets } from '../assets';
+import { Graphic } from '../ui/Graphic';
 import { NodeSetupWizard } from './NodeSetupWizard';
 import { BackendUploader } from './backend-upload';
 import { CollectorObservationStore } from './observation-store';
@@ -295,7 +297,7 @@ export function CollectorShell(props: {
   const activeMembership = memberships.find(m => m.organizationId === auth.activeOrganizationId);
   const isAdmin = activeMembership?.role === 'ADMIN';
 
-  return <section aria-label="Vor-Ort-Sync"><h1>Vor-Ort-Sync</h1>
+  return <section aria-label="Vor-Ort-Sync"><h1 className="title-with-icon"><Graphic src={assets.illustrations.sync} alt="" className="app-icon"/>Vor-Ort-Sync</h1>
     <p>{storage}</p>
     <p>{auth.user
       ? `Angemeldet als ${auth.user.email}${auth.activeOrganizationId ? ` · Organisation: ${activeMembership?.organizationName ?? auth.activeOrganizationId} (${activeMembership?.role ?? '?'})` : ' · keine Organisation gewählt'}`

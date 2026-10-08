@@ -17,8 +17,8 @@ const user = { userId: 'u', email: 'a@example.org', memberships: [
 ] };
 
 describe('centralized app-shell gate (#31)', () => {
-  test('collector paths are / and /sync only', () => {
-    expect(isCollectorPath('/')).toBe(true);
+  test('only /sync is a collector path; Home is protected', () => {
+    expect(isCollectorPath('/')).toBe(false);
     expect(isCollectorPath('/sync')).toBe(true);
     expect(isCollectorPath('/nodes')).toBe(false);
     expect(isCollectorPath('/cats')).toBe(false);
@@ -39,7 +39,7 @@ describe('centralized app-shell gate (#31)', () => {
 
   test('online verified session renders authenticated app', () => {
     const verified = auth({ user, activeOrganizationId: 'org', sessionChecked: true, sessionVerified: true });
-    for (const path of ['/', '/sync', '/nodes', '/cats', '/sites', '/observations', '/visits', '/admin/members']) {
+    for (const path of ['/', '/sync', '/nodes', '/cats', '/feeding-sites', '/sites', '/observations', '/visits', '/admin/members']) {
       expect(resolveGateStatus(verified, true, false, path)).toBe('authenticated');
     }
   });
@@ -53,7 +53,7 @@ describe('centralized app-shell gate (#31)', () => {
 
   test('fresh unauthenticated browser sees only login', () => {
     const anon = auth({ sessionChecked: true, sessionVerified: false });
-    for (const path of ['/', '/sync', '/nodes', '/cats', '/sites', '/observations', '/visits', '/admin/members']) {
+    for (const path of ['/', '/sync', '/nodes', '/cats', '/feeding-sites', '/sites', '/observations', '/visits', '/admin/members']) {
       expect(resolveGateStatus(anon, true, false, path)).toBe('login');
       expect(resolveGateStatus(anon, true, null, path)).toBe('login');
     }
@@ -61,7 +61,7 @@ describe('centralized app-shell gate (#31)', () => {
 
   test('snapshot without verified session never renders management', () => {
     const snapshot = auth({ user, activeOrganizationId: 'org', sessionChecked: true, sessionVerified: false });
-    for (const path of ['/nodes', '/cats', '/sites', '/observations', '/visits', '/admin/members']) {
+    for (const path of ['/nodes', '/cats', '/feeding-sites', '/sites', '/observations', '/visits', '/admin/members']) {
       expect(resolveGateStatus(snapshot, true, true, path)).toBe('login');
       expect(resolveGateStatus(snapshot, true, false, path)).toBe('login');
     }
@@ -69,7 +69,7 @@ describe('centralized app-shell gate (#31)', () => {
 
   test('offline-sync exception keeps only /sync usable and is not anonymous', () => {
     const snapshot = auth({ user, activeOrganizationId: 'org', sessionChecked: true, sessionVerified: false });
-    expect(resolveGateStatus(snapshot, false, true, '/')).toBe('offline-sync');
+    expect(resolveGateStatus(snapshot, false, true, '/')).toBe('login');
     expect(resolveGateStatus(snapshot, false, true, '/sync')).toBe('offline-sync');
     expect(resolveGateStatus(snapshot, false, true, '/nodes')).toBe('login');
     expect(resolveGateStatus(snapshot, false, true, '/sites')).toBe('login');
@@ -84,7 +84,7 @@ describe('centralized app-shell gate (#31)', () => {
   test('pending credential lookup stays neutral for collector, login for management', () => {
     const snapshot = auth({ user, activeOrganizationId: 'org', sessionChecked: true, sessionVerified: false });
     expect(resolveGateStatus(snapshot, false, null, '/sync')).toBe('loading');
-    expect(resolveGateStatus(snapshot, false, null, '/')).toBe('loading');
+    expect(resolveGateStatus(snapshot, false, null, '/')).toBe('login');
     expect(resolveGateStatus(snapshot, false, null, '/nodes')).toBe('login');
   });
 
