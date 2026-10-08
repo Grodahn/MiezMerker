@@ -67,6 +67,7 @@ a client-supplied `organization_id` is never trusted.
 | firmware_version | VARCHAR(64) | |
 | protocol_version | VARCHAR(32) | |
 | status_note | VARCHAR(500) | |
+| display_name | VARCHAR(100) | NULL allowed, no unique constraint (#50) |
 | last_contact_at | TIMESTAMPTZ | |
 | created_at | TIMESTAMPTZ | |
 | claimed_at | TIMESTAMPTZ | |
@@ -74,6 +75,13 @@ a client-supplied `organization_id` is never trusted.
 - Claiming (#18) assigns organization; Factory Reset rotates identity (new UUID + key)
 - Management: read/update=ACTIVE (metadata only; #11)
 - Public `/owner` endpoint exposes organization slug/name/contact for claimed nodes
+- Bowl label (#50): `Node` = physical bowl/electronics unit, `node_id` = stable
+  technical identity, `displayName` = optional human-readable bowl label
+  (e.g. "Der Grüne", "Silberner Napf"). Nullable for pre-#50 rows; trimmed,
+  blank clears to null, max 100 characters, Unicode allowed. The name is not
+  unique (two Nodes may share it), is not part of BLE/crypto identity, and is
+  never snapshotted into RawObservations or DerivedVisits. Renaming never
+  mutates deployment intervals or historical attribution.
 
 ## NodeDeployment
 

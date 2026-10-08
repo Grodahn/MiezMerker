@@ -39,6 +39,10 @@ import org.springframework.web.server.ResponseStatusException;
  * (never MAC/DB id). Claim requires ACTIVE ADMIN + UNCLAIMED node + physical claim mode
  * (verified via the node's signed claim advertisement). The operation is atomic and
  * idempotent for retries. Cross-organization reuse requires factory reset/new identity.
+ *
+ * <p>Node (#50) = physical bowl + electronics. {@code node_id} is the stable
+ * technical identity; {@code displayName} is an optional human-readable bowl
+ * label (nullable, never unique, never part of BLE/crypto identity).
  */
 @RestController
 @RequestMapping("/api/v1/nodes")
@@ -76,6 +80,10 @@ public class NodeController {
     @Schema(name = "NodeView")
     public record NodeView(UUID nodeId, String organizationId, String state,
             String firmwareVersion, String protocolVersion, String statusNote,
+            @Schema(type = "string", nullable = true,
+                    description = "Optional human-readable bowl label (Node.displayName, "
+                    + "trimmed; blank means no name; never unique, never part of "
+                    + "BLE/crypto identity)") String displayName,
             String lastContactAt, String claimedAt, String publicKeyX,
             String publicKeyY, String fingerprint) {}
 
@@ -83,7 +91,21 @@ public class NodeController {
     public record UpdateNodeRequest(
             @Size(max = 64) String firmwareVersion,
             @Size(max = 32) String protocolVersion,
-            @Size(max = 500) String statusNote) {}
+            @Size(max = 500) String statusNote,
+            @Size(max = 100, message = "displayName must not exceed 100 characters")
+            @Schema(type = "string", nullable = true,
+                    description = "Optional bowl label update. Absent/null leaves the name "
+                    + "unchanged; blank clears it to null; a value is trimmed "
+                    + "(max 100 characters, Unicode allowed) and never unique.") String displayName) {
+        public UpdateNodeRequest {
+            // Preserve the difference between null (no update) and blank (clear),
+            // and validate the trimmed length rather than raw padding.
+            if (displayName != null) {
+                String normalized = NodeDevice.normalizeDisplayName(displayName);
+                displayName = normalized == null ? "" : normalized;
+            }
+        }
+    }
 
     @Schema(name = "NodeOwnerView")
     public record NodeOwnerView(UUID nodeId, String state, String organizationId,
@@ -93,7 +115,7 @@ public class NodeController {
         return new NodeView(n.getNodeId(),
                 n.getOrganization() == null ? null : n.getOrganization().getId().toString(),
                 n.getState().name(), n.getFirmwareVersion(), n.getProtocolVersion(),
-                n.getStatusNote(),
+                n.getStatusNote(), n.getDisplayName(),
                 n.getLastContactAt() == null ? null : n.getLastContactAt().toString(),
                 n.getClaimedAt() == null ? null : n.getClaimedAt().toString(),
                 n.getPublicKeyX(), n.getPublicKeyY(), n.getFingerprint());
@@ -242,7 +264,8 @@ public class NodeController {
     @PatchMapping(value = "/{nodeId}", consumes = "application/json",
             produces = "application/json")
     @Operation(operationId = "updateNode",
-            summary = "ACTIVE member updates node metadata (firmware/protocol version, status note)")
+            summary = "ACTIVE member updates node metadata (firmware/protocol version, "
+                    + "status note, bowl display name)")
     @Transactional
     public NodeView update(@PathVariable UUID nodeId,
             @Valid @RequestBody UpdateNodeRequest request,
@@ -276,6 +299,23 @@ public class NodeController {
             if (request.statusNote() != null) {
                 node.setStatusNote(
                         request.statusNote().isBlank() ? null : request.statusNote().trim());
+            }
+            if (request.displayName() != null) {
+                // Compact constructor already normalized: "" means blank (clear),
+                // otherwise a trimmed non-empty value. Length is validated after
+                // trimming (max 100); never silently truncated, never unique.
+                if (request.displayName().isEmpty()) {
+                    node.setDisplayName(null);
+                } else {
+                    if (request.displayName().length()
+                            > NodeDevice.MAX_DISPLAY_NAME_LENGTH) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "displayName must not exceed "
+                                        + NodeDevice.MAX_DISPLAY_NAME_LENGTH
+                                        + " characters");
+                    }
+                    node.setDisplayName(request.displayName());
+                }
             }
             nodes.save(node);
         }

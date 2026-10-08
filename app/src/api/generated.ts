@@ -202,7 +202,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** ACTIVE member updates node metadata (firmware/protocol version, status note) */
+        /** ACTIVE member updates node metadata (firmware/protocol version, status note, bowl display name) */
         patch: operations["updateNode"];
         trace?: never;
     };
@@ -850,6 +850,8 @@ export interface components {
         };
         NodeView: {
             claimedAt?: string;
+            /** @description Optional human-readable bowl label (Node.displayName, trimmed; blank means no name; never unique, never part of BLE/crypto identity) */
+            displayName?: string | null;
             fingerprint?: string;
             firmwareVersion?: string;
             lastContactAt?: string;
@@ -947,6 +949,8 @@ export interface components {
             status?: "PENDING" | "ACTIVE" | "DISABLED";
         };
         UpdateNodeRequest: {
+            /** @description Optional bowl label update. Absent/null leaves the name unchanged; blank clears it to null; a value is trimmed (max 100 characters, Unicode allowed) and never unique. */
+            displayName?: string | null;
             firmwareVersion?: string;
             protocolVersion?: string;
             statusNote?: string;

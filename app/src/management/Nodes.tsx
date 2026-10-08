@@ -10,19 +10,22 @@ function NodeDetail({ node, history, sites, close, saved }: {
   const [firmwareVersion, setFirmware] = useState(node.firmwareVersion ?? '');
   const [protocolVersion, setProtocol] = useState(node.protocolVersion ?? '');
   const [statusNote, setNote] = useState(node.statusNote ?? '');
+  const [displayName, setDisplayName] = useState(node.displayName ?? '');
   const mutation = useMutation();
   const ownHistory = history.filter(d => d.nodeId === node.nodeId)
     .sort((a, b) => Date.parse(b.validFrom ?? '') - Date.parse(a.validFrom ?? ''));
-  return <section className="detail" aria-label="Node-Details"><h2>Node <code>{node.nodeId}</code></h2>
+  // #50: show the human-readable bowl label primarily; node_id stays as technical detail.
+  return <section className="detail" aria-label="Node-Details"><h2>{node.displayName ? <>Napf {node.displayName} </> : <>Node </>}<code>{node.nodeId}</code></h2>
     <p>Aktuelle Futterstelle: {siteName(sites, currentDeployment(history, node.nodeId)?.feedingSiteId)}</p>
     <p>Letzter bekannter Serverkontakt / Upload: {time(node.lastContactAt)}</p>
     <form className="management-form" onSubmit={event => {
       event.preventDefault();
       void mutation.run(async (headers, signal) => result(await api.PATCH('/api/v1/nodes/{nodeId}', {
         ...requestOptions(signal), headers, params: { path: { nodeId: node.nodeId! } },
-        body: { firmwareVersion: firmwareVersion.trim(), protocolVersion: protocolVersion.trim(), statusNote: statusNote.trim() },
+        body: { firmwareVersion: firmwareVersion.trim(), protocolVersion: protocolVersion.trim(), statusNote: statusNote.trim(), displayName },
       })), saved);
     }}>
+      <label>Napf-Bezeichnung (optional)<input maxLength={100} value={displayName} onChange={e => setDisplayName(e.target.value)}/></label>
       <label>Firmwareversion<input maxLength={64} value={firmwareVersion} onChange={e => setFirmware(e.target.value)}/></label>
       <label>Protokollversion<input maxLength={32} value={protocolVersion} onChange={e => setProtocol(e.target.value)}/></label>
       <label>Technische Notiz<textarea maxLength={500} value={statusNote} onChange={e => setNote(e.target.value)}/></label>
@@ -55,7 +58,7 @@ export function Nodes({ organizationId, admin }: { organizationId: string; admin
     {admin && <p>Neue Nodes werden mit dem vorhandenen <a href="/sync">Vor-Ort-Sync / ADMIN-Claiming</a> angelegt.</p>}
     <button onClick={list.reload}>Aktualisieren</button><LoadState {...list}/>
     {data && (data.nodes.length ? <Table label="Nodes" headings={['Node', 'Aktuelle Futterstelle', 'Versionen', 'Letzter Kontakt / Hinweise', 'Details']}>
-      {data.nodes.map(node => <tr key={node.nodeId}><td><code>{node.nodeId}</code><small>{node.state}</small></td>
+      {data.nodes.map(node => <tr key={node.nodeId}><td>{node.displayName ? <>{node.displayName}<small><code>{node.nodeId}</code> · {node.state}</small></> : <><code>{node.nodeId}</code><small>{node.state}</small></>}</td>
         <td>{siteName(data.sites, currentDeployment(data.history, node.nodeId)?.feedingSiteId)}</td>
         <td>Firmware: {node.firmwareVersion || 'Unbekannt'}<small>Protokoll: {node.protocolVersion || 'Unbekannt'}</small></td>
         <td>{time(node.lastContactAt)}<small className="preserve-lines">{node.statusNote}</small></td>
