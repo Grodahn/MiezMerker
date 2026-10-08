@@ -1,7 +1,9 @@
 # MiezMerker Feld-PWA – freigegebene Designrichtung (Mockup-Runde 2)
 
 Status: **Produkt-/UX-Richtung gemeinsam abgestimmt am 2026-10-08**, keine pixelgenaue Implementierungsvorgabe.
-Referenz: **[Runde-2-Wireframe (SVG)](./round-2-wireframe.svg)** – dauerhaft im Repo abrufbare schematische Umsetzung der freigegebenen Screenstruktur. Das im Chat gestaltete, detaillierte Bild ist die ästhetische Inspiration; dieses SVG ist eine **reduzierte Rekonstruktion, kein unverändertes Exportbild**. Farben, Zahlen, Zeitstempel, Tierbilder und Ortsnamen in Illustrationen sind Dummydaten.
+**Freigegebenes Mockup (Runde 2): [Bildansicht (WebP)](./round-2-approved-mockup.webp)** – direkt aus der im Chat abgenommenen Bildserie als weboptimierter Export, dauerhaft im Repository abgelegt. Optionales [schematisches Wireframe (SVG)](./round-2-wireframe.svg) zur Referenz von Screenstruktur und Informationshierarchie. Farben, Zahlen, Zeitstempel, Tierbilder und Ortsnamen der Mockups sind **Beispiel-/Dummywerte** und dürfen nicht als verfügbare Echtdaten interpretiert werden.
+
+![Freigegebenes MiezMerker UI/UX-Mockup, Runde 2](./round-2-approved-mockup.webp)
 
 ## Freigegeben
 
