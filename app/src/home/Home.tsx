@@ -7,7 +7,7 @@ export function Home() {
   return <section className="home-page" aria-labelledby="home-title">
     <div className="home-intro">
       <h1 id="home-title">Hallo!</h1>
-      <p>Schön, dass du da bist. Lies vor Ort eine Futterstelle aus.</p>
+      <p>Gemeinsam für Katzen vor Ort.</p>
     </div>
     <Graphic src={assets.illustrations.home} alt="" className="page-illustration home-illustration"/>
     <a className="button button--primary home-cta" href="/sync">
