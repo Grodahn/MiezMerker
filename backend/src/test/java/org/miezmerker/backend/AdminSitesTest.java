@@ -742,7 +742,7 @@ class AdminSitesTest {
         assertLoginSuccess(formLogin("a35-admin-a@example.org", "supersecret-password-a"));
         var detail = get("/admin/sites/" + site.getId());
         assertEquals(200, detail.statusCode(), detail.body());
-        assertTrue(detail.body().contains("Keine aktuell zugeordneten Nodes."), detail.body());
+        assertTrue(detail.body().contains("Keine aktuell zugeordneten Näpfe."), detail.body());
         assertTrue(detail.body().contains(node.getNodeId().toString()), detail.body());
         assertTrue(detail.body().contains("Ohne Enddatum"), detail.body());
         assertFalse(detail.body().contains("aktuell offen"), detail.body());
