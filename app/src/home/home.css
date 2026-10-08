@@ -1,0 +1,14 @@
+.home-page { display: grid; gap: var(--space-4); max-width: 40rem; margin-inline: auto; }
+.home-intro h1 { margin: 0; }
+.home-intro p { margin: var(--space-2) 0 0; color: var(--color-muted); }
+.home-page .home-illustration { inline-size: min(100%, 28rem); block-size: clamp(6rem, 22dvh, 13rem); max-block-size: none; }
+.home-page .home-cta { min-height: 4rem; padding: var(--space-4); font-weight: 750; }
+.home-cta > span { flex: 1; min-width: 0; text-align: start; }
+.home-destinations { display: grid; gap: var(--space-3); }
+@media (min-width: 600px) {
+  .home-destinations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-height: 650px) {
+  .home-page { gap: var(--space-3); }
+  .home-page .home-illustration { block-size: 4rem; }
+}

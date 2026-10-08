@@ -370,7 +370,7 @@ test('offline without valid credential locks /sync to login', async () => {
 });
 
 test('direct navigation to protected routes never renders navigation before auth', async () => {
-  for (const path of ['/nodes', '/cats', '/sites', '/observations', '/visits', '/admin/members']) {
+  for (const path of ['/', '/feeding-sites', '/nodes', '/cats', '/sites', '/observations', '/visits', '/admin/members']) {
     cleanup();
     vi.resetModules();
     localStorage.clear();
@@ -446,7 +446,7 @@ test.each([
   expect(current[0].textContent).toBe(label);
   expect(current[0].getAttribute('href')).toBe(href);
   if (path === '/') {
-    expect(screen.getByRole('heading', { name: 'Home' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Hallo!' })).toBeTruthy();
     expect(screen.queryByText('CollectorShell')).toBeNull();
   }
   if (path === '/nodes') expect(await screen.findByText(/Noch keine Nodes vorhanden/)).toBeTruthy();
@@ -475,9 +475,40 @@ test('login at the application entry opens Home', async () => {
   fireEvent.change(screen.getByLabelText('E-Mail'), { target: { value: verifiedUser.email } });
   fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'password' } });
   fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
-  await screen.findByRole('heading', { name: 'Home' });
+  await screen.findByRole('heading', { name: 'Hallo!' });
   expect(window.location.pathname).toBe('/');
   expect(screen.queryByText('CollectorShell')).toBeNull();
+  expect(screen.getByRole('link', { name: 'Futterstelle auslesen' }).getAttribute('href')).toBe('/sync');
+});
+
+test.each([401, 503])('Home stays hidden during session verification and after HTTP %s', async status => {
+  setPath('/');
+  let finishSession!: (value: unknown) => void;
+  apiGet.mockImplementation((path: string) => path === '/api/v1/auth/session'
+    ? new Promise(resolve => { finishSession = resolve; })
+    : Promise.resolve({ data: { token: 'csrf' } }));
+  const { App } = await import('./App'); render(<App/>);
+  expect(screen.queryByRole('heading', { name: 'Hallo!' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Futterstelle auslesen' })).toBeNull();
+  expect(screen.queryByRole('navigation')).toBeNull();
+  await act(async () => { finishSession({ error: {}, response: { status } }); });
+  await screen.findByRole('button', { name: 'Anmelden' });
+  expect(screen.queryByRole('heading', { name: 'Hallo!' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Futterstelle auslesen' })).toBeNull();
+});
+
+test('authenticated Home requests no location data and closes immediately on disconnect', async () => {
+  setPath('/');
+  apiGet.mockImplementation(async (path: string) => path === '/api/v1/auth/session'
+    ? sessionResponse(verifiedUser) : { data: { token: 'csrf' } });
+  const { App } = await import('./App'); render(<App/>);
+  await screen.findByRole('heading', { name: 'Hallo!' });
+  expect(apiGet.mock.calls.every(([path]) => path.startsWith('/api/v1/auth/'))).toBe(true);
+  expect(collectorMount).not.toHaveBeenCalled();
+  act(() => { setOnline(false); window.dispatchEvent(new Event('offline')); });
+  expect(screen.queryByRole('heading', { name: 'Hallo!' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Futterstelle auslesen' })).toBeNull();
+  expect(screen.queryByRole('navigation')).toBeNull();
 });
 
 
@@ -491,7 +522,7 @@ test('installed offline entry redirects only to centrally authorized Sync withou
     const { App } = await import('./App'); render(<App/>);
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/sync'));
     expect(screen.queryByRole('navigation')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Home' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Hallo!' })).toBeNull();
     expect(screen.queryByText('CollectorShell')).toBeNull();
     expect(screen.getByText('Offline-Sync wird geöffnet …')).toBeTruthy();
   } finally { replace.mockRestore(); }

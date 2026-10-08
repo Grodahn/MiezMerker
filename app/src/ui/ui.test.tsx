@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test } from 'vitest';
 import { assets } from '../assets';
 import { BrandHeader } from './ApplicationShell';
-import { HomeEntry, FeedingSitesEntry } from './TransitionalPages';
+import { Home } from '../home/Home';
+import { FeedingSitesEntry } from './TransitionalPages';
 import { AppIcon, Graphic } from './Graphic';
 import { Button, Card, Field, ListLink } from './primitives';
 import { BottomNavigation } from './navigation';
@@ -39,7 +40,7 @@ test('replacing central logo, Home and FeedingSite entries updates their consume
     assets.brand.logo = '/replacement-logo.svg';
     assets.illustrations.home = '/replacement-home.svg';
     assets.placeholders.feedingSite = '/replacement-site.svg';
-    const { container } = render(<><BrandHeader/><HomeEntry/><FeedingSitesEntry/></>);
+    const { container } = render(<><BrandHeader/><Home/><FeedingSitesEntry/></>);
     expect(screen.getByAltText('MiezMerker').getAttribute('src')).toBe('/replacement-logo.svg');
     expect([...container.querySelectorAll('.page-illustration')].map(img => img.getAttribute('src')))
       .toEqual(['/replacement-home.svg', '/replacement-site.svg']);
