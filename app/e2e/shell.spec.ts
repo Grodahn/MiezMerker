@@ -53,17 +53,17 @@ for (const width of [320, 375, 390, 430, 768, 1280]) {
 test('native links preserve deep links, refresh, back/forward and legacy Nodes', async ({ page }) => {
   await session(page);
   await page.goto('/');
-  await page.getByRole('link', { name: 'Futterstellen', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Bereiche' }).getByRole('link', { name: 'Futterstellen', exact: true }).click();
   await expect(page).toHaveURL(/\/feeding-sites$/);
   await page.getByRole('link', { name: 'Näpfe und Zuordnungen öffnen' }).click();
   await expect(page.getByRole('heading', { name: 'Nodes', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Futterstellen', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: 'Bereiche' }).getByRole('link', { name: 'Futterstellen', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Nodes', exact: true })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Futterstellen', exact: true })).toBeVisible();
   await page.goBack();
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hallo!', exact: true })).toBeVisible();
   await page.goForward();
   await expect(page.getByRole('heading', { name: 'Futterstellen', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Katzen', exact: true }).click();
@@ -77,7 +77,7 @@ test('native links preserve deep links, refresh, back/forward and legacy Nodes',
 
 test('keyboard skip link, account disclosure, organization and logout remain usable', async ({ page }) => {
   await session(page); await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hallo!', exact: true })).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Zum Inhalt' })).toBeFocused();
   await page.keyboard.press('Enter');
@@ -90,7 +90,7 @@ test('keyboard skip link, account disclosure, organization and logout remain usa
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Home' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Hallo!' })).toHaveCount(0);
 });
 
 test('200% text, reduced motion and long account labels do not overflow', async ({ page }) => {
@@ -101,7 +101,7 @@ test('200% text, reduced motion and long account labels do not overflow', async 
   await page.getByLabel('Aktive Organisation').selectOption('org-a');
   await page.locator('.auth-panel > summary').click();
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-  await expect(page.getByRole('link', { name: 'Futterstellen', exact: true })).toBeInViewport();
+  await expect(page.getByRole('navigation', { name: 'Bereiche' }).getByRole('link', { name: 'Futterstellen', exact: true })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.locator('.auth-panel > summary').click();
   await page.getByLabel('Aktive Organisation').focus();
@@ -117,7 +117,7 @@ test('200% text, reduced motion and long account labels do not overflow', async 
 
 test('all static illustrations and fallbacks are cached and fetchable offline', async ({ page, context }) => {
   await session(page); await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hallo!', exact: true })).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
   await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
@@ -146,11 +146,11 @@ test('account overlay dismisses before keyboard or pointer focus reaches page co
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: 'Abmelden' }).focus();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('link', { name: 'Zum Vor-Ort-Sync' })).toBeFocused();
+  await expect(page.getByRole('link', { name: 'Futterstelle auslesen' })).toBeFocused();
   await expect(account).not.toBeVisible();
   await summary.click();
   await page.getByRole('main').click({ position: { x: 4, y: 400 } });
   await expect(account).not.toBeVisible();
-  await page.getByRole('link', { name: 'Zum Vor-Ort-Sync' }).click();
+  await page.getByRole('link', { name: 'Futterstelle auslesen' }).click();
   await expect(page).toHaveURL(/\/sync$/);
 });
