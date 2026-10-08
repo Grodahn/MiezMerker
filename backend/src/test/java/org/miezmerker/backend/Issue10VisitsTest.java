@@ -23,7 +23,6 @@ import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
 import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationMembership;
-import org.miezmerker.backend.repo.AppDeviceRepository;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.CatRepository;
 import org.miezmerker.backend.repo.DerivedVisitRepository;
@@ -57,7 +56,6 @@ class Issue10VisitsTest {
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;
     @Autowired MembershipRepository memberships;
-    @Autowired AppDeviceRepository devices;
     @Autowired NodeRepository nodes;
     @Autowired FeedingSiteRepository sites;
     @Autowired CatRepository cats;

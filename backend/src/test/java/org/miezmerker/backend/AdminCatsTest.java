@@ -26,7 +26,6 @@ import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationMembership;
 import org.miezmerker.backend.domain.RawObservation;
 import org.miezmerker.backend.domain.UserStatus;
-import org.miezmerker.backend.repo.AppDeviceRepository;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.CatRepository;
 import org.miezmerker.backend.repo.DerivedVisitRepository;
@@ -55,7 +54,6 @@ class AdminCatsTest {
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;
     @Autowired MembershipRepository memberships;
-    @Autowired AppDeviceRepository devices;
     @Autowired NodeRepository nodes;
     @Autowired RawObservationRepository observations;
     @Autowired DerivedVisitRepository derivedVisits;
