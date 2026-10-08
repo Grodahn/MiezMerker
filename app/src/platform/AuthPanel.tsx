@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { AppIcon } from '../ui/Graphic';
 import { fetchSession, getAuthState, login, logout, selectOrganization, subscribeAuth } from './auth';
 
 export function AuthPanel() {
@@ -35,7 +36,11 @@ export function AuthPanel() {
   const memberships = auth.user?.memberships.filter(m => m.status === 'ACTIVE') ?? [];
   // #32: global display name with email fallback for pre-#32 users without a name.
   const accountLabel = auth.user?.displayName?.trim() ? auth.user.displayName : auth.user?.email;
-  return <section aria-label="Benutzerkonto" className="auth-panel">
+  return <details className="auth-panel">
+    <summary><AppIcon name="account"/><span><span>Konto<span className="sr-only"> &amp; Organisation</span></span>
+      <small>{memberships.find(m => m.organizationId === auth.activeOrganizationId)?.organizationName ?? 'Organisation auswählen'}</small>
+    </span></summary>
+    <section aria-label="Benutzerkonto" className="account-content">
     {auth.user ? <>
       <p>Angemeldet als {accountLabel}</p>
       {memberships.length ? <label>Aktive Organisation
@@ -47,7 +52,7 @@ export function AuthPanel() {
           </option>)}
         </select>
       </label> : <p>Keine aktive Organisationsmitgliedschaft.</p>}
-      <button type="button" disabled={busy} onClick={() => void signOut()}>Abmelden</button>
+      <button type="button" disabled={busy} onClick={() => void signOut()}><AppIcon name="logout"/>Abmelden</button>
     </> : <form onSubmit={event => void submit(event)}>
       <label>E-Mail<input type="email" autoComplete="username" required value={email}
         onChange={event => setEmail(event.target.value)}/></label>
@@ -56,5 +61,5 @@ export function AuthPanel() {
       <button type="submit" disabled={busy}>Anmelden</button>
     </form>}
     {error && <p role="alert">{error}</p>}
-  </section>;
+  </section></details>;
 }

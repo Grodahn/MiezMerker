@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react';
+import { assets } from '../assets';
+import { Graphic } from '../ui/Graphic';
 import { api } from '../api/client';
 import { Feedback, LoadState, millis, siteName, Table, time, type Cat, type Site } from './common';
 import { requestOptions, result, useLoad, useMutation } from './data';
@@ -68,7 +70,7 @@ export function Cats({ organizationId }: { organizationId: string }) {
       {chips.map(chip => {
         const cat = data.cats.find(cat => cat.chipId === chip);
         const activity = data.activity.find(a => a.chipId === chip);
-        return <tr key={chip}><td>{cat?.name || (cat ? 'Ohne Namen' : 'Unbekannte Katze')}<code>{chip}</code>
+        return <tr key={chip}><td><Graphic src={assets.placeholders.cat} alt="" className="avatar"/>{cat?.name || (cat ? 'Ohne Namen' : 'Unbekannte Katze')}<code>{chip}</code>
           <small>{cat?.status}</small><small className="preserve-lines">{cat?.notes}</small></td>
           <td>{millis(activity?.lastSeenAtMillis)}
             {activity && <><small>Serverempfang: {time(activity.lastReceivedAt)}</small>

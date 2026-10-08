@@ -198,7 +198,7 @@ test('initial load shows neutral loading without navigation or protected content
 });
 
 test.each([
-  ['/'], ['/sync'], ['/nodes'], ['/cats'],
+  ['/'], ['/sync'], ['/feeding-sites'], ['/nodes'], ['/cats'],
   ['/sites'], ['/observations'], ['/visits'], ['/admin/members'],
 ])('fresh unauthenticated browser on %s sees only login', async (path) => {
   setPath(path);
@@ -425,6 +425,57 @@ test.each(['MEMBER', 'ADMIN'])('authenticated %s sees exactly the field navigati
   render(<App/>);
   const navigation = await screen.findByRole('navigation', { name: 'Bereiche' });
   const links = [...navigation.querySelectorAll('a')];
-  expect(links.map(link => link.getAttribute('href'))).toEqual(['/sync', '/nodes', '/cats']);
-  expect(links.map(link => link.textContent)).toEqual(['Vor-Ort-Sync', 'Nodes', 'Katzen']);
+  expect(links.map(link => link.getAttribute('href'))).toEqual(['/', '/sync', '/feeding-sites', '/cats']);
+  expect(links.map(link => link.textContent)).toEqual(['Home', 'Sync', 'Futterstellen', 'Katzen']);
+});
+
+
+test.each([
+  ['/', 'Home', '/'], ['/sync', 'Sync', '/sync'],
+  ['/feeding-sites', 'Futterstellen', '/feeding-sites'], ['/cats', 'Katzen', '/cats'],
+  ['/nodes', 'Futterstellen', '/feeding-sites'],
+])('authenticated deep link %s marks only its section', async (path, label, href) => {
+  setPath(path);
+  apiGet.mockImplementation(async (p: string) => p === '/api/v1/auth/session'
+    ? sessionResponse(verifiedUser) : { data: [], response: { ok: true, status: 200 } });
+  const { App } = await import('./App');
+  render(<App/>);
+  const navigation = await screen.findByRole('navigation', { name: 'Bereiche' });
+  const current = navigation.querySelectorAll('[aria-current="page"]');
+  expect(current).toHaveLength(1);
+  expect(current[0].textContent).toBe(label);
+  expect(current[0].getAttribute('href')).toBe(href);
+  if (path === '/') {
+    expect(screen.getByRole('heading', { name: 'Home' })).toBeTruthy();
+    expect(screen.queryByText('CollectorShell')).toBeNull();
+  }
+  if (path === '/nodes') expect(await screen.findByText(/Noch keine Nodes vorhanden/)).toBeTruthy();
+});
+
+test.each(['/', '/feeding-sites', '/cats', '/nodes'])('valid offline credential cannot open %s', async path => {
+  setPath(path); setOnline(false);
+  localStorage.setItem('miezmerker-offline-session', JSON.stringify({ user: verifiedUser, activeOrganizationId: 'org-a' }));
+  credentialLookup.mockResolvedValue('valid-credential');
+  const { App } = await import('./App');
+  render(<App/>);
+  await screen.findByRole('button', { name: 'Anmelden' });
+  expect(screen.queryByRole('navigation')).toBeNull();
+  expect(screen.queryByText('CollectorShell')).toBeNull();
+});
+
+test('login at the application entry opens Home', async () => {
+  setPath('/');
+  let loggedIn = false;
+  apiGet.mockImplementation(async (path: string) => path === '/api/v1/auth/session'
+    ? loggedIn ? sessionResponse(verifiedUser) : { error: {}, response: { status: 401 } }
+    : { data: { token: 'csrf' } });
+  apiPost.mockImplementation(async () => { loggedIn = true; return sessionResponse(verifiedUser); });
+  const { App } = await import('./App'); render(<App/>);
+  await screen.findByRole('button', { name: 'Anmelden' });
+  fireEvent.change(screen.getByLabelText('E-Mail'), { target: { value: verifiedUser.email } });
+  fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'password' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
+  await screen.findByRole('heading', { name: 'Home' });
+  expect(window.location.pathname).toBe('/');
+  expect(screen.queryByText('CollectorShell')).toBeNull();
 });

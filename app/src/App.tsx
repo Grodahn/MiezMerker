@@ -1,41 +1,42 @@
+import { useEffect, useSyncExternalStore } from 'react';
 import { CollectorShell } from './collector/CollectorShell';
-import { AuthPanel } from './platform/AuthPanel';
 import { LoginView } from './platform/LoginView';
 import { isCollectorPath, useAppGate } from './platform/gate';
 import { Management, managementAreas } from './management/Management';
+import { ApplicationShell } from './ui/ApplicationShell';
+import { HomeEntry, FeedingSitesEntry } from './ui/TransitionalPages';
 
+const subscribePath = (update: () => void) => {
+  window.addEventListener('popstate', update);
+  return () => window.removeEventListener('popstate', update);
+};
 function AllowedShell({ path, authenticated, online }: { path: string; authenticated: boolean; online: boolean }) {
-  const collector = isCollectorPath(path);
-  return <><header><strong>MiezMerker</strong><nav aria-label="Bereiche">
-    <a href="/sync" aria-current={collector ? 'page' : undefined}>Vor-Ort-Sync</a>
-    {authenticated && Object.entries(managementAreas)
-      .map(([href, label]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined}>{label}</a>)}
-  </nav>{authenticated && <AuthPanel/>}</header><main>
-    {!authenticated && <>
+  return <ApplicationShell path={path} authenticated={authenticated}>
+    <div hidden={authenticated}>{!authenticated && <>
       <p role="status">Offline-Betrieb: Verwaltung ist ohne gültige Online-Sitzung gesperrt.
         Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential verfügbar.</p>
       {online && <LoginView online={online}/>}
-    </>}
-    {collector ? <CollectorShell/> :
-    <Management path={path}/>}
-  </main>{authenticated && <footer>RFID → Node → BLE → PWA → Backend → abgeleitete Besuche</footer>}</>;
+    </>}</div>
+    {isCollectorPath(path) ? <CollectorShell/> : path === '/' ? <HomeEntry/> : path === '/feeding-sites' ? <FeedingSitesEntry/>
+      : <Management path={path}/>}
+  </ApplicationShell>;
 }
-
 export function App() {
-  const path = window.location.pathname;
-  const collector = isCollectorPath(path);
+  // Document links preserve native history, refresh/deep links and fresh
+  // verification on entry. The #31 gate remains the sole client auth boundary.
+  const path = useSyncExternalStore(subscribePath, () => window.location.pathname);
   const { status, online } = useAppGate(path);
-  // #31: single centralized gate. Loading renders no navigation and no
-  // protected contents. Login-only renders only the login view even when the
-  // URL points at a protected route. Offline-sync-only keeps only /sync
-  // usable; management routes stay locked without stale data.
+  useEffect(() => {
+    const title = status === 'authenticated'
+      ? ({ '/': 'Home', '/sync': 'Sync', '/feeding-sites': 'Futterstellen', ...managementAreas }[path] ?? 'Seite nicht gefunden')
+      : status === 'offline-sync' ? 'Offline-Sync' : 'Anmeldung';
+    document.title = `${title} · MiezMerker`;
+  }, [path, status]);
   if (status === 'loading') {
-    return <><header><strong>MiezMerker</strong></header>
-      <main><p role="status">Anmeldung wird geprüft …</p></main></>;
+    return <ApplicationShell path={path} authenticated={false}><p role="status">Anmeldung wird geprüft …</p></ApplicationShell>;
   }
-  if (status === 'authenticated' || (status === 'offline-sync' && collector)) {
+  if (status === 'authenticated' || (status === 'offline-sync' && isCollectorPath(path))) {
     return <AllowedShell path={path} authenticated={status === 'authenticated'} online={online}/>;
   }
-  return <><header><strong>MiezMerker</strong></header>
-    <main><LoginView online={online}/></main></>;
+  return <ApplicationShell path={path} authenticated={false}><LoginView online={online}/></ApplicationShell>;
 }

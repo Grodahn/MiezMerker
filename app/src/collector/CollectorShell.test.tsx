@@ -146,3 +146,16 @@ test('cancelling an old visit allows another visit without old updates or comple
   expect(screen.queryByText('Obsolete success')).toBeNull();
   expect(screen.getByRole('button', { name: 'Synchronisiere …' }).hasAttribute('disabled')).toBe(true);
 });
+
+
+test('Sync illustration is replaceable centrally without changing Collector behavior', async () => {
+  const { assets } = await import('../assets');
+  const original = assets.illustrations.sync;
+  try {
+    assets.illustrations.sync = '/replacement-sync.svg';
+    const { container } = render(<CollectorShell/>);
+    await screen.findByText('Lokaler Speicher bereit');
+    expect(container.querySelector('h1 img')?.getAttribute('src')).toBe('/replacement-sync.svg');
+    expect(screen.getByRole('button', { name: 'Node auswählen & synchronisieren' })).toBeTruthy();
+  } finally { assets.illustrations.sync = original; }
+});

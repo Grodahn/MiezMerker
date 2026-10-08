@@ -212,3 +212,16 @@ test('nodes show the bowl label primarily and keep the technical node id visible
   await vi.waitFor(() => expect(patch).toHaveBeenCalledWith('/api/v1/nodes/{nodeId}',
     expect.objectContaining({ body: expect.objectContaining({ displayName: 'Silberner Napf' }) })));
 });
+
+
+test('default Cat avatar is replaceable centrally without adding backend image fields', async () => {
+  const { assets } = await import('../assets');
+  const original = assets.placeholders.cat;
+  try {
+    assets.placeholders.cat = '/replacement-avatar.svg';
+    get.mockImplementation(async (path: string) => ok(path.endsWith('/cats') ? [{ id: 'cat', chipId: 'CHIP', name: 'Miez' }] : []));
+    const { container } = render(<Management path="/cats"/>);
+    await screen.findByText('Miez');
+    expect(container.querySelector('.avatar')?.getAttribute('src')).toBe('/replacement-avatar.svg');
+  } finally { assets.placeholders.cat = original; }
+});

@@ -18,7 +18,7 @@ import { OfflineIdentity, OfflineIdentityDatabase } from './offline-identity';
 export type GateStatus = 'loading' | 'authenticated' | 'offline-sync' | 'login';
 
 export function isCollectorPath(path: string): boolean {
-  return path === '/' || path === '/sync';
+  return path === '/sync';
 }
 
 export function resolveGateStatus(

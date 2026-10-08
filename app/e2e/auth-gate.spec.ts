@@ -52,6 +52,7 @@ test('logout clears the shell while its server request is pending', async ({ pag
   await expect(page.getByRole('cell', { name: 'Private site' })).toBeVisible();
   let release!: () => void;
   state.logoutHold = new Promise(resolve => { release = resolve; });
+  await page.locator('.auth-panel > summary').click();
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
   await expect(page.getByRole('navigation')).not.toBeVisible();
@@ -97,6 +98,14 @@ test('cold offline reload allows only sync until the bound credential expires', 
   await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Futterstellen' })).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Anmelden' })).not.toBeVisible();
+  for (const path of ['/', '/feeding-sites', '/cats', '/nodes']) {
+    await page.goto(path);
+    await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
+    await expect(page.getByRole('navigation')).toHaveCount(0);
+    await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
+  }
+  await page.goto('/sync');
+  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
   await page.clock.fastForward(61_000);
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
   await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
