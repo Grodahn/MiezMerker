@@ -10,6 +10,7 @@ import type { NodeTransport } from '../platform/node-transport';
 import { initialCollectorView, runFieldSync, type CollectorViewState } from './collector-sync';
 import { ClaimError } from './claim-node';
 import { provisionNode } from './provision-node';
+import { NodeSetupWizard } from './NodeSetupWizard';
 import { BackendUploader } from './backend-upload';
 import { CollectorObservationStore } from './observation-store';
 
@@ -36,6 +37,9 @@ export function CollectorShell(props: {
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
   const [claimReceipt, setClaimReceipt] = useState('');
+  const [setupNodeId, setSetupNodeId] = useState<string | null>(null);
+  const [setupOrgId, setSetupOrgId] = useState<string | null>(null);
+  const [resumeCandidate, setResumeCandidate] = useState<{ organizationId: string; nodeId: string } | null>(null);
   const selectedTransport = useRef<NodeTransport | null>(null);
   const nodeOperation = useRef<AbortController | null>(null);
 
@@ -81,9 +85,26 @@ export function CollectorShell(props: {
   }, []);
   useEffect(() => {
     setView({ ...initialCollectorView }); setClaimMessage(''); selectedTransport.current = null;
-    setRunning(false); setClaimBusy(false);
+    setRunning(false); setClaimBusy(false); setSetupNodeId(null); setSetupOrgId(null);
     return () => { nodeOperation.current?.abort(); nodeOperation.current = null; };
   }, [auth.user?.userId, auth.activeOrganizationId]);
+
+  // Resume hint for Scenario A/E: a claim confirmed before the app closed or
+  // reloaded leaves backend state behind. The stored ids only hint at the
+  // candidate; the wizard refetches authoritative state and never re-claims.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('miezmerker-last-setup-node');
+      if (!raw) { setResumeCandidate(null); return; }
+      const parsed = JSON.parse(raw) as { organizationId?: string; nodeId?: string };
+      if (parsed?.organizationId === auth.activeOrganizationId && typeof parsed?.nodeId === 'string'
+        && parsed.nodeId !== setupNodeId) {
+        setResumeCandidate({ organizationId: parsed.organizationId, nodeId: parsed.nodeId });
+      } else {
+        setResumeCandidate(null);
+      }
+    } catch { setResumeCandidate(null); }
+  }, [auth.activeOrganizationId, setupNodeId]);
 
   useEffect(() => {
     const onChange = () => setConnectivityVersion(v => v + 1);
@@ -240,7 +261,17 @@ export function CollectorShell(props: {
     const stillActive = () => nodeOperation.current === operation && !operation.signal.aborted && contextKey() === startedContext;
     void provisionNode(transport, nodeId, organizationId, operation.signal).then(() => {
       if (!stillActive()) return;
-      setClaimMessage(`Node ${nodeId} geclaimt und am Gerät bestätigt. Sync kann jetzt starten.`);
+      // Claim and business setup stay separate phases: the cryptographic
+      // claim is confirmed here; name + initial FeedingSite follow in the
+      // setup wizard and remain resumable after interruptions.
+      setClaimMessage('Napf registriert!');
+      setSetupNodeId(nodeId);
+      setSetupOrgId(organizationId);
+      try {
+        localStorage.setItem('miezmerker-last-setup-node',
+          JSON.stringify({ organizationId, nodeId }));
+      } catch { /* Resume hint is best-effort; backend state stays authoritative. */ }
+      setResumeCandidate(null);
       setView(v => ({ ...v, unclaimed: false, nodeState: 'idle', nodeMessage: '' }));
     }).catch((e: unknown) => {
       if (stillActive()) setClaimMessage(e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.');
@@ -306,6 +337,28 @@ export function CollectorShell(props: {
       {claimMessage && <p>{claimMessage}</p>}
     </div>}
     {!view.unclaimed && claimMessage && <p role="status">{claimMessage}</p>}
+
+    {isAdmin && auth.activeOrganizationId && setupNodeId && setupOrgId === auth.activeOrganizationId && <div>
+      <NodeSetupWizard organizationId={auth.activeOrganizationId} nodeId={setupNodeId} onComplete={() => {
+        try { localStorage.removeItem('miezmerker-last-setup-node'); } catch { /* best-effort */ }
+        setResumeCandidate(null);
+      }} />
+      <button type="button" onClick={() => { setSetupNodeId(null); setSetupOrgId(null); }}>Einrichtung schließen</button>
+    </div>}
+
+    {isAdmin && auth.activeOrganizationId && !setupNodeId && resumeCandidate && <div>
+      <p role="status">Unvollständige Napf-Einrichtung gefunden ({resumeCandidate.nodeId}). Der Claim bleibt gültig und kann ohne erneutes kryptografisches Claiming fortgesetzt werden.</p>
+      <button type="button" onClick={() => { setSetupNodeId(resumeCandidate.nodeId); setSetupOrgId(resumeCandidate.organizationId); }}>
+        Einrichtung fortsetzen
+      </button>
+    </div>}
+
+    {isAdmin && auth.activeOrganizationId && !setupNodeId && !view.unclaimed && !view.foreign && view.owner?.nodeId && <div>
+      <p>Bereits registrierter Node erkannt (<code>{view.owner.nodeId}</code>). Falls Name oder Futterstelle fehlen, kann die Einrichtung ohne erneutes Claiming geprüft werden.</p>
+      <button type="button" onClick={() => { setSetupNodeId(view.owner!.nodeId); setSetupOrgId(auth.activeOrganizationId); }}>
+        Einrichtung prüfen/fortsetzen
+      </button>
+    </div>}
 
     <div><p>Backend-Upload (separat, retrybar): {backendStateLabel(view.backendState)}</p>
       {view.backendMessage && <p>{view.backendMessage}</p>}
