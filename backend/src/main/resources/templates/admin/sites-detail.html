@@ -33,16 +33,17 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 </p>
 </div>
 <div class="card">
-<h2>Aktuell zugeordnete Nodes (<span th:text="${currentNodeCount}">0</span>)</h2>
+<h2>Aktuell zugeordnete Näpfe (<span th:text="${currentNodeCount}">0</span>)</h2>
 <p><small>Aktuelle Zuordnung aus zeitbasierten Deployments (gültig jetzt). Historie bleibt unverändert; Umzüge nur über die bestehende atomare Deployment-Pflege.</small></p>
-<p th:if="${currentNodeCount == 0}">Keine aktuell zugeordneten Nodes.</p>
-<div th:if="${currentNodeCount > 0}" class="table-scroll" role="region" aria-label="Aktuelle Nodes" tabindex="0">
+<p th:if="${currentNodeCount == 0}">Keine aktuell zugeordneten Näpfe.</p>
+<div th:if="${currentNodeCount > 0}" class="table-scroll" role="region" aria-label="Aktuelle Näpfe" tabindex="0">
 <table>
-<caption class="sr-only">Aktuelle Nodes</caption>
-<thead><tr><th scope="col">Node</th><th scope="col">Firmware / Notiz</th><th scope="col">Letzter Serverkontakt</th></tr></thead>
+<caption class="sr-only">Aktuelle Näpfe</caption>
+<thead><tr><th scope="col">Napf</th><th scope="col">Firmware / Notiz</th><th scope="col">Letzter Serverkontakt</th></tr></thead>
 <tbody>
 <tr th:each="n : ${currentNodes}">
-<td><code th:text="${n.nodeId}">node</code></td>
+<td><a th:href="@{/admin/nodes/{id}(id=${n.nodeId})}" th:text="${n.displayName != null ? n.displayName : 'Unbenannter Napf'}">Napf</a>
+<small class="muted"><code th:text="${n.nodeId}">node</code></small></td>
 <td>
 <span th:text="${n.firmwareVersion != null ? n.firmwareVersion : 'Unbekannte Firmware'}">fw</span>
 <small class="muted" th:if="${n.statusNote != null}" th:text="${n.statusNote}">Notiz</small>
@@ -60,7 +61,7 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 <div th:if="${deploymentCount > 0}" class="table-scroll" role="region" aria-label="Deployment-Historie" tabindex="0">
 <table>
 <caption class="sr-only">Deployment-Historie</caption>
-<thead><tr><th scope="col">Node</th><th scope="col">Gültig ab</th><th scope="col">Gültig bis</th></tr></thead>
+<thead><tr><th scope="col">Napf</th><th scope="col">Gültig ab</th><th scope="col">Gültig bis</th></tr></thead>
 <tbody>
 <tr th:each="d : ${deployments}">
 <td><code th:text="${d.nodeId}">node</code></td>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Napf')}">
+<title>Napf · MiezMerker Admin</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('nodes')}"></div>
+<main>
+<style>
+.table-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}
+th{font-weight:700;background:#f9fafb}
+small.muted{display:block;opacity:.75;font-size:.85rem}
+</style>
+<h1 th:text="${displayOrFallback}">Napf</h1>
+<p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
+<div th:if="${errors != null and !#lists.isEmpty(errors)}" class="alert alert-error" role="alert">
+<p>Bitte Eingaben prüfen:</p>
+<ul><li th:each="e : ${errors}" th:text="${e}">Fehler</li></ul>
+</div>
+<div class="card">
+<h2>Stammdaten</h2>
+<dl>
+<dt>Napf-Bezeichnung</dt><dd th:text="${displayName != null ? displayName : 'Unbenannter Napf'}">Name</dd>
+<dt>Node-UUID (technisch)</dt><dd><code th:text="${nodeId}">node</code></dd>
+<dt>Firmware</dt><dd th:text="${firmwareVersion != null ? firmwareVersion : 'Unbekannte Firmware'}">fw</dd>
+<dt>Protokoll</dt><dd th:text="${protocolVersion != null ? protocolVersion : 'Unbekannt'}">proto</dd>
+<dt>Gerätestatus</dt><dd th:text="${nodeState == 'CLAIMED' ? 'Registriert' : 'Nicht registriert'}">Status</dd>
+<dt>Status / Notiz</dt><dd th:text="${statusNote != null ? statusNote : 'Keine Notiz hinterlegt'}">Notiz</dd>
+<dt>Letzter Serverkontakt</dt><dd th:text="${lastContactAt != null ? lastContactAt : 'Kein Serverkontakt erfasst'}">Kontakt</dd>
+<dt>Aktuelle Futterstelle</dt><dd th:text="${currentSiteName != null ? currentSiteName : 'Nicht zugeordnet'}">Ort</dd>
+</dl>
+<p><a th:href="@{/admin/nodes}">Zurück zur Napf-Liste</a></p>
+</div>
+<div class="card">
+<h2>Napf-Name bearbeiten</h2>
+<p><small>Menschenlesbare Bezeichnung (max. 100 Zeichen). Doppelte Namen sind zulässig. Leer lassen entfernt den Namen. </small></p>
+<form th:action="@{/admin/nodes/{id}/name(id=${nodeId})}" method="post">
+<input type="hidden" name="formOrganizationId" th:value="${activeOrg.id}"/>
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label for="node-displayName">Napf-Bezeichnung</label>
+<input id="node-displayName" name="displayName" type="text" maxlength="100" th:value="${formDisplayName}" autocomplete="off"/>
+</div>
+<div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+<button class="btn" type="submit">Name speichern</button>
+</div>
+</form>
+</div>
+<div class="card">
+<h2 th:text="${currentSiteName != null ? 'Napf verschieben' : 'Napf zuordnen'}">Zuordnung</h2>
+<p th:if="${currentSiteName != null}"><small>Aktuell: <strong th:text="${currentSiteName}">Ort</strong>. Der Umzug gilt ab sofort. Frühere Beobachtungen und Besuche bleiben der damaligen Futterstelle zugeordnet.</small></p>
+<p th:if="${currentSiteName == null}"><small>Noch keiner Futterstelle zugeordnet. Bitte eine bestehende Futterstelle auswählen. Die Zuordnung gilt ab sofort.</small></p>
+<p th:if="${siteCount == 0}">Keine Futterstellen in dieser Organisation. Bitte zuerst unter <a th:href="@{/admin/sites/new}">Futterstelle anlegen</a> eine Futterstelle erstellen.</p>
+<form th:if="${siteCount > 0}" th:action="@{/admin/nodes/{id}/assignment(id=${nodeId})}" method="post">
+<input type="hidden" name="formOrganizationId" th:value="${activeOrg.id}"/>
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<input type="hidden" name="expectedDeploymentId" th:value="${expectedDeploymentId}"/>
+<label for="node-site">Ziel-Futterstelle</label>
+<select id="node-site" name="feedingSiteId" required>
+<option value="">Bitte auswählen</option>
+<option th:each="s : ${sites}" th:value="${s.id}" th:text="${s.name}" th:disabled="${s.id == currentSiteId}">Site</option>
+</select>
+</div>
+<div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+<button class="btn" type="submit" th:text="${currentSiteName != null ? 'Napf verschieben' : 'Napf zuordnen'}">Speichern</button>
+</div>
+</form>
+</div>
+<div class="card">
+<h2>Zuordnungshistorie (<span th:text="${deploymentCount}">0</span>)</h2>
+<p><small>Zeitangaben in UTC. Beginn einschließlich, Ende ausschließlich. Offene Zuordnungen haben kein Enddatum.</small></p>
+<p th:if="${deploymentCount == 0}">Keine Zuordnungen für diesen Napf.</p>
+<div th:if="${deploymentCount > 0}" class="table-scroll" role="region" aria-label="Zuordnungshistorie" tabindex="0">
+<table>
+<caption class="sr-only">Zuordnungshistorie</caption>
+<thead><tr><th scope="col">Gültig ab</th><th scope="col">Gültig bis</th><th scope="col">Futterstelle</th></tr></thead>
+<tbody>
+<tr th:each="d : ${deployments}">
+<td><time th:datetime="${d.validFrom}" th:text="${d.fromLabel}">ab</time></td>
+<td><time th:if="${d.validUntil != null}" th:datetime="${d.validUntil}" th:text="${d.untilLabel}">bis</time><span th:if="${d.validUntil == null}">Offen (ohne Enddatum)</span></td>
+<td th:text="${d.siteName}">site</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>
