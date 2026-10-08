@@ -70,8 +70,8 @@ public class AdminSitesController {
             String locationLabel, Double locationLat, Double locationLng,
             int currentNodeCount) {}
 
-    public record CurrentNodeRow(String nodeId, String firmwareVersion,
-            String statusNote, String lastContactAt) {}
+    public record CurrentNodeRow(String nodeId, String displayName,
+            String firmwareVersion, String statusNote, String lastContactAt) {}
 
     public record DeploymentRow(UUID id, String nodeId, String validFrom,
             String validUntil, boolean open) {}
@@ -358,7 +358,8 @@ public class AdminSitesController {
                 continue;
             }
             current.add(new CurrentNodeRow(node.getNodeId().toString(),
-                    node.getFirmwareVersion(), node.getStatusNote(),
+                    node.getDisplayName(), node.getFirmwareVersion(),
+                    node.getStatusNote(),
                     node.getLastContactAt() == null ? null
                             : node.getLastContactAt().toString()));
         }

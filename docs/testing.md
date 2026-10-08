@@ -53,11 +53,11 @@ Backend tags cover all existing test classes:
 
 | Domain | Test classes |
 | --- | --- |
-| node | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, AdminSitesTest |
-| auth | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, OfflineCredentialTest, IssuerConfigurationTest, InteropVectorTest, TenancyAuthTest, CookieSecurityTest, BootstrapTest, DisplayNameTest, FoundationTest, AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminSitesTest |
+| node | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, AdminSitesTest, AdminNodesTest |
+| auth | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, OfflineCredentialTest, IssuerConfigurationTest, InteropVectorTest, TenancyAuthTest, CookieSecurityTest, BootstrapTest, DisplayNameTest, FoundationTest, AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminSitesTest, AdminNodesTest |
 | ingest | Issue9IngestTest, AdminObservationsVisitsTest |
 | visits | Issue10VisitsTest, FeedingSiteCatActivityTest, AdminCatsTest, AdminObservationsVisitsTest, AdminObservationsVisitsControllerTest |
-| admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminSitesTest, AdminObservationsVisitsControllerTest |
+| admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminSitesTest, AdminNodesTest, AdminObservationsVisitsControllerTest |
 | schema | DatabaseSchemaTest, DisplayNameTest, NodeDisplayNameTest |
 | system | FoundationTest, SystemControllerTest |
 
