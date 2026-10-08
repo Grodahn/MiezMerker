@@ -52,8 +52,12 @@ jobs:
       # required downstream artifacts (packaged JAR, target/openapi.json):
       # - FoundationTest: system endpoints plus the OpenAPI export consumed by api:check.
       # - DatabaseSchemaTest: Flyway migration verification on H2.
-      # - NodeClaimTest: node claiming plus the only native query in the
-      #   codebase (node_claim_lock ... for update) against the H2 dialect.
+      # - NodeClaimTest: node claiming plus the JPA native query
+      #   (node_claim_lock ... for update) against the H2 dialect.
+      # - FeedingSiteCatActivityTest: the other hand-written SQL site (the
+      #   JdbcTemplate CTE over raw_observations/derived_visits with union,
+      #   nulls last and limit/offset) plus RawObservation/DerivedVisit
+      #   correctness and tenant isolation on H2.
       # The explicit -Dtest list fails closed: backend/pom.xml hardcodes
       # failIfNoTests and failIfNoSpecifiedTests, so an empty or unmatched
       # selection breaks the build instead of silently passing; full behavior
@@ -64,7 +68,7 @@ jobs:
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             ./mvnw -B -ntp verify
           else
-            ./mvnw -B -ntp verify "-Dtest=FoundationTest,DatabaseSchemaTest,NodeClaimTest"
+            ./mvnw -B -ntp verify "-Dtest=FoundationTest,DatabaseSchemaTest,NodeClaimTest,FeedingSiteCatActivityTest"
           fi
       # Authoritative integration suite: always the complete suite against
       # PostgreSQL, the production database. Never filtered or reduced.
