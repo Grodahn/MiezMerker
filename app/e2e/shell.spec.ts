@@ -131,3 +131,26 @@ test('all static illustrations and fallbacks are cached and fetchable offline', 
   await context.setOffline(true);
   expect(await page.evaluate(async urls => (await Promise.all(urls.map(async url => (await fetch(url)).ok))).every(Boolean), urls)).toBe(true);
 });
+
+
+test('account overlay dismisses before keyboard or pointer focus reaches page content', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await session(page); await page.goto('/');
+  const summary = page.locator('.auth-panel > summary');
+  const account = page.getByRole('region', { name: 'Benutzerkonto' });
+  await summary.click();
+  await page.getByLabel('Aktive Organisation').focus();
+  await page.keyboard.press('Escape');
+  await expect(account).not.toBeVisible();
+  await expect(summary).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Abmelden' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Zum Vor-Ort-Sync' })).toBeFocused();
+  await expect(account).not.toBeVisible();
+  await summary.click();
+  await page.getByRole('main').click({ position: { x: 4, y: 400 } });
+  await expect(account).not.toBeVisible();
+  await page.getByRole('link', { name: 'Zum Vor-Ort-Sync' }).click();
+  await expect(page).toHaveURL(/\/sync$/);
+});

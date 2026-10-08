@@ -1,8 +1,12 @@
 # Collector field validation (issue #8)
 
 Target MVP environment: Android smartphone + current Chromium/Chrome with Web
-Bluetooth, installed PWA (`/sync`, `start_url: /sync`), HTTPS in regular
+Bluetooth, installed PWA (`start_url: /`, Collector at `/sync`), HTTPS in regular
 operation (usual browser dev exceptions for local development only).
+
+Since #64, authenticated launch opens Home; a centrally authorized offline
+launch redirects to `/sync` without rendering Home. See the
+[shared shell and route guide](ui-ux/app-shell.md).
 
 No native Android app, no Safari/iOS, no Firefox without Web Bluetooth, no
 background BLE in the MVP.

@@ -52,3 +52,25 @@ test('session display name is shown with email fallback', async () => {
   render(<AuthPanel/>);
   expect(await screen.findByText('Angemeldet als Ada Lovelace')).toBeTruthy();
 });
+
+
+test('account overlay dismisses on Escape, focus departure and outside pointer use', async () => {
+  get.mockResolvedValue({ data: { userId: 'u1', email: 'ada@example.org', memberships: [] } });
+  const { container } = render(<><AuthPanel/><button>Zum Inhalt</button></>);
+  await screen.findByText('Angemeldet als ada@example.org');
+  const panel = container.querySelector('details')!;
+  const summary = panel.querySelector('summary')!;
+  const signOut = screen.getByRole('button', { name: 'Abmelden', hidden: true });
+  const outside = screen.getByRole('button', { name: 'Zum Inhalt' });
+  panel.open = true;
+  signOut.focus();
+  fireEvent.keyDown(signOut, { key: 'Escape' });
+  expect(panel.open).toBe(false);
+  expect(document.activeElement).toBe(summary);
+  panel.open = true;
+  signOut.focus(); outside.focus();
+  expect(panel.open).toBe(false);
+  panel.open = true;
+  fireEvent.pointerDown(outside);
+  expect(panel.open).toBe(false);
+});

@@ -10,7 +10,7 @@ import { BottomNavigation } from './navigation';
 afterEach(cleanup);
 
 test('primitives retain native labels, button behavior and link semantics', () => {
-  render(<Card><Field label="Napfname" required/><Button disabled>Speichern</Button>
+  render(<Card><Field label="Napfname" required/><Button disabled><AppIcon name="sync"/>Speichern</Button>
     <Button variant="secondary">Abbrechen</Button><ListLink href="/sync" icon="sync">Auslesen</ListLink></Card>);
   expect(screen.getByLabelText('Napfname').hasAttribute('required')).toBe(true);
   expect(screen.getByRole('button', { name: 'Speichern' }).hasAttribute('disabled')).toBe(true);

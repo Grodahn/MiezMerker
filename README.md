@@ -267,6 +267,9 @@ Verwaltung liegt unter `/admin/**` in Spring MVC/Thymeleaf.
 Katzen bleiben bewusst in beiden Oberflächen. Nodes nutzt weiterhin
 Futterstellenkontext; Futterstellen-Stammdatenpflege ist Admin-UI.
 [Endgültige Aufteilung und Routing](docs/issue38-field-pwa.md).
+Seit #64 nutzt die Feld-PWA Home (`/`), Sync (`/sync`), Futterstellen
+(`/feeding-sites`, vorläufiger Einstieg in die bestehende `/nodes`-Ansicht) und
+Katzen (`/cats`). [Shell, Routen und Grafik-Austausch](docs/ui-ux/app-shell.md).
 Bedienung und API-Ergänzungen: [docs/issue11-management.md](docs/issue11-management.md).
 Die kompakte [Katzenaktivität pro Futterstelle (#54)](docs/issue54-site-cat-activity.md)
 liefert letzte verlässliche Visit-Zeiten und getrennte Empfangsmetadaten für die spätere Feld-PWA.

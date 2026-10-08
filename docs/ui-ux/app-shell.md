@@ -40,14 +40,17 @@ remain authoritative and unchanged.
   pass through. Existing views also receive the same native-control CSS.
 - `ui/Graphic.tsx`: responsive contain-fit imagery, fallback and AppIcon. Meaningful
   images require an `alt`; `alt=""` hides decorative art. Icons with adjacent text
-  are decorative; standalone icons need `label`.
+  are decorative; standalone icons need `label`. AppIcon is a monochrome symbol;
+  primary buttons render its artwork white to retain contrast.
 - `style.css`: mobile-first page containers, controls, tables and shell. Main
   scrolls independently; header/nav occupy their own rows in `100dvh`, so no
   reserved nav-height guesses or covered content. Safe-area insets and viewport
   keyboard resizing are enabled. Desktop retains the same four links.
 
 Account/organization controls are in the native keyboard-operable disclosure in
-the header; active organization stays visible in its summary. Large tables keep
+the header; active organization stays visible in its summary. Escape closes
+the overlay and returns focus to its summary; leaving it with Tab or an outside
+pointer action also dismisses it so it cannot cover focused page content. Large tables keep
 localized keyboard-accessible scrolling until their screen redesigns.
 
 ## Artwork: replace without screen edits
