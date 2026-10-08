@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Status } from '../ui/Status';
+import { errorStatus, statusMessages } from '../ui/status-messages';
 import {
   ensureInitialDeployment, fetchNodeSetupState, isSetupComplete, listFeedingSiteOptions,
   saveBowlName, SetupError, type DeploymentView, type FeedingSiteView,
@@ -148,21 +150,20 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     }
   };
 
-  if (loading) return <div aria-label="Napf-Einrichtung"><p role="status">Einrichtungsstatus wird geladen …</p></div>;
+  if (loading) return <div aria-label="Napf-Einrichtung"><Status kind="loading" title="Einrichtungsstatus wird geladen …"/></div>;
   if (loadError) return <div aria-label="Napf-Einrichtung">
-    <p role="alert">{loadError}</p>
-    <button type="button" onClick={() => void reload()}>Erneut versuchen</button>
+    <Status {...errorStatus(loadError)} action={{ label: 'Erneut versuchen', onClick: () => void reload() }}/>
   </div>;
 
   return <div aria-label="Napf-Einrichtung">
     <h2>Napf-Einrichtung</h2>
     <p>Node <code>{nodeId}</code></p>
     {claimed
-      ? <p role="status"><strong>Napf registriert!</strong> Kryptografisches Claiming ist bestätigt.</p>
-      : <p role="alert">Node ist noch nicht als CLAIMED bestätigt. Bitte zuerst claimen; diese Einrichtung wiederholt kein Claiming.</p>}
-    {!complete && claimed && <p>Dieser Napf wurde registriert, aber noch nicht vollständig eingerichtet.</p>}
+      ? <Status kind="success" title="Napf registriert!" message="Kryptografisches Claiming ist bestätigt."/>
+      : <Status kind="error" title="Napf noch nicht registriert" message="Node ist noch nicht als CLAIMED bestätigt. Bitte zuerst claimen; diese Einrichtung wiederholt kein Claiming."/>}
+    {!complete && claimed && <Status kind="info" title="Einrichtung noch offen" message="Dieser Napf wurde registriert, aber noch nicht vollständig eingerichtet."/>}
     {complete
-      ? <p role="status"><strong>Einrichtung abgeschlossen!</strong>{savedName ? ` Napf „${savedName}“` : ''}{deployment ? ' ist einer Futterstelle zugeordnet.' : '.'}</p>
+      ? <Status kind="success" title="Einrichtung abgeschlossen!" message={`${savedName ? `Napf „${savedName}“` : 'Napf'}${deployment ? ' ist einer Futterstelle zugeordnet.' : '.'}`}/>
       : <p>Schritte: Name eingeben → Futterstelle wählen → Einrichtung abschließen.</p>}
 
     <div>
@@ -174,8 +175,9 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       <button type="button" disabled={nameBusy || deployBusy} onClick={() => void submitName()}>
         {nameBusy ? 'Speichere …' : 'Name speichern'}
       </button>
-      {nameMessage && <p role="status">{nameMessage}</p>}
-      {nameError && <p role="alert">{nameError}</p>}
+      {nameBusy && <Status kind="loading" title="Name wird gespeichert …"/>}
+      {nameMessage && <Status kind="success" title="Name gespeichert" message={nameMessage}/>}
+      {nameError && <Status {...errorStatus(nameError)}/>}
     </div>
 
     <div>
@@ -183,10 +185,9 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       {deployment
         ? <p>Bestehende Zuordnung wird nicht überschrieben. Spätere Umzüge erfolgen im Admin-Backend.</p>
         : sitesError
-          ? <div role="alert"><p>{sitesError}</p>
-            <button type="button" onClick={() => void reload()}>Erneut versuchen</button></div>
+          ? <Status {...errorStatus(sitesError)} action={{ label: 'Erneut versuchen', onClick: () => void reload() }}/>
           : sites.length === 0
-            ? <p role="alert">Keine Futterstellen vorhanden. Bitte zuerst im Admin-Backend eine Futterstelle anlegen. Es wird keine Futterstelle in der PWA erstellt.</p>
+            ? <Status {...statusMessages.emptySites}/>
             : <><label>Bestehende Futterstelle wählen
               <select value={selectedSite} onChange={e => setSelectedSite(e.target.value)}>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -195,9 +196,9 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
             <button type="button" disabled={deployBusy || nameBusy || !selectedSite} onClick={() => void submitDeployment()}>
               {deployBusy ? 'Speichere …' : 'Einrichtung abschließen'}
             </button></>}
-      {deployMessage && <p role="status">{deployMessage}</p>}
-      {deployError && <div role="alert"><p>{deployError}</p>
-        <button type="button" onClick={() => void submitDeployment()}>Erneut versuchen</button></div>}
+      {deployBusy && <Status kind="loading" title="Zuordnung wird gespeichert …"/>}
+      {deployMessage && <Status kind="success" title="Zuordnung gespeichert" message={deployMessage}/>}
+      {deployError && <Status {...errorStatus(deployError)} action={{ label: 'Erneut versuchen', onClick: () => void submitDeployment(), disabled: deployBusy || nameBusy }}/>}
     </div>
 
     <button type="button" onClick={() => void reload()}>Status neu laden</button>

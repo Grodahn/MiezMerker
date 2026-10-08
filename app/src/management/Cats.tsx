@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 import { assets } from '../assets';
 import { Graphic } from '../ui/Graphic';
+import { Status } from '../ui/Status';
+import { statusMessages } from '../ui/status-messages';
 import { api } from '../api/client';
 import { Feedback, LoadState, millis, siteName, Table, time, type Cat, type Site } from './common';
 import { requestOptions, result, useLoad, useMutation } from './data';
@@ -72,12 +74,13 @@ export function Cats({ organizationId }: { organizationId: string }) {
         const activity = data.activity.find(a => a.chipId === chip);
         return <tr key={chip}><td><Graphic src={assets.placeholders.cat} alt="" className="avatar"/>{cat?.name || (cat ? 'Ohne Namen' : 'Unbekannte Katze')}<code>{chip}</code>
           <small>{cat?.status}</small><small className="preserve-lines">{cat?.notes}</small></td>
-          <td>{millis(activity?.lastSeenAtMillis)}
+          <td>{activity && !activity.lastSeenAtMillis && activity.uncertainClockCount
+            ? <Status {...statusMessages.unknownClock}/> : millis(activity?.lastSeenAtMillis)}
             {activity && <><small>Serverempfang: {time(activity.lastReceivedAt)}</small>
               {!!activity.uncertainClockCount && <small className="warning">{activity.uncertainClockCount} Read(s) ohne verlässliche Uhrzeit</small>}</>}
           </td><td>{activity?.feedingSiteIds?.length ? activity.feedingSiteIds.map(id => siteName(data.sites, id)).join(', ') : 'Keine bekannte Zuordnung'}</td>
           <td><button onClick={() => setSelected(cat ?? { chipId: chip })}>{cat ? 'Details / bearbeiten' : 'Katze dazu anlegen'}</button></td></tr>;
-      })}</Table> : <p>Noch keine Katzen oder Chips vorhanden. Nach einem Node-Sync erscheinen neue Chips hier.</p>)}
+      })}</Table> : <Status {...statusMessages.emptyCats} graphic="cat"/>)}
     {selected && <CatEditor key={selected.id ?? selected.chipId ?? 'new'} organizationId={organizationId} initial={selected}
       onClose={() => setSelected(null)} onSaved={() => { setSelected(null); list.reload(); }}/>} 
     {selected?.chipId && data && <CatVisits key={selected.chipId} organizationId={organizationId}

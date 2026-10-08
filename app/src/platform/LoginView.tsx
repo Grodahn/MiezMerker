@@ -3,6 +3,8 @@
 // protected contents until authorization is established.
 import { useState, type FormEvent } from 'react';
 import { login } from './auth';
+import { Status } from '../ui/Status';
+import { errorStatus, statusMessages } from '../ui/status-messages';
 
 export function LoginView({ online }: { online: boolean }) {
   const [email, setEmail] = useState('');
@@ -26,7 +28,7 @@ export function LoginView({ online }: { online: boolean }) {
 
   return <section aria-label="Anmeldung"><h1>Anmelden</h1>
     <p>Bitte anmelden, um fortzufahren.</p>
-    {!online && <p role="status">Offline: Die Verwaltung benötigt eine Serververbindung.</p>}
+    {!online && <Status {...statusMessages.offline}/>}
     <form onSubmit={event => void submit(event)}>
       <label>E-Mail<input type="email" autoComplete="username" required value={email}
         onChange={event => setEmail(event.target.value)}/></label>
@@ -34,6 +36,7 @@ export function LoginView({ online }: { online: boolean }) {
         onChange={event => setPassword(event.target.value)}/></label>
       <button type="submit" disabled={busy}>Anmelden</button>
     </form>
-    {error && <p role="alert">{error}</p>}
+    {busy && <Status kind="loading" title="Anmeldung wird geprüft …"/>}
+    {error && <Status {...errorStatus(error)}/>}
   </section>;
 }

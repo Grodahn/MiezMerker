@@ -88,5 +88,12 @@ Replacement tests render the real header, Home, Sync, Cats and transitional
 FeedingSite consumers with changed registry entries. Browser tests verify asset
 precache/fetch offline, mobile/tablet/desktop layout, keyboard and history.
 
-#48 owns final Login styling; #65 owns the full status inventory; #66–#69 own final
+#65 adds [the shared status inventory](status-state-inventory.md), `ui/Status.tsx`,
+`ui/status-messages.ts` and the `assets.status` registry. Use these for loading,
+progress, empty, offline, error and success UI. Actions remain native buttons;
+callers own state and retries. `collector/CollectorStatus.tsx` keeps local ACK
+completion and backend confirmation separate. Other data screens use the same
+presentation through `management/common.tsx`.
+
+#48 owns final Login styling; #66–#69 own final
 Home/Sync/FeedingSite/Cat content. Use these tokens, primitives and registry there.

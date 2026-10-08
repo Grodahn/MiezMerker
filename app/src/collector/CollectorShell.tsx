@@ -4,7 +4,7 @@ import { getAuthState, subscribeAuth } from '../platform/auth';
 import { OfflineIdentity, OfflineIdentityDatabase } from '../platform/offline-identity';
 import {
   bluetoothCapability, previouslyAuthorizedDevices, requestNodeDevice,
-  WebBluetoothTransport, describeBluetoothError,
+  WebBluetoothTransport,
 } from '../platform/web-bluetooth';
 import type { NodeTransport } from '../platform/node-transport';
 import { initialCollectorView, runFieldSync, type CollectorViewState } from './collector-sync';
@@ -15,6 +15,9 @@ import { Graphic } from '../ui/Graphic';
 import { NodeSetupWizard } from './NodeSetupWizard';
 import { BackendUploader } from './backend-upload';
 import { CollectorObservationStore } from './observation-store';
+import { NodeStatus, UploadStatus } from './CollectorStatus';
+import { Status } from '../ui/Status';
+import { bluetoothSelectionMessage, errorStatus, statusMessages, syncHelp } from '../ui/status-messages';
 
 // Single shared MiezMerker PWA under /app. No second collector application.
 // Node→PWA and PWA→Backend are independent; Fertig means safely copied from
@@ -191,7 +194,7 @@ export function CollectorShell(props: {
         trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
       });
     }).catch((e: unknown) => {
-      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
+      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: bluetoothSelectionMessage(e) }));
     }).finally(() => { if (nodeOperation.current === operation) { nodeOperation.current = null; setRunning(false); } });
   }, [running, claimBusy, createTransport, props]);
 
@@ -211,7 +214,7 @@ export function CollectorShell(props: {
       createTransport: () => transport,
       trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
     }).catch((e: unknown) => {
-      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: describeBluetoothError(e) }));
+      if (stillActive()) setView(v => ({ ...v, nodeState: 'failed', nodeMessage: bluetoothSelectionMessage(e) }));
     }).finally(() => { if (nodeOperation.current === operation) { nodeOperation.current = null; setRunning(false); } });
   }, [running, claimBusy, props]);
 
@@ -298,13 +301,13 @@ export function CollectorShell(props: {
   const isAdmin = activeMembership?.role === 'ADMIN';
 
   return <section aria-label="Vor-Ort-Sync"><h1 className="title-with-icon"><Graphic src={assets.illustrations.sync} alt="" className="app-icon"/>Vor-Ort-Sync</h1>
-    <p>{storage}</p>
+    <Status kind={storage.includes('wird') ? 'loading' : storage.includes('nicht') ? 'error' : 'info'} title={storage}/>
     <p>{auth.user
       ? `Angemeldet als ${auth.user.email}${auth.activeOrganizationId ? ` · Organisation: ${activeMembership?.organizationName ?? auth.activeOrganizationId} (${activeMembership?.role ?? '?'})` : ' · keine Organisation gewählt'}`
       : 'Nicht angemeldet.'}</p>
-    <p>{credential}</p>
-    {capability !== 'supported' && <p role="alert">Dieser Browser unterstützt kein Web Bluetooth. Bitte aktuelles Chrome/Chromium auf Android verwenden.</p>}
-    {!navigator.onLine && <p>Offline-Modus: Node-Sync funktioniert ohne Internet. Backend-Upload wartet auf Verbindung.</p>}
+    <Status kind={credential.startsWith('Offline-Credential wird geprüft') ? 'loading' : 'info'} title="Offline-Berechtigung" message={credential}/>
+    {capability !== 'supported' && <Status {...errorStatus('Dieser Browser unterstützt kein Web Bluetooth. Bitte aktuelles Chrome/Chromium auf Android verwenden.')}/>}
+    {!navigator.onLine && <Status {...statusMessages.offline}/>}
 
     {knownDevices.length > 0 && <div><p>Bekannte Nodes (Browser-freigegeben, optional):</p><ul>
       {knownDevices.map(d => <li key={d.id}>{d.name}
@@ -316,19 +319,12 @@ export function CollectorShell(props: {
       {running ? 'Synchronisiere …' : 'Node auswählen & synchronisieren'}
     </button>
 
-    {view.nodeState !== 'idle' && <div aria-live="polite">
-      <p>Node-Sync: {nodeStateLabel(view.nodeState)}</p>
-      {view.recordsReceived > 0 && <p>Übernommen: {view.recordsReceived}{view.watermark ? ` · Stand: ${view.watermark}` : ''}</p>}
-      {view.nodeMessage && <p>{view.nodeMessage}</p>}
-    </div>}
+    <NodeStatus view={view} retry={startSync} disabled={running || claimBusy || capability !== 'supported' || !auth.user || !auth.activeOrganizationId}/>
 
-    {view.fertig && <p role="status"><strong>Fertig</strong> — Beobachtungen sicher vom Node übernommen und quittiert.</p>}
-
-    {view.foreign && <p role="alert">Dieser MiezMerker gehört {view.foreign.organizationName}.
-      {view.foreign.publicContact ? ` Kontakt: ${view.foreign.publicContact}` : ''} Keine Observations abgerufen.</p>}
+    {view.foreign && <Status kind="error" title="Napf gehört einer anderen Organisation" message={`Dieser MiezMerker gehört ${view.foreign.organizationName}.${view.foreign.publicContact ? ` Kontakt: ${view.foreign.publicContact}` : ''} Keine Observations abgerufen.`}/>}
 
     {view.unclaimed && <div>
-      <p role="alert">Node ist UNCLAIMED.</p>
+      <Status kind="info" title="Node ist UNCLAIMED." message="Dieser Napf ist noch nicht registriert. Die Einrichtung benötigt einen ADMIN."/>
       {!isAdmin
         ? <p>Nur ADMIN kann einen UNCLAIMED Node claimen. MEMBER hat keinen Zugriff.</p>
         : <div>
@@ -336,9 +332,9 @@ export function CollectorShell(props: {
           <button type="button" disabled={claimBusy || running} onClick={submitClaim}>Node claimen (ADMIN)</button>
           {claimReceipt && <p>Gespeichertes Receipt vorhanden; ein abgebrochener Claim wird sicher erneut zugestellt.</p>}
         </div>}
-      {claimMessage && <p>{claimMessage}</p>}
+      {claimMessage && <Status {...errorStatus(claimMessage)} scope="Napf registrieren"/>}
     </div>}
-    {!view.unclaimed && claimMessage && <p role="status">{claimMessage}</p>}
+    {!view.unclaimed && claimMessage && <Status kind="info" title="Napf registrieren" message={claimMessage}/>}
 
     {isAdmin && auth.activeOrganizationId && setupNodeId && setupOrgId === auth.activeOrganizationId && <div>
       <NodeSetupWizard organizationId={auth.activeOrganizationId} nodeId={setupNodeId} onComplete={() => {
@@ -349,7 +345,7 @@ export function CollectorShell(props: {
     </div>}
 
     {isAdmin && auth.activeOrganizationId && !setupNodeId && resumeCandidate && <div>
-      <p role="status">Unvollständige Napf-Einrichtung gefunden ({resumeCandidate.nodeId}). Der Claim bleibt gültig und kann ohne erneutes kryptografisches Claiming fortgesetzt werden.</p>
+      <Status kind="info" title="Einrichtung noch offen" message={`Unvollständige Napf-Einrichtung gefunden (${resumeCandidate.nodeId}). Der Claim bleibt gültig und kann ohne erneutes kryptografisches Claiming fortgesetzt werden.`}/>
       <button type="button" onClick={() => { setSetupNodeId(resumeCandidate.nodeId); setSetupOrgId(resumeCandidate.organizationId); }}>
         Einrichtung fortsetzen
       </button>
@@ -362,48 +358,10 @@ export function CollectorShell(props: {
       </button>
     </div>}
 
-    <div><p>Backend-Upload (separat, retrybar): {backendStateLabel(view.backendState)}</p>
-      {view.backendMessage && <p>{view.backendMessage}</p>}
-      {(view.backendState === 'idle' || view.backendState === 'failed' || view.backendState === 'waiting-for-network') &&
-        <button type="button" disabled={running} onClick={retryUpload}>Backend-Upload erneut versuchen</button>}
-      {view.pendingUploads > 0 && <p>Ausstehend: {view.pendingUploads} · Hochgeladen: {view.uploadedCount}</p>}
-    </div>
+    <UploadStatus view={view} retry={retryUpload} disabled={running}/>
 
     <details><summary>Hinweise zu Fehlerfällen</summary><ul>
-      <li>Bluetooth unsupported: aktuellen Chrome/Chromium auf Android + HTTPS verwenden.</li>
-      <li>Berechtigung verweigert: Zugriff erlauben und erneut wählen.</li>
-      <li>Kein Node gefunden: Node einschalten, näher herangehen.</li>
-      <li>Mehrere Nodes: Auswahl im Browser-Dialog treffen.</li>
-      <li>Verbindung bricht ab: erneut versuchen — gespeicherte Records werden idempotent wiederholt, kein Datenverlust.</li>
-      <li>Fremde Organisation: nur öffentliche Owner-Metadaten, keine Observations.</li>
-      <li>Credential abgelaufen/fehlend: einmal mit Internet anmelden/erneuern.</li>
-      <li>Speicher voll: Browser-Speicher freigeben; ohne dauerhafte Speicherung kein ACK.</li>
-      <li>Backend offline/fehlerhaft: Vor-Ort-Sync bleibt Fertig; Upload später retrybar.</li>
-      <li>Protokoll inkompatibel: Firmware/PWA-Version prüfen.</li>
+      {syncHelp.map(message => <li key={message}>{message}</li>)}
     </ul></details>
   </section>;
-}
-
-function nodeStateLabel(state: string): string {
-  switch (state) {
-    case 'idle': return 'bereit';
-    case 'connecting': return 'verbinde/autorisiere';
-    case 'receiving': return 'empfange';
-    case 'persisting': return 'speichere lokal';
-    case 'acknowledging': return 'quittiere';
-    case 'complete': return 'abgeschlossen';
-    case 'failed': return 'fehlgeschlagen';
-    default: return state;
-  }
-}
-
-function backendStateLabel(state: string): string {
-  switch (state) {
-    case 'idle': return 'bereit';
-    case 'waiting-for-network': return 'wartet auf Netzwerk';
-    case 'uploading': return 'lädt hoch';
-    case 'complete': return 'erfolgt/abgeschlossen';
-    case 'failed': return 'fehlgeschlagen/ausstehend';
-    default: return state;
-  }
 }

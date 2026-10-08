@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import type { components } from '../api/generated';
+import { Status } from '../ui/Status';
+import { errorStatus, statusMessages } from '../ui/status-messages';
 
 export type Site = components['schemas']['FeedingSiteView'];
 export type Node = components['schemas']['NodeView'];
@@ -44,11 +46,12 @@ export function catName(cats: Cat[], chip?: string) {
   return cats.find(cat => cat.chipId === chip)?.name || 'Unbekannte Katze';
 }
 export function LoadState({ loading, error, reload }: { loading: boolean; error?: string; reload: () => void }) {
-  return <>{loading && <p role="status">Daten werden geladen …</p>}
-    {error && <div role="alert"><p>{error}</p><button onClick={reload}>Erneut versuchen</button></div>}</>;
+  const failure = error ? errorStatus(error) : undefined;
+  return <>{loading && <Status {...statusMessages.loading}/>}
+    {failure && <Status {...failure} action={failure.retry ? { label: 'Erneut versuchen', onClick: reload } : undefined}/>}</>;
 }
 export function Feedback({ error, message }: { error: string; message: string }) {
-  return <>{error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}</>;
+  return <>{error && <Status {...errorStatus(error)}/>}{message && <Status kind="success" title="Gespeichert" message={message}/>}</>;
 }
 export function Table({ label, headings, children }: { label: string; headings: string[]; children: ReactNode }) {
   return <div className="table-scroll" role="region" aria-label={label} tabIndex={0}>

@@ -20,7 +20,7 @@ vi.mock('../platform/offline-identity', () => ({
   OfflineIdentityDatabase: class { close() {} }, OfflineIdentity: class { credential = cachedCredential; },
 }));
 vi.mock('./backend-upload', () => ({ BackendUploader: class { upload = upload; } }));
-vi.mock('./observation-store', () => ({ CollectorObservationStore: class { async open() {} async organizationUploadStats() { return { pending: 0, uploaded: 0, failed: 0 }; } } }));
+vi.mock('./observation-store', () => ({ CollectorObservationStore: class { async open() {} async organizationUploadStats() { return { pending: 0, uploaded: 1, failed: 0 }; } } }));
 vi.mock('./collector-sync', async importOriginal => ({
   ...await importOriginal<typeof import('./collector-sync')>(), runFieldSync,
 }));
@@ -50,6 +50,13 @@ test('a pending HTTP upload never disables the BLE chooser', async () => {
   const button = screen.getByRole('button', { name: 'Node auswählen & synchronisieren' });
   expect(button.hasAttribute('disabled')).toBe(false); fireEvent.click(button);
   expect(requestDevice).toHaveBeenCalledTimes(1);
+});
+
+test('a completed credential check with renewal deferred until sync is not an endless loading state', async () => {
+  cachedCredential.mockResolvedValue(null);
+  render(<CollectorShell/>);
+  await screen.findByText('Kein gültiges Offline-Credential — wird bei Sync erneuert (Internet verfügbar).');
+  expect(screen.queryByRole('progressbar', { name: 'Offline-Berechtigung' })).toBeNull();
 });
 
 test('old upload completion cannot overwrite a newly selected organization', async () => {

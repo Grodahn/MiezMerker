@@ -6,6 +6,7 @@ import { Management, managementAreas } from './management/Management';
 import { ApplicationShell } from './ui/ApplicationShell';
 import { documentNavigation } from './ui/navigation';
 import { HomeEntry, FeedingSitesEntry } from './ui/TransitionalPages';
+import { Status } from './ui/Status';
 
 const subscribePath = (update: () => void) => {
   window.addEventListener('popstate', update);
@@ -14,8 +15,7 @@ const subscribePath = (update: () => void) => {
 function AllowedShell({ path, authenticated, online }: { path: string; authenticated: boolean; online: boolean }) {
   return <ApplicationShell path={path} authenticated={authenticated}>
     <div hidden={authenticated}>{!authenticated && <>
-      <p role="status">Offline-Betrieb: Verwaltung ist ohne gültige Online-Sitzung gesperrt.
-        Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential verfügbar.</p>
+      <Status kind="offline" title="Offline-Betrieb" message="Verwaltung ist ohne gültige Online-Sitzung gesperrt. Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential verfügbar."/>
       {online && <LoginView online={online}/>}
     </>}</div>
     {isCollectorPath(path) ? <CollectorShell/> : path === '/' ? <HomeEntry/> : path === '/feeding-sites' ? <FeedingSitesEntry/>
@@ -38,7 +38,7 @@ export function App() {
     document.title = `${title} · MiezMerker`;
   }, [path, status]);
   if (status === 'loading' || offlineEntry) {
-    return <ApplicationShell path={path} authenticated={false}><p role="status">{offlineEntry ? 'Offline-Sync wird geöffnet …' : 'Anmeldung wird geprüft …'}</p></ApplicationShell>;
+    return <ApplicationShell path={path} authenticated={false}><Status kind="loading" title={offlineEntry ? 'Offline-Sync wird geöffnet …' : 'Anmeldung wird geprüft …'}/></ApplicationShell>;
   }
   if (status === 'authenticated' || (status === 'offline-sync' && isCollectorPath(path))) {
     return <AllowedShell path={path} authenticated={status === 'authenticated'} online={online}/>;

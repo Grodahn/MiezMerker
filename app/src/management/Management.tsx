@@ -3,6 +3,8 @@ import { flushSync } from 'react-dom';
 import { Cats } from './Cats';
 import { Nodes } from './Nodes';
 import { useManagementContext } from './context';
+import { Status } from '../ui/Status';
+import { statusMessages } from '../ui/status-messages';
 
 export const managementAreas: Record<string, string> = {
   '/nodes': 'Nodes', '/cats': 'Katzen',
@@ -34,7 +36,7 @@ export function Management({ path }: { path: string }) {
       : !managementAreas[path] ? <p>Bitte einen Bereich in der Navigation auswählen.</p>
       : !context.userId ? <p>Bitte anmelden, um die Daten Ihrer Organisation zu verwalten.</p>
       : !context.organizationId ? <p>Bitte eine aktive Organisation auswählen.</p>
-      : !online ? <p role="status">Verwaltung benötigt eine Serververbindung. Der <a href="/sync">Vor-Ort-Sync</a> ist weiterhin offline verfügbar.</p>
+      : !online ? <Status {...statusMessages.offline}><a href="/sync">Vor-Ort-Sync öffnen</a></Status>
       : <ScopedManagement key={`${context.generation}:${path}`} path={path} organizationId={context.organizationId} admin={context.admin}/>}
   </section>;
 }
