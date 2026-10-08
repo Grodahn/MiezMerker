@@ -1,5 +1,7 @@
 package org.miezmerker.backend;
 
+import org.junit.jupiter.api.Tag;
+
 import java.sql.Connection;
 import java.util.List;
 import javax.sql.DataSource;
@@ -12,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Tag("schema")
 class DatabaseSchemaTest {
     @Autowired DataSource dataSource;
 

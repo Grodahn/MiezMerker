@@ -45,3 +45,5 @@ else()
 endif()
 add_test(NAME offline-auth COMMAND offline-auth-test
   "${CMAKE_CURRENT_SOURCE_DIR}/../../protocol/fixtures/offline-credential-v1.json")
+
+set_tests_properties(offline-auth PROPERTIES LABELS "auth")

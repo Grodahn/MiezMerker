@@ -1,5 +1,8 @@
 # MiezMerker
 
+For selective test commands, compact logs, and the three-stage development
+testing policy, see [Testing](docs/testing.md).
+
 **MiezMerker is an open-source hardware and software platform for animal shelters,
 rescue groups, and organizations caring for stray cats.** It is designed to
 identify microchipped cats at feeding stations using low-cost RFID/ESP32 nodes,

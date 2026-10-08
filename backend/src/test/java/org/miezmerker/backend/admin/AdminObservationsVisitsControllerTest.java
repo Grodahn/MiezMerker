@@ -1,5 +1,7 @@
 package org.miezmerker.backend.admin;
 
+import org.junit.jupiter.api.Tag;
+
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
@@ -17,6 +19,8 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@Tag("admin")
+@Tag("visits")
 class AdminObservationsVisitsControllerTest {
     AdminService admins = mock(AdminService.class);
     ObservationVisitQueryService queries = mock(ObservationVisitQueryService.class);
