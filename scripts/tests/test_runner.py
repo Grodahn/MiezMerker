@@ -127,6 +127,28 @@ class RunnerTest(unittest.TestCase):
             runner.main(["backend", "--domain", "node", "typo"])
         self.assertEqual(error.exception.code, 2)
 
+    def test_composite_and_empty_backend_selectors_are_rejected(self):
+        for selector in ("SystemControllerTest,MissingTest", "Node*Test", "NodeTest#valid+missing", ""):
+            with self.subTest(selector=selector):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                    self.invoke(["backend", "--test", selector], report='<testsuite><testcase name="ok"/></testsuite>')
+                self.assertEqual(error.exception.code, 2)
+
+    def test_exact_qualified_backend_method_is_supported(self):
+        code, _ = self.invoke(["backend", "--test", "org.miezmerker.backend.NodeClaimTest#memberCannotClaim"],
+                              report='<testsuite><testcase name="ok"/></testsuite>')
+        self.assertEqual(code, 0)
+
+    def test_invalid_vitest_structure_preserves_failure_code_and_diagnostics(self):
+        for report in ([], {"testResults": None}, {"testResults": [None]},
+                       {"testResults": [{"assertionResults": [{"status": "failed", "fullName": "bad", "failureMessages": None}]}]}):
+            with self.subTest(report=report):
+                for native_code in (0, 7):
+                    code, output = self.invoke(["frontend"], code=native_code, report=report)
+                    self.assertEqual(code, native_code or 1)
+                    self.assertIn("Report unavailable or invalid", output)
+                    self.assertIn("Detailed logs:", output)
+
     def test_posix_native_commands(self):
         # Exercise the POSIX branch even on a Windows development host.
         args = runner.argparse.Namespace(subsystem="backend", test="NodeTest", domain=None)

@@ -13,6 +13,11 @@ on PATH. On Linux installations that name Python `python3`, replace the prefix
 tagged with both domains runs once. Unknown domain names are rejected, including
 an unknown name mixed with a valid name.
 
+Backend `--test` accepts one exact class name (optionally package-qualified),
+or `Class#method`. Empty strings, wildcards and composite Surefire expressions
+are rejected: Surefire can silently ignore unmatched members of a composite
+selection. Use domains for unions or separate invocations for specific classes.
+
 ```text
 python scripts/test.py backend --test NodeDisplayNameTest
 python scripts/test.py backend --test 'NodeClaimTest#memberCannotClaim'
@@ -76,7 +81,7 @@ Push-Location backend
 ./mvnw.cmd -B -ntp test '-Dtest=NodeDisplayNameTest'
 ./mvnw.cmd -B -ntp test '-Dgroups=node'
 ./mvnw.cmd -B -ntp test '-Dgroups=auth'
-./mvnw.cmd -B -ntp test '-Dgroups=node|auth'
+./mvnw.cmd -B -ntp test '-Dgroups=node,auth'
 ./mvnw.cmd -B -ntp test
 Pop-Location
 Push-Location app

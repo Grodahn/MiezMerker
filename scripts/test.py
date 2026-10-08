@@ -17,6 +17,14 @@ ROOT = Path(__file__).resolve().parents[1]
 DOMAINS = ("node", "auth", "ingest", "visits", "admin", "schema", "system")
 
 
+def backend_selector(value):
+    # Surefire silently ignores unmatched members of composite selections.
+    # Keep this interface to one exact class/method; domains provide unions.
+    if not re.fullmatch(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:#[A-Za-z_$][\w$]*)?", value):
+        raise argparse.ArgumentTypeError("select one exact class or Class#method; use --domain for unions")
+    return value
+
+
 def xml_results(files):
     executed = 0
     failures = []
@@ -98,7 +106,7 @@ def main(argv=None):
     subs = parser.add_subparsers(dest="subsystem", required=True)
     backend = subs.add_parser("backend", help="Maven class/method, domain union, or full suite")
     selection = backend.add_mutually_exclusive_group()
-    selection.add_argument("--test", help="Surefire selector, e.g. NodeClaimTest#memberCannotClaim")
+    selection.add_argument("--test", type=backend_selector, help="Exact class or Class#method, e.g. NodeClaimTest#memberCannotClaim")
     selection.add_argument("--domain", nargs="+", choices=DOMAINS)
     frontend = subs.add_parser("frontend", help="Native Vitest file/directory filters")
     frontend.add_argument("paths", nargs="*")
@@ -134,7 +142,7 @@ def main(argv=None):
             count, failures = json_results(run / "vitest.json")
         else:
             count, failures = xml_results([run / "ctest.xml"])
-    except (OSError, ValueError, KeyError, ET.ParseError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, ET.ParseError) as error:
         failures.append(("Report unavailable or invalid", str(error)))
     # Preserve any native failure code. Only turn a false success into a failure.
     if code == 0 and (count == 0 or failures):
