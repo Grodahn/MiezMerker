@@ -452,7 +452,7 @@ test.each([
   if (path === '/nodes') expect(await screen.findByText(/Noch keine Nodes vorhanden/)).toBeTruthy();
 });
 
-test.each(['/', '/feeding-sites', '/cats', '/nodes'])('valid offline credential cannot open %s', async path => {
+test.each(['/feeding-sites', '/cats', '/nodes'])('valid offline credential cannot open %s', async path => {
   setPath(path); setOnline(false);
   localStorage.setItem('miezmerker-offline-session', JSON.stringify({ user: verifiedUser, activeOrganizationId: 'org-a' }));
   credentialLookup.mockResolvedValue('valid-credential');
@@ -478,4 +478,34 @@ test('login at the application entry opens Home', async () => {
   await screen.findByRole('heading', { name: 'Home' });
   expect(window.location.pathname).toBe('/');
   expect(screen.queryByText('CollectorShell')).toBeNull();
+});
+
+
+test('installed offline entry redirects only to centrally authorized Sync without rendering Home', async () => {
+  setPath('/'); setOnline(false);
+  localStorage.setItem('miezmerker-offline-session', JSON.stringify({ user: verifiedUser, activeOrganizationId: 'org-a' }));
+  credentialLookup.mockResolvedValue('valid-credential');
+  const { documentNavigation } = await import('./ui/navigation');
+  const replace = vi.spyOn(documentNavigation, 'replace').mockImplementation(() => {});
+  try {
+    const { App } = await import('./App'); render(<App/>);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/sync'));
+    expect(screen.queryByRole('navigation')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Home' })).toBeNull();
+    expect(screen.queryByText('CollectorShell')).toBeNull();
+    expect(screen.getByText('Offline-Sync wird geöffnet …')).toBeTruthy();
+  } finally { replace.mockRestore(); }
+});
+
+test('offline entry with an invalid credential stays at Login', async () => {
+  setPath('/'); setOnline(false);
+  localStorage.setItem('miezmerker-offline-session', JSON.stringify({ user: verifiedUser, activeOrganizationId: 'org-a' }));
+  const { documentNavigation } = await import('./ui/navigation');
+  const replace = vi.spyOn(documentNavigation, 'replace').mockImplementation(() => {});
+  try {
+    const { App } = await import('./App'); render(<App/>);
+    await screen.findByRole('button', { name: 'Anmelden' });
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByRole('navigation')).toBeNull();
+  } finally { replace.mockRestore(); }
 });

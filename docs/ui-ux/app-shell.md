@@ -22,8 +22,10 @@ the gate and active section. Unknown paths retain the existing not-found view.
 Only a verified online session renders the four destinations. Login/loading has
 no navigation or account controls. A legitimate bound offline credential can
 open **only `/sync`**, with the existing restricted notice and online login retry.
-Home is no longer a Collector alias. Installed PWA starts at `/`; offline staff
-must open their saved `/sync` link (no automatic protected Home access).
+Home is no longer a Collector alias. Installed PWA starts at `/`; a legitimate
+offline entry replaces that URL with `/sync` only after the same centralized
+gate confirms permission there. It never renders Home or full navigation.
+Without a legitimate offline credential, the entry stays at Login.
 Backend authorization, organization selection and immediate logout invalidation
 remain authoritative and unchanged.
 

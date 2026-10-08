@@ -18,3 +18,8 @@ export function BottomNavigation({ path }: { path: string }) {
       <AppIcon name={icon}/><span>{label}</span></a></li>)}
   </ul></nav>;
 }
+
+
+export const documentNavigation = {
+  replace: (path: string) => window.location.replace(path),
+};

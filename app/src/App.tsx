@@ -4,6 +4,7 @@ import { LoginView } from './platform/LoginView';
 import { isCollectorPath, useAppGate } from './platform/gate';
 import { Management, managementAreas } from './management/Management';
 import { ApplicationShell } from './ui/ApplicationShell';
+import { documentNavigation } from './ui/navigation';
 import { HomeEntry, FeedingSitesEntry } from './ui/TransitionalPages';
 
 const subscribePath = (update: () => void) => {
@@ -25,15 +26,19 @@ export function App() {
   // Document links preserve native history, refresh/deep links and fresh
   // verification on entry. The #31 gate remains the sole client auth boundary.
   const path = useSyncExternalStore(subscribePath, () => window.location.pathname);
-  const { status, online } = useAppGate(path);
+  const { status, online, offlineSyncAvailable } = useAppGate(path);
+  const offlineEntry = path === '/' && !online && offlineSyncAvailable;
+  useEffect(() => {
+    if (offlineEntry) documentNavigation.replace('/sync');
+  }, [offlineEntry]);
   useEffect(() => {
     const title = status === 'authenticated'
       ? ({ '/': 'Home', '/sync': 'Sync', '/feeding-sites': 'Futterstellen', ...managementAreas }[path] ?? 'Seite nicht gefunden')
       : status === 'offline-sync' ? 'Offline-Sync' : 'Anmeldung';
     document.title = `${title} · MiezMerker`;
   }, [path, status]);
-  if (status === 'loading') {
-    return <ApplicationShell path={path} authenticated={false}><p role="status">Anmeldung wird geprüft …</p></ApplicationShell>;
+  if (status === 'loading' || offlineEntry) {
+    return <ApplicationShell path={path} authenticated={false}><p role="status">{offlineEntry ? 'Offline-Sync wird geöffnet …' : 'Anmeldung wird geprüft …'}</p></ApplicationShell>;
   }
   if (status === 'authenticated' || (status === 'offline-sync' && isCollectorPath(path))) {
     return <AllowedShell path={path} authenticated={status === 'authenticated'} online={online}/>;

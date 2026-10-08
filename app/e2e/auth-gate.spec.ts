@@ -98,7 +98,13 @@ test('cold offline reload allows only sync until the bound credential expires', 
   await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Futterstellen' })).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Anmelden' })).not.toBeVisible();
-  for (const path of ['/', '/feeding-sites', '/cats', '/nodes']) {
+  // Installed launch enters Home's URL, but may only redirect to authorized Sync.
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/sync$/);
+  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+  await expect(page.getByRole('navigation')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Home' })).toHaveCount(0);
+  for (const path of ['/feeding-sites', '/cats', '/nodes']) {
     await page.goto(path);
     await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
     await expect(page.getByRole('navigation')).toHaveCount(0);

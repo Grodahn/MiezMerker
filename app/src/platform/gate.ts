@@ -66,7 +66,7 @@ export async function offlineSyncExpiresAt(
   }
 }
 
-export function useAppGate(path: string): { status: GateStatus; online: boolean; offlineEligible: boolean | null } {
+export function useAppGate(path: string): { status: GateStatus; online: boolean; offlineEligible: boolean | null; offlineSyncAvailable: boolean } {
   const [auth, setAuth] = useState<AuthState>(() => getAuthState());
   const [online, setOnline] = useState<boolean>(() =>
     typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -145,5 +145,8 @@ export function useAppGate(path: string): { status: GateStatus; online: boolean;
   }, [offlineCredential, offlineEligible, clockVersion]);
 
   const status = departed ? 'loading' : resolveGateStatus(auth, online, offlineEligible, path);
-  return { status, online, offlineEligible };
+  // Also authorize the installed PWA's offline entry via this same gate.
+  // This grants no access to Home: App may only replace its URL with /sync.
+  const offlineSyncAvailable = !departed && resolveGateStatus(auth, online, offlineEligible, '/sync') === 'offline-sync';
+  return { status, online, offlineEligible, offlineSyncAvailable };
 }
