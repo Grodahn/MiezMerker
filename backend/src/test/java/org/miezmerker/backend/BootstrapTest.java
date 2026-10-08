@@ -5,15 +5,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.miezmerker.backend.bootstrap.BootstrapRunner;
 import org.miezmerker.backend.repo.AppUserRepository;
-import org.miezmerker.backend.repo.AppDeviceRepository;
-import org.miezmerker.backend.repo.CatRepository;
-import org.miezmerker.backend.repo.DerivedVisitRepository;
-import org.miezmerker.backend.repo.FeedingSiteRepository;
-import org.miezmerker.backend.repo.NodeDeploymentRepository;
-import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
-import org.miezmerker.backend.repo.RawObservationRepository;
+import org.miezmerker.backend.support.TestDatabaseCleaner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,28 +22,13 @@ class BootstrapTest {
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;
     @Autowired MembershipRepository memberships;
-    @Autowired AppDeviceRepository devices;
-    @Autowired NodeRepository nodes;
-    @Autowired RawObservationRepository observations;
-    @Autowired DerivedVisitRepository derivedVisits;
-    @Autowired NodeDeploymentRepository deployments;
-    @Autowired CatRepository cats;
-    @Autowired FeedingSiteRepository sites;
     @Autowired PasswordEncoder passwords;
+    @Autowired TestDatabaseCleaner cleaner;
     @Autowired jakarta.validation.Validator validator;
 
     @Test
     void bootstrapCreatesFirstOrgAndAdminOnce() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
 
         var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
                 "bootstrap-admin@example.org", "supersecret-bootstrap-1", null, "versuch",
@@ -69,16 +48,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsPasswordsOverBcryptsByteLimitBeforeWriting() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
         var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
                 "too-long@example.org", "ä".repeat(37), null, "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> runner.run(null));
@@ -99,16 +69,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapRequiresNoSecretsInRepoAndStrongPassword() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
         var weak = new BootstrapRunner(users, organizations, memberships, passwords, validator,
                 "weak@example.org", "short", null, "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> weak.run(null));
@@ -117,16 +78,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapRejectsAnEmailThatCannotBeUsedByTheLoginApi() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
         var runner = new BootstrapRunner(users, organizations, memberships, passwords, validator,
                 "invalid-address", "supersecret-bootstrap-1", null, "versuch", "V", null);
         assertThrows(IllegalStateException.class, () -> runner.run(null));
@@ -136,16 +88,7 @@ class BootstrapTest {
 
     @Test
     void invalidBootstrapMetadataIsRejectedBeforeWritingAnyEntities() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
         for (String[] metadata : new String[][] {
                 { "a".repeat(65), "Name", null },
                 { "valid", "a".repeat(256), null },
@@ -162,16 +105,7 @@ class BootstrapTest {
 
     @Test
     void bootstrapCannotAttachTheFirstAdminToADisabledOrganization() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
         var organization = new org.miezmerker.backend.domain.Organization("disabled", "Disabled", null);
         organization.setStatus(org.miezmerker.backend.domain.OrganizationStatus.DISABLED);
         organizations.save(organization);

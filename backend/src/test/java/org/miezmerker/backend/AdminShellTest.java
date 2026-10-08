@@ -22,16 +22,13 @@ import org.miezmerker.backend.domain.MembershipStatus;
 import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationMembership;
 import org.miezmerker.backend.domain.UserStatus;
-import org.miezmerker.backend.repo.AppDeviceRepository;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.CatRepository;
-import org.miezmerker.backend.repo.DerivedVisitRepository;
 import org.miezmerker.backend.repo.FeedingSiteRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
-import org.miezmerker.backend.repo.NodeDeploymentRepository;
-import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.repo.RawObservationRepository;
+import org.miezmerker.backend.support.TestDatabaseCleaner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -60,14 +57,11 @@ class AdminShellTest {
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;
     @Autowired MembershipRepository memberships;
-    @Autowired AppDeviceRepository devices;
-    @Autowired NodeRepository nodes;
     @Autowired RawObservationRepository observations;
-    @Autowired DerivedVisitRepository derivedVisits;
-    @Autowired NodeDeploymentRepository deployments;
     @Autowired CatRepository cats;
     @Autowired FeedingSiteRepository sites;
     @Autowired PasswordEncoder passwords;
+    @Autowired TestDatabaseCleaner cleaner;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
@@ -172,16 +166,7 @@ class AdminShellTest {
             AppUser multiAdmin) {}
 
     Fixture seed() {
-        derivedVisits.deleteAll();
-        observations.deleteAll();
-        deployments.deleteAll();
-        cats.deleteAll();
-        sites.deleteAll();
-        devices.deleteAll();
-        nodes.deleteAll();
-        memberships.deleteAll();
-        users.deleteAll();
-        organizations.deleteAll();
+        cleaner.clean();
 
         Organization orgA = organizations.save(new Organization("org-a", "Org A", null));
         Organization orgB = organizations.save(new Organization("org-b", "Org B", null));
