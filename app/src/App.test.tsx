@@ -433,23 +433,35 @@ test.each(['MEMBER', 'ADMIN'])('authenticated %s sees exactly the field navigati
 test.each([
   ['/', 'Home', '/'], ['/sync', 'Sync', '/sync'],
   ['/feeding-sites', 'Futterstellen', '/feeding-sites'], ['/cats', 'Katzen', '/cats'],
+  ['/feeding-sites/site-a', 'Futterstellen', '/feeding-sites'],
   ['/nodes', 'Futterstellen', '/feeding-sites'],
 ])('authenticated deep link %s marks only its section', async (path, label, href) => {
   setPath(path);
   apiGet.mockImplementation(async (p: string) => p === '/api/v1/auth/session'
     ? sessionResponse(verifiedUser) : { data: [], response: { ok: true, status: 200 } });
-  const { App } = await import('./App');
-  render(<App/>);
-  const navigation = await screen.findByRole('navigation', { name: 'Bereiche' });
-  const current = navigation.querySelectorAll('[aria-current="page"]');
-  expect(current).toHaveLength(1);
-  expect(current[0].textContent).toBe(label);
-  expect(current[0].getAttribute('href')).toBe(href);
-  if (path === '/') {
-    expect(screen.getByRole('heading', { name: 'Hallo!' })).toBeTruthy();
-    expect(screen.queryByText('CollectorShell')).toBeNull();
-  }
-  if (path === '/nodes') expect(await screen.findByText(/Noch keine Nodes vorhanden/)).toBeTruthy();
+  const { documentNavigation } = await import('./ui/navigation');
+  const replace = vi.spyOn(documentNavigation, 'replace').mockImplementation(() => {});
+  try {
+    const { App } = await import('./App');
+    render(<App/>);
+    const navigation = await screen.findByRole('navigation', { name: 'Bereiche' });
+    const current = navigation.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0].textContent).toBe(label);
+    expect(current[0].getAttribute('href')).toBe(href);
+    if (path === '/') {
+      expect(screen.getByRole('heading', { name: 'Hallo!' })).toBeTruthy();
+      expect(screen.queryByText('CollectorShell')).toBeNull();
+    }
+    if (path === '/nodes') {
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/feeding-sites'));
+      expect(await screen.findByText(/Futterstellen werden geöffnet/)).toBeTruthy();
+      expect(screen.queryByText(/Noch keine Nodes vorhanden/)).toBeNull();
+    }
+    if (path === '/feeding-sites/site-a') {
+      expect(await screen.findByRole('heading', { name: 'Futterstelle ohne Namen' })).toBeTruthy();
+    }
+  } finally { replace.mockRestore(); }
 });
 
 test.each(['/feeding-sites', '/cats', '/nodes'])('valid offline credential cannot open %s', async path => {
