@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import {
   BLE_CHAR_UUIDS, BLE_SERVICE_UUID, BluetoothTransportError, FrameChannel,
-  characteristicForRequest, describeBluetoothError, authWriteChunks, type GattOperations,
+  characteristicForRequest, describeBluetoothError, authWriteChunks, previouslyAuthorizedDevices, type GattOperations,
 } from '../platform/web-bluetooth';
 import {
   encodeFrame, encodeHelloPublic, encodeOwnerResponse, Opcode, PROTOCOL_VERSION,
@@ -19,6 +19,22 @@ function helloFrame(): Uint8Array {
 }
 
 describe('Web Bluetooth adapter (GATT contract #6)', () => {
+  test('permission listing errors remain distinct from an empty permission list', async () => {
+    vi.stubGlobal('navigator', { bluetooth: { getDevices: async () => { throw new DOMException('disabled', 'NetworkError'); } } });
+    try {
+      await expect(previouslyAuthorizedDevices()).rejects.toMatchObject({ name: 'NetworkError' });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  test('cancellation bounds a browser permission listing that never responds', async () => {
+    vi.stubGlobal('navigator', { bluetooth: { getDevices: () => new Promise(() => {}) } });
+    const controller = new AbortController();
+    try {
+      const listing = previouslyAuthorizedDevices(controller.signal);
+      controller.abort();
+      await expect(listing).rejects.toMatchObject({ name: 'AbortError' });
+    } finally { vi.unstubAllGlobals(); }
+  });
   test('large auth credentials round-trip through bounded transport fragments', () => {
     const original = new Uint8Array(1000).map((_, i) => i % 256);
     const chunks = authWriteChunks(original);

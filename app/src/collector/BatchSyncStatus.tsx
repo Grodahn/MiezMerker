@@ -43,21 +43,24 @@ function kindStatus(kind: BatchNodeResult['kind']): { title: string; kind: 'succ
 export function BatchSummary({ results }: { results: BatchNodeResult[] }) {
   if (!results.length) return null;
   const succeeded = results.filter(r => r.kind === 'success').length;
+  const interrupted = results.some(r => r.kind === 'cancelled' || r.kind === 'skipped');
   const total = results.length;
   const message = batchSummaryMessage(results);
   if (succeeded === total) {
     const records = results.reduce((sum, r) => sum + r.recordsReceived, 0);
     return <Status kind="success" title={message} scope="Vor-Ort-Sync"
-      message={`Fertig — Beobachtungen sicher übernommen und quittiert. Neu übernommen: ${records} Beobachtungen. Der Backend-Upload wird separat angezeigt.`}
+      message={`Fertig — ${records} Beobachtungen sicher übernommen und quittiert (einschließlich möglicher Wiederholungen). Der Backend-Upload wird separat angezeigt.`}
       graphic="success"/>;
   }
   if (succeeded === 0) {
-    return <Status kind="error" title={message} scope="Vor-Ort-Sync"
-      message="Kein Napf konnte ausgelesen werden. Details je Napf unten; bereits abgeschlossene Näpfe bleiben bei Retry erhalten."
-      graphic="error"/>;
+    return <Status kind={interrupted ? 'info' : 'error'} title={message} scope="Vor-Ort-Sync"
+      message={interrupted ? 'Sammel-Sync unterbrochen. Für keinen Napf wurde eine vollständige lokale Übernahme bestätigt. Offene Näpfe können gezielt erneut versucht werden.'
+        : 'Kein Napf konnte ausgelesen werden. Details je Napf unten; bereits abgeschlossene Näpfe bleiben bei Retry erhalten.'}
+      graphic={interrupted ? 'info' : 'error'}/>;
   }
   return <Status kind="info" title={message} scope="Vor-Ort-Sync"
-    message="Teilerfolg: übrige Näpfe wurden weiter bearbeitet. Fehlgeschlagene Näpfe können gezielt erneut versucht werden, ohne erfolgreiche zu wiederholen."
+    message={interrupted ? 'Sammel-Sync unterbrochen. Bestätigte Übernahmen bleiben gültig. Offene Näpfe können gezielt erneut versucht werden, ohne erfolgreiche zu wiederholen.'
+      : 'Teilerfolg: übrige Näpfe wurden weiter bearbeitet. Fehlgeschlagene Näpfe können gezielt erneut versucht werden, ohne erfolgreiche zu wiederholen.'}
     graphic="info"/>;
 }
 
@@ -90,7 +93,7 @@ export function BatchNodeCard({ result, context, contextLoading, isAdmin, claimB
             const catLabel = row.catName?.trim() ? row.catName : row.catId ? 'Ohne Namen' : 'Unbekannter Chip';
             return <li key={chip}><Graphic src={assets.placeholders.cat} alt="" className="avatar"/>{catLabel} (<code>{chip}</code>) — {row.lastReliableSightingAt
               ? `zuletzt verlässlich gesehen: ${time(row.lastReliableSightingAt)}`
-              : 'keine verlässliche Sichtungszeit'} · Serverempfang (keine Sichtungszeit): {time(row.lastReceivedAt)}</li>;
+              : 'keine verlässliche Sichtungszeit (UNKNOWN oder ungültige Uhrzeit)'} · Serverempfang (keine Sichtungszeit): {time(row.lastReceivedAt)}</li>;
           })}
         </ul>}
         {context.activity && context.activity.length === 0 && <p>Noch keine verlässlichen Sichtungen an dieser Futterstelle.</p>}

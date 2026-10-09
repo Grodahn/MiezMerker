@@ -112,14 +112,17 @@ export async function requestNodeDevice(): Promise<any> {
 
 // Previously authorized devices (Chrome supports getDevices()). Correctness never
 // depends on it; explicit selection always remains available.
-export async function previouslyAuthorizedDevices(): Promise<unknown[]> {
+export async function previouslyAuthorizedDevices(signal?: AbortSignal): Promise<unknown[]> {
   const bt = bluetooth();
   if (!bt || typeof bt.getDevices !== 'function') return [];
-  try {
-    return await bt.getDevices();
-  } catch {
-    return [];
-  }
+  const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000);
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(bounded.reason);
+    if (bounded.aborted) { abort(); return; }
+    bounded.addEventListener('abort', abort, { once: true });
+    Promise.resolve().then(() => bt.getDevices()).then(resolve, reject)
+      .finally(() => bounded.removeEventListener('abort', abort));
+  });
 }
 
 // Issue #76: getDevices() availability must be told apart from "no devices
@@ -154,7 +157,7 @@ export function getDevicesFallbackMessage(support: GetDevicesSupport): string {
   if (support === 'unsupported') {
     return 'Dieser Browser listet freigegebene Näpfe nicht automatisch (kein getDevices). ' +
       'Bitte „Weiteren Napf freigeben“ nutzen, um einen Napf für diese Browserinstallation freizugeben. ' +
-      'Danach ist er im Sammel-Sync enthalten, solange die Berechtigung besteht.';
+      'Der ausgewählte Napf wird direkt ausgelesen. Ohne getDevices muss er für weitere Versuche erneut manuell ausgewählt werden.';
   }
   return 'Noch kein Napf für diese Browserinstallation freigegeben oder Berechtigung gelöscht (neues Smartphone, Browser-Reset). ' +
     'Bitte „Weiteren Napf freigeben“ nutzen, um Näpfe einmalig pro Gerät freizugeben.';

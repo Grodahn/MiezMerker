@@ -16,6 +16,8 @@ function ok(id: string, browserId = id): BatchNodeResult {
 test('summary counts synchronized bowls honestly without inventing reachability', () => {
   const { unmount } = render(<BatchSummary results={[ok('n1', 'a'), ok('n2', 'b')]}/>);
   expect(screen.getByText('2 von 2 freigegebenen Näpfen ausgelesen.')).toBeTruthy();
+  expect(screen.queryByText(/Neu übernommen/)).toBeNull();
+  expect(screen.getByText(/einschließlich möglicher Wiederholungen/)).toBeTruthy();
   unmount();
   render(<BatchSummary results={[{ ...ok('n1', 'a'), kind: 'unreachable', nodeId: null, message: 'nicht erreichbar' }]}/>);
   expect(screen.getByText('0 von 1 freigegebenen Näpfen ausgelesen.')).toBeTruthy();
@@ -52,4 +54,11 @@ test('untrusted browser labels are never shown as verified bowl names for failur
   }]} contexts={new Map()}/>);
   expect(screen.getByText('Napf nicht erreichbar')).toBeTruthy();
   expect(screen.queryByText('Napf My Bowl ausgelesen')).toBeNull();
+});
+
+test('interrupted summaries do not claim remaining bowls were processed', () => {
+  const { container } = render(<BatchSummary results={[ok('done'), { ...ok('pending'), kind: 'skipped' }]}/>);
+  expect(screen.getByText(/Sammel-Sync unterbrochen/)).toBeTruthy();
+  expect(screen.queryByText(/übrige Näpfe wurden weiter bearbeitet/)).toBeNull();
+  expect(container.querySelector('.status-card--info')).toBeTruthy();
 });

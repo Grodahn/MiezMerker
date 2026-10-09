@@ -91,11 +91,13 @@ describe('batch orchestration (issue #76)', () => {
 
   test('per-node timeout aborts a hung node and continues with the next', async () => {
     const inputs = [input('hung'), input('fast')];
+    let fastStarted = false;
     const results = await runBatchSync(inputs, {
       perNodeTimeoutMs: 30,
       createTransport: () => ({ connect: async () => {}, disconnect: async () => {}, read: async () => new Uint8Array(), write: async () => {} }),
       runSingleNode: async (_transport, signal) => {
-        if (signal) {
+        if (signal && !fastStarted) {
+          fastStarted = true;
           await new Promise<void>((_resolve, reject) => {
             const timer = setTimeout(() => {}, 5000);
             signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('aborted', 'AbortError')); }, { once: true });
@@ -106,6 +108,7 @@ describe('batch orchestration (issue #76)', () => {
     });
     expect(results[0].kind).toBe('unreachable');
     expect(results[0].message).toMatch(/Zeitüberschreitung/);
+    expect(results[1].kind).toBe('success');
   });
 
   test('cancellation marks the current node cancelled and the rest skipped', async () => {
@@ -179,5 +182,92 @@ describe('batch orchestration (issue #76)', () => {
       runSingleNode: async () => { throw new Error('mid-batch abort'); },
     });
     expect(disconnect).toHaveBeenCalled();
+  });
+
+  test('timeout bounds an uncooperative runner and prevents late ACK and cleanup on a newer visit', async () => {
+    let resume!: () => void;
+    const blocked = new Promise<void>(resolve => { resume = resolve; });
+    const write = vi.fn(async () => {});
+    const disconnect = vi.fn(async () => {});
+    let late!: Promise<void>;
+    let count = 0;
+    const results = await runBatchSync([input('hung'), input('next')], {
+      perNodeTimeoutMs: 20,
+      createTransport: () => ({ connect: async () => {}, read: async () => new Uint8Array(), write, disconnect }),
+      runSingleNode: async transport => {
+        if (++count === 1) {
+          late = blocked.then(async () => {
+            await expect(transport.write(new Uint8Array([1]))).rejects.toMatchObject({ name: 'AbortError' });
+            await transport.disconnect();
+          });
+          await blocked;
+          return successView('late');
+        }
+        // Public discovery disconnects before the authenticated connection.
+        await transport.connect(); await transport.disconnect(); await transport.connect();
+        return successView('next');
+      },
+    });
+    expect(results.map(r => r.kind)).toEqual(['unreachable', 'success']);
+    const cleaned = disconnect.mock.calls.length;
+    resume(); await late;
+    expect(write).not.toHaveBeenCalled();
+    expect(disconnect).toHaveBeenCalledTimes(cleaned);
+  });
+
+  test('timeout also bounds transport creation and cleans up a late transport', async () => {
+    let finish!: (transport: never) => void;
+    const disconnect = vi.fn(async () => {});
+    const pending = new Promise<never>(resolve => { finish = resolve; });
+    let count = 0;
+    const results = await runBatchSync([input('hung'), input('next')], {
+      perNodeTimeoutMs: 20,
+      createTransport: () => ++count === 1 ? pending : { connect: async () => {}, read: async () => new Uint8Array(), write: async () => {}, disconnect: async () => {} },
+      runSingleNode: async () => successView('next'),
+    });
+    expect(results.map(r => r.kind)).toEqual(['unreachable', 'success']);
+    expect(results[0].message).toMatch(/Zeitüberschreitung/);
+    finish({ disconnect } as never);
+    await vi.waitFor(() => expect(disconnect).toHaveBeenCalledTimes(1));
+  });
+
+  test('cancellation after confirmed local completion preserves success and resumes only unfinished bowls', async () => {
+    const controller = new AbortController();
+    const inputs = [input('done'), input('remaining')];
+    const results = await runBatchSync(inputs, {
+      signal: controller.signal,
+      createTransport: () => ({ connect: async () => {}, read: async () => new Uint8Array(), write: async () => {}, disconnect: async () => {} }),
+      runSingleNode: async (_transport, _signal, update) => {
+        update(successView('confirmed', 7));
+        controller.abort();
+        // Simulate cancellation during cleanup after the ACK is complete.
+        throw new DOMException('aborted', 'AbortError');
+      },
+    });
+    expect(results[0]).toMatchObject({ kind: 'success', nodeId: 'confirmed', recordsReceived: 7, watermark: '3' });
+    expect(results[1].kind).toBe('cancelled');
+    expect(retryableBatchInputs(inputs, results).map(i => i.browserId)).toEqual(['remaining']);
+  });
+
+  test('timeout after confirmed ACK completion cannot erase local success', async () => {
+    const results = await runBatchSync([input('done')], {
+      perNodeTimeoutMs: 20,
+      createTransport: () => ({ connect: async () => {}, read: async () => new Uint8Array(), write: async () => {}, disconnect: async () => {} }),
+      runSingleNode: async (_transport, _signal, update) => {
+        update(successView('confirmed', 7));
+        return new Promise(() => {});
+      },
+    });
+    expect(results[0]).toMatchObject({ kind: 'success', nodeId: 'confirmed', recordsReceived: 7 });
+    expect(results[0].message).not.toMatch(/Zeitüberschreitung/);
+  });
+
+  test('retry includes cancelled and skipped bowls but excludes successes and separate claim/foreign flows', () => {
+    const inputs = ['success', 'cancelled', 'skipped', 'unclaimed', 'foreign'].map(id => input(id));
+    const results = inputs.map(i => ({ browserId: i.browserId, browserLabel: i.browserLabel,
+      kind: i.browserId as 'success' | 'cancelled' | 'skipped' | 'unclaimed' | 'foreign',
+      nodeId: null, ownerNodeId: null, recordsReceived: 0, watermark: null, message: '',
+      foreignOrganizationName: null, unclaimed: false, durationMs: 0 }));
+    expect(retryableBatchInputs(inputs, results).map(i => i.browserId)).toEqual(['cancelled', 'skipped']);
   });
 });

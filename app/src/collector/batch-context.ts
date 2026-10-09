@@ -20,6 +20,7 @@
 //   an honest "not available" note instead of fake data.
 
 import { api } from '../api/client';
+import { result } from '../management/data';
 import type { components } from '../api/generated';
 
 export type NodeView = components['schemas']['NodeView'];
@@ -110,7 +111,9 @@ export async function resolveBatchContexts(
   organizationId: string,
   options: BatchContextOptions = {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  loader: Loader = { get: (path: string, opts: unknown) => (api.GET as any)(path as never, opts as never) as never },
+  loader: Loader = { get: async (path: string, opts: unknown) => ({
+    data: result(await (api.GET as any)(path as never, opts as never)),
+  }) },
 ): Promise<Map<string, BatchNodeContext>> {
   const unique = [...new Set(nodeIds.filter(Boolean))];
   const out = new Map<string, BatchNodeContext>();

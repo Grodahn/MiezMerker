@@ -37,6 +37,45 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+test('site activity pages through the server read model without losing older chips', async () => {
+  const queries: unknown[] = [];
+  get.mockImplementation(async (path: string, options?: { params?: { query?: { limit: number; offset: number } } }) => {
+    if (path.endsWith('/cat-activity')) {
+      const query = options?.params?.query;
+      queries.push(query);
+      return ok(query?.offset ? [{ chipId: 'OLDER-CHIP' }]
+        : Array.from({ length: 20 }, (_, i) => ({ chipId: `CHIP-${i}` })));
+    }
+    if (path.endsWith('/feeding-sites/{siteId}')) return ok(siteA);
+    return ok([]);
+  });
+  render(<FeedingSiteDetail organizationId="org-a" siteId="site-a"/>);
+  const next = await screen.findByRole('button', { name: 'Weitere Sichtungen' });
+  expect(next.hasAttribute('disabled')).toBe(false);
+  fireEvent.click(next);
+  await screen.findByText('OLDER-CHIP');
+  expect(queries).toEqual([{ limit: 20, offset: 0 }, { limit: 20, offset: 20 }]);
+  expect(screen.getByRole('button', { name: 'Weitere Sichtungen' }).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Vorherige Sichtungen' }));
+  await screen.findByText('CHIP-0');
+  expect(get.mock.calls.every(([path]) => !String(path).includes('/observations'))).toBe(true);
+});
+
+test('an empty later activity page does not claim the site has no sightings', async () => {
+  get.mockImplementation(async (path: string, options?: { params?: { query?: { offset?: number } } }) => {
+    if (path.endsWith('/cat-activity')) return ok(options?.params?.query?.offset ? []
+      : Array.from({ length: 20 }, (_, i) => ({ chipId: `CHIP-${i}` })));
+    if (path.endsWith('/feeding-sites/{siteId}')) return ok(siteA);
+    return ok([]);
+  });
+  render(<FeedingSiteDetail organizationId="org-a" siteId="site-a"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Weitere Sichtungen' }));
+  await screen.findByText('Keine weiteren Sichtungen.');
+  expect(screen.queryByText('Noch keine Sichtungen an dieser Futterstelle.')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Vorherige Sichtungen' }));
+  await screen.findByText('CHIP-0');
+});
+
 test('routing helpers keep detail sections active and legacy nodes intentional', async () => {
   expect(parseFeedingSitePath('/feeding-sites')).toEqual({ kind: 'overview' });
   expect(parseFeedingSitePath('/feeding-sites/')).toEqual({ kind: 'overview' });

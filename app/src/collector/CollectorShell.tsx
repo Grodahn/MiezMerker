@@ -59,6 +59,7 @@ export function CollectorShell(props: {
   const [contextsLoading, setContextsLoading] = useState(false);
   const [devices, setDevices] = useState<Array<{ id: string; name: string; device: unknown }>>([]);
   const [devicesSupport, setDevicesSupport] = useState<'supported' | 'unsupported'>(() => getDevicesSupport());
+  const [devicesError, setDevicesError] = useState('');
   const [freigebenBusy, setFreigebenBusy] = useState(false);
   const [freigebenMessage, setFreigebenMessage] = useState('');
   const uploadBusy = useRef(false);
@@ -74,6 +75,7 @@ export function CollectorShell(props: {
   const [setupOrgId, setSetupOrgId] = useState<string | null>(null);
   const [resumeCandidate, setResumeCandidate] = useState<{ organizationId: string; nodeId: string } | null>(null);
   const batchController = useRef<AbortController | null>(null);
+  const permissionRequest = useRef(false);
 
   const auth = getAuthState();
   const contextKey = () => `${getAuthState().user?.userId ?? ''}/${getAuthState().activeOrganizationId ?? ''}`;
@@ -98,6 +100,8 @@ export function CollectorShell(props: {
         batchController.current?.abort(); batchController.current = null;
         setBatchRunning(false); setBatchProgress(null); setBatchResults([]); setBatchNotice('');
         setBatchContexts(new Map()); setClaimBusy(false); setClaimMessage(''); setClaimTarget(null);
+        setContextsLoading(false);
+        setUploadView({ backendState: 'idle', backendMessage: '', pendingUploads: 0, uploadedCount: 0 });
         previousContext = nextContext;
       }
       setAuthVersion(v => v + 1);
@@ -108,6 +112,7 @@ export function CollectorShell(props: {
     setBatchResults([]); setBatchNotice(''); setBatchContexts(new Map()); setClaimMessage(''); setClaimTarget(null);
     setBatchRunning(false); setBatchProgress(null); setClaimBusy(false); setSetupNodeId(null); setSetupOrgId(null);
     setFreigebenMessage('');
+    setContextsLoading(false);
     return () => { batchController.current?.abort(); batchController.current = null; };
   }, [auth.user?.userId, auth.activeOrganizationId]);
 
@@ -166,7 +171,8 @@ export function CollectorShell(props: {
     return () => { active = false; };
   }, [authVersion, connectivityVersion]);
 
-  const refreshDevices = useCallback(async (): Promise<Array<{ id: string; name: string; device: unknown }>> => {
+  const refreshDevices = useCallback(async (signal?: AbortSignal): Promise<Array<{ id: string; name: string; device: unknown }>> => {
+    setDevicesError('');
     const support = getDevicesSupport();
     setDevicesSupport(support);
     if (bluetoothCapability() !== 'supported') {
@@ -174,7 +180,7 @@ export function CollectorShell(props: {
       return [];
     }
     try {
-      const found = await previouslyAuthorizedDevices();
+      const found = await previouslyAuthorizedDevices(signal);
       const mapped = found.map((d, i) => ({
         id: browserDeviceId(d, `node-${i}`),
         name: browserDeviceLabel(d, 'Bekannter Node'),
@@ -182,14 +188,17 @@ export function CollectorShell(props: {
       }));
       const deduped = new Map(mapped.map(m => [m.id, m]));
       const list = [...deduped.values()];
-      setDevices(list);
+      if (mounted.current && !signal?.aborted) setDevices(list);
       return list;
-    } catch {
+    } catch (error) {
       // A failed listing must not leave a stale bowl count on screen: the
       // batch below would run against an empty snapshot while the UI still
       // claims N authorized bowls.
-      setDevices([]);
-      return [];
+      if (mounted.current && !signal?.aborted) {
+        setDevices([]);
+        setDevicesError(`Freigegebene Näpfe konnten nicht aufgelistet werden. ${bluetoothErrorMessage(error)}`);
+      }
+      throw error;
     }
   }, []);
 
@@ -236,19 +245,20 @@ export function CollectorShell(props: {
 
   const loadContextsFor = useCallback(async (nodeIds: string[], organizationId: string, signal: AbortSignal) => {
     if (!nodeIds.length) { setBatchContexts(new Map()); return; }
+    const generation = contextGeneration.current;
     setContextsLoading(true);
     try {
       const contexts = await resolveBatchContexts(nodeIds, organizationId, { signal });
-      if (!signal.aborted) setBatchContexts(contexts);
+      if (mounted.current && generation === contextGeneration.current && !signal.aborted) setBatchContexts(contexts);
     } catch {
-      if (!signal.aborted) setBatchContexts(new Map());
+      if (mounted.current && generation === contextGeneration.current && !signal.aborted) setBatchContexts(new Map());
     } finally {
-      if (!signal.aborted) setContextsLoading(false);
+      if (mounted.current && generation === contextGeneration.current) setContextsLoading(false);
     }
   }, []);
 
   const startBatch = useCallback(async (explicitInputs?: BatchNodeInput[]) => {
-    if (batchRunning || claimBusy) return;
+    if (batchController.current || batchRunning || claimBusy) return;
     const state = getAuthState();
     if (!state.user || !state.activeOrganizationId) {
       setBatchNotice('Bitte anmelden und Organisation wählen.');
@@ -266,8 +276,8 @@ export function CollectorShell(props: {
     setBatchContexts(new Map());
     setClaimMessage(''); setClaimTarget(null);
     const startedContext = contextKey();
-    const stillActive = () => batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
-    const orgStillActive = () => batchController.current === operation && contextKey() === startedContext;
+    const stillActive = () => mounted.current && batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
+    const orgStillActive = () => mounted.current && batchController.current === operation && contextKey() === startedContext;
     const organizationId = state.activeOrganizationId;
     try {
       // Fresh permission snapshot: getDevices() may include powered-off or
@@ -276,8 +286,8 @@ export function CollectorShell(props: {
       // activation and never discovers unpermitted devices.
       let inputs = explicitInputs;
       if (!inputs) {
-        const list = await refreshDevices();
-        if (!orgStillActive()) return;
+        const list = await refreshDevices(operation.signal);
+        if (!stillActive()) return;
         inputs = dedupeBatchInputs(list.map(entry => ({
           device: entry.device, browserId: entry.id, browserLabel: entry.name,
         })));
@@ -319,7 +329,7 @@ export function CollectorShell(props: {
       // success valid with an honest "not available" note.
       const succeededNodeIds = results.filter(r => r.kind === 'success' && r.nodeId).map(r => r.nodeId as string);
       const unclaimedNodeId = results.find(r => r.kind === 'unclaimed')?.nodeId ?? null;
-      if (succeededNodeIds.length) {
+      if (succeededNodeIds.length && !operation.signal.aborted) {
         await loadContextsFor(succeededNodeIds, organizationId, operation.signal);
       }
       if (unclaimedNodeId && organizationId) {
@@ -345,6 +355,8 @@ export function CollectorShell(props: {
           db.close();
         }
       }
+    } catch (error) {
+      if (orgStillActive()) setBatchNotice(bluetoothErrorMessage(error));
     } finally {
       if (batchController.current === operation) {
         batchController.current = null;
@@ -355,32 +367,33 @@ export function CollectorShell(props: {
   }, [batchRunning, claimBusy, devicesSupport, refreshDevices, loadContextsFor, props]);
 
   const retryFailed = useCallback(() => {
-    if (batchRunning || claimBusy || !batchResults.length) return;
+    if (batchController.current || batchRunning || claimBusy || !batchResults.length) return;
     const previous = batchResults;
     const operation = new AbortController();
     batchController.current = operation;
     setBatchRunning(true);
     setBatchNotice('');
     const startedContext = contextKey();
-    const stillActive = () => batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
-    const orgStillActive = () => batchController.current === operation && contextKey() === startedContext;
+    const stillActive = () => mounted.current && batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
+    const orgStillActive = () => mounted.current && batchController.current === operation && contextKey() === startedContext;
     const organizationId = getAuthState().activeOrganizationId;
     void (async () => {
-      // Refresh permissions first: a revoked bowl must not be retried
-      // blindly from a stale list, and a newly freed bowl is not part of
-      // this retry (it joins the next full batch instead).
-      const list = await refreshDevices();
-      if (!orgStillActive()) return;
-      const currentInputs: BatchNodeInput[] = list.map(entry => ({
-        device: entry.device, browserId: entry.id, browserLabel: entry.name,
-      }));
-      const retryInputs = retryableBatchInputs(currentInputs, previous);
-      if (!retryInputs.length) {
-        setBatchNotice('Keine wiederholbaren Näpfe mehr vorhanden (Berechtigung entzogen oder bereits erfolgreich).');
-        return;
-      }
-      setBatchProgress({ done: 0, total: retryInputs.length, current: '', detail: 'Wiederhole fehlgeschlagene Näpfe …' });
       try {
+        // Refresh permissions first: a revoked bowl must not be retried
+        // blindly from a stale list, and a newly freed bowl is not part of
+        // this retry (it joins the next full batch instead).
+        const list = await refreshDevices(operation.signal);
+        if (!stillActive()) return;
+        const currentInputs: BatchNodeInput[] = list.map(entry => ({
+          device: entry.device, browserId: entry.id, browserLabel: entry.name,
+        }));
+        const retryInputs = retryableBatchInputs(currentInputs, previous);
+        if (!retryInputs.length) {
+          setBatchNotice('Keine wiederholbaren Näpfe mehr vorhanden (Berechtigung entzogen oder bereits erfolgreich).');
+          return;
+        }
+        setBatchProgress({ done: 0, total: retryInputs.length, current: '', detail: 'Wiederhole fehlgeschlagene Näpfe …' });
+        credentialCheckGeneration.current++;
         const retried = await runBatchSync(retryInputs, {
           signal: operation.signal,
           trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
@@ -389,14 +402,19 @@ export function CollectorShell(props: {
             if (stillActive()) setBatchProgress({ done: index, total, current: input.browserLabel, detail: 'Verbinde mit Node …' });
           },
           onNodeUpdate: (index, total, input, view: CollectorViewState) => {
-            if (stillActive()) setBatchProgress({ done: index, total, current: input.browserLabel, detail: view.nodeMessage || 'Synchronisiere …' });
+            if (!stillActive()) return;
+            if (view.credentialState) setCredential(view.credentialState);
+            setBatchProgress({ done: index, total, current: input.browserLabel, detail: view.nodeMessage || 'Synchronisiere …' });
+          },
+          onNodeDone: (index) => {
+            if (stillActive()) setBatchProgress(previous => previous ? { ...previous, done: index + 1 } : previous);
           },
         });
         if (!orgStillActive() || !organizationId) return;
         const merged = previous.map(old => retried.find(r => r.browserId === old.browserId) ?? old);
         setBatchResults(merged);
         const succeededNodeIds = merged.filter(r => r.kind === 'success' && r.nodeId).map(r => r.nodeId as string);
-        if (succeededNodeIds.length) await loadContextsFor(succeededNodeIds, organizationId, operation.signal);
+        if (succeededNodeIds.length && !operation.signal.aborted) await loadContextsFor(succeededNodeIds, organizationId, operation.signal);
       } catch {
         if (orgStillActive()) setBatchNotice('Wiederholung abgebrochen. Bereits abgeschlossene Näpfe bleiben gültig.');
       } finally {
@@ -420,7 +438,7 @@ export function CollectorShell(props: {
   // another chooser (or in the next batch while one is running).
   const releaseAdditionalBowl = useCallback(() => {
     const state = getAuthState();
-    if (freigebenBusy) return;
+    if (permissionRequest.current) return;
     if (!state.user || !state.activeOrganizationId) {
       setFreigebenMessage('Bitte anmelden und Organisation wählen.');
       return;
@@ -430,26 +448,30 @@ export function CollectorShell(props: {
       return;
     }
     setFreigebenBusy(true);
+    permissionRequest.current = true;
+    const generation = contextGeneration.current;
+    const stillActive = () => mounted.current && generation === contextGeneration.current;
     setFreigebenMessage('');
     // requestNodeDevice() is invoked synchronously in this click handler to
     // preserve transient user activation; no IDB/network await runs before it.
     const request = requestNodeDevice();
     void request.then(device => {
+      if (!stillActive()) return;
       const id = browserDeviceId(device, `node-${Date.now()}`);
       const name = browserDeviceLabel(device, 'Freigegebener Node');
       setDevices(previous => {
         if (previous.some(entry => entry.id === id)) return previous;
         return [...previous, { id, name, device }];
       });
-      if (batchRunning || claimBusy) {
+      if (batchController.current) {
         setFreigebenMessage(`„${name}“ freigegeben und für den nächsten Sammel-Sync vorgemerkt.`);
         return;
       }
       setFreigebenMessage(`„${name}“ freigegeben. Starte Sync ohne weiteren Chooser …`);
       void startBatch([{ device, browserId: id, browserLabel: name }]);
     }).catch((e: unknown) => {
-      setFreigebenMessage(bluetoothErrorMessage(e, 'selection'));
-    }).finally(() => setFreigebenBusy(false));
+      if (stillActive()) setFreigebenMessage(bluetoothErrorMessage(e, 'selection'));
+    }).finally(() => { permissionRequest.current = false; if (mounted.current) setFreigebenBusy(false); });
   }, [freigebenBusy, batchRunning, claimBusy, startBatch]);
 
   const claimUnclaimedNode = useCallback((result: BatchNodeResult) => {
@@ -457,7 +479,7 @@ export function CollectorShell(props: {
     const organizationId = state.activeOrganizationId;
     const nodeId = result.nodeId;
     const entry = devices.find(d => d.id === result.browserId);
-    if (!nodeId || !organizationId || !entry || claimBusy || batchRunning) return;
+    if (!nodeId || !organizationId || !entry || batchController.current || claimBusy || batchRunning) return;
     const operation = new AbortController();
     batchController.current = operation;
     setClaimBusy(true);
@@ -522,8 +544,9 @@ export function CollectorShell(props: {
     <p>Ein bewusster Klick liest alle auf dieser Browserinstallation freigegebenen, aktuell erreichbaren Näpfe der aktiven Organisation nacheinander aus. Mehrere Näpfe an einer Futterstelle sind normal; Näpfe unterschiedlicher Futterstellen werden korrekt zugeordnet. Neue Näpfe brauchen je eine einmalige explizite Freigabe.</p>
     {devicesSupport === 'supported' && devices.length > 0 && <p>{devices.length === 1
       ? '1 Napf auf dieser Browserinstallation freigegeben (Erreichbarkeit wird beim Sync geprüft).'
-      : `${devices.length} Näpfe auf dieser Browserinstallation freigegeben (Erreichbarkeit wird beim Sync geprüft).`} <button type="button" disabled={batchRunning} onClick={() => void refreshDevices()}>Liste aktualisieren</button></p>}
-    {devicesSupport === 'supported' && devices.length === 0 && !batchRunning && !batchResults.length && <Status kind="info" title="Noch kein Napf freigegeben" message={getDevicesFallbackMessage('supported')}/>}
+      : `${devices.length} Näpfe auf dieser Browserinstallation freigegeben (Erreichbarkeit wird beim Sync geprüft).`} <button type="button" disabled={batchRunning} onClick={() => void refreshDevices().catch(() => {})}>Liste aktualisieren</button></p>}
+    {devicesError && <Status kind="error" title="Geräteliste nicht verfügbar" message={devicesError}/>}
+    {!devicesError && devicesSupport === 'supported' && devices.length === 0 && !batchRunning && !batchResults.length && <Status kind="info" title="Noch kein Napf freigegeben" message={getDevicesFallbackMessage('supported')}/>}
     {devicesSupport === 'unsupported' && capability === 'supported' && <Status kind="info" title="Automatisches Wiederfinden nicht verfügbar" message={getDevicesFallbackMessage('unsupported')}/>}
 
     <div className="actions">
@@ -548,7 +571,7 @@ export function CollectorShell(props: {
       <BatchNodeList results={batchResults} contexts={batchContexts} contextsLoading={contextsLoading}
         isAdmin={isAdmin} claimBusy={claimBusy} onClaim={claimUnclaimedNode}/>
       {retryableCount > 0 && <button type="button" disabled={!canStart} onClick={retryFailed}>
-        {`Fehlgeschlagene erneut versuchen (${retryableCount})`}
+        {`Offene Näpfe erneut versuchen (${retryableCount})`}
       </button>}
       <button type="button" disabled={!canStart} onClick={() => void startBatch()}>
         Alle erneut auslesen

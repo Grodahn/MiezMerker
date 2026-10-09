@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assets } from '../assets';
 import { Graphic } from '../ui/Graphic';
 import { Status } from '../ui/Status';
@@ -50,7 +50,9 @@ function CatVisits({ organizationId, chipId, cats, sites }: {
   return <section className="detail cat-visits" aria-label="Besuchsverlauf"><h2>Bekannte Besuche</h2>
     <p className="cat-visits__hint">Besuche behalten ihre historische Futterstelle. Der Serverempfang ist keine Sichtungszeit.</p>
     <LoadState {...visits}/>
-    {visits.data && <><VisitTable rows={visits.data} sites={sites} cats={cats}/>
+    {visits.data && <>{offset > 0 && visits.data.length === 0
+      ? <Status kind="empty" title="Keine weiteren Besuche." message="Die bisherigen Besuche sind auf der vorigen Seite verfügbar."/>
+      : <VisitTable rows={visits.data} sites={sites} cats={cats}/>}
       <div className="actions cat-visits__pager"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Vorherige Seite</button>
         <span aria-live="polite">Seite {offset / 20 + 1}</span><button disabled={visits.data.length !== 20} onClick={() => setOffset(offset + 20)}>Nächste Seite</button></div></>}
   </section>;
@@ -120,6 +122,22 @@ function CatDetail({ chipId, cat, activity, sites, onClose }: {
 
 export function Cats({ organizationId }: { organizationId: string }) {
   const [selected, setSelected] = useState<Cat | null>(null);
+  const selectedPanel = useRef<HTMLDivElement>(null);
+  const selectionOrigin = useRef<HTMLButtonElement | null>(null);
+  const focusSearchOnReload = useRef(false);
+  const searchElement = useCallback((element: HTMLInputElement | null) => {
+    if (element && focusSearchOnReload.current) {
+      element.focus(); focusSearchOnReload.current = false;
+    }
+  }, []);
+  useEffect(() => {
+    if (selected) selectedPanel.current?.focus();
+    else if (selectionOrigin.current) {
+      if (selectionOrigin.current.isConnected) selectionOrigin.current.focus();
+      else document.getElementById('cat-search')?.focus();
+      selectionOrigin.current = null;
+    }
+  }, [selected]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<CatFilter>('all');
   const list = useLoad(useCallback(async (signal: AbortSignal) => {
@@ -175,13 +193,15 @@ export function Cats({ organizationId }: { organizationId: string }) {
 
   return <div className="cats-page">
     <p>Bekannte Katzen und beobachtete Chips. Ein unbekannter Chip ist kein Fehler.</p>
-    <div className="actions"><button type="button" onClick={() => setSelected({})}>Katze anlegen</button><button type="button" onClick={list.reload}>Aktualisieren</button></div>
+    <div className="actions"><button type="button" onClick={event => {
+      selectionOrigin.current = event.currentTarget; setSelected({});
+    }}>Katze anlegen</button><button type="button" onClick={list.reload}>Aktualisieren</button></div>
     <LoadState {...list}/>
-    {data && <>
+    <div hidden={Boolean(selected)}>{data && <>
       <div className="cat-toolbar">
         <div className="field cat-search">
           <label htmlFor="cat-search">Suche nach Name oder Chip-ID</label>
-          <input id="cat-search" type="search" autoComplete="off" placeholder="Name oder Chip-ID suchen"
+          <input ref={searchElement} id="cat-search" type="search" autoComplete="off" placeholder="Name oder Chip-ID suchen"
             value={query} onChange={event => setQuery(event.target.value)} />
         </div>
         <div className="cat-filter" role="group" aria-label="Katzen und Chips filtern">
@@ -215,7 +235,9 @@ export function Cats({ organizationId }: { organizationId: string }) {
               </div>
               {unknownClock && <Status {...statusMessages.unknownClock} />}
               <div className="cat-card__actions">
-                <button type="button" onClick={() => setSelected(cat ?? { chipId: chip })}>{cat ? 'Details / bearbeiten' : 'Katze dazu anlegen'}</button>
+                <button type="button" onClick={event => {
+                  selectionOrigin.current = event.currentTarget; setSelected(cat ?? { chipId: chip });
+                }}>{cat ? 'Details / bearbeiten' : 'Katze dazu anlegen'}</button>
               </div>
             </Card>
           </li>;
@@ -224,7 +246,8 @@ export function Cats({ organizationId }: { organizationId: string }) {
         ? <Status kind="empty" title="Keine Treffer für diese Suche." graphic="cat"
           message="Bitte Suchbegriff oder Filter anpassen. Unbekannte Chips bleiben ohne Katze erhalten." />
         : <Status {...statusMessages.emptyCats} graphic="cat"/>)}
-    </>}
+    </>}</div>
+    <div ref={selectedPanel} tabIndex={-1} aria-label="Ausgewählte Katze" hidden={!selected}>
     {selected?.chipId && data && <CatDetail
       key={`detail-${selected.id ?? selected.chipId}`}
       chipId={selected.chipId}
@@ -233,8 +256,12 @@ export function Cats({ organizationId }: { organizationId: string }) {
       sites={data.sites}
       onClose={() => setSelected(null)} />}
     {selected && <CatEditor key={`editor-${selected.id ?? selected.chipId ?? 'new'}`} organizationId={organizationId} initial={selected}
-      onClose={() => setSelected(null)} onSaved={() => { setSelected(null); list.reload(); }} />}
+      onClose={() => setSelected(null)} onSaved={() => {
+        selectionOrigin.current = null; focusSearchOnReload.current = true;
+        setSelected(null); list.reload();
+      }} />}
     {selected?.chipId && data && <CatVisits key={`visits-${selected.chipId}`} organizationId={organizationId}
       chipId={selected.chipId} cats={data.cats} sites={data.sites}/>}
+    </div>
   </div>;
 }

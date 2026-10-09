@@ -136,10 +136,11 @@ function BowlList({ deployments, nodes, siteId }: { deployments: Deployment[]; n
   </ul>;
 }
 
-function CatActivityList({ activity }: { activity: FeedingSiteActivity[] }) {
+function CatActivityList({ activity, offset = 0 }: { activity: FeedingSiteActivity[]; offset?: number }) {
   if (!activity.length) {
-    return <Status kind="empty" title="Noch keine Sichtungen an dieser Futterstelle."
-      message="Nach verlässlichen Besuchen erscheinen Katzen und Chips hier. Der Serverempfang allein ist keine Sichtungszeit."
+    return <Status kind="empty" title={offset ? 'Keine weiteren Sichtungen.' : 'Noch keine Sichtungen an dieser Futterstelle.'}
+      message={offset ? 'Die vorherigen Sichtungen bleiben auf der vorigen Seite verfügbar.'
+        : 'Nach verlässlichen Besuchen erscheinen Katzen und Chips hier. Der Serverempfang allein ist keine Sichtungszeit.'}
       graphic="cat"/>;
   }
   return <>
@@ -170,6 +171,8 @@ function CatActivityList({ activity }: { activity: FeedingSiteActivity[] }) {
 }
 
 export function FeedingSiteDetail({ organizationId, siteId }: { organizationId: string; siteId: string }) {
+  const [offset, setOffset] = useState(0);
+  const activityLimit = 20;
   const detail = useLoad(useCallback(async (signal: AbortSignal) => {
     const options = requestOptions(signal);
     const [site, deployments, nodes, activity] = await Promise.all([
@@ -178,10 +181,10 @@ export function FeedingSiteDetail({ organizationId, siteId }: { organizationId: 
       api.GET('/api/v1/organizations/{organizationId}/deployments', { ...options, params: { path: { organizationId } } }).then(result),
       api.GET('/api/v1/nodes', { ...options, params: { query: { organizationId } } }).then(result),
       api.GET('/api/v1/organizations/{organizationId}/feeding-sites/{siteId}/cat-activity', {
-        ...options, params: { path: { organizationId, siteId } } }).then(result),
+        ...options, params: { path: { organizationId, siteId }, query: { limit: activityLimit, offset } } }).then(result),
     ]);
     return { site, deployments, nodes, activity };
-  }, [organizationId, siteId]));
+  }, [organizationId, siteId, offset]));
   const data = detail.data;
   const siteName = data ? siteDisplayName(data.site) : '';
   const hasLocation = Boolean(data?.site.locationLabel?.trim() || data?.site.description?.trim()
@@ -212,7 +215,12 @@ export function FeedingSiteDetail({ organizationId, siteId }: { organizationId: 
       <section aria-labelledby="feeding-site-cats-title" className="detail-section">
         <h2 id="feeding-site-cats-title">Zuletzt gesehen</h2>
         <p><small>Historische Futterstellenzuordnung: Sichtungen bleiben bei der damaligen Futterstelle, auch wenn ein Napf umgezogen ist.</small></p>
-        <CatActivityList activity={data.activity}/>
+        <CatActivityList activity={data.activity} offset={offset}/>
+        <div className="actions">
+          <button type="button" disabled={!offset} onClick={() => setOffset(value => value - activityLimit)}>Vorherige Sichtungen</button>
+          <span aria-live="polite">Seite {offset / activityLimit + 1}</span>
+          <button type="button" disabled={data.activity.length < activityLimit} onClick={() => setOffset(value => value + activityLimit)}>Weitere Sichtungen</button>
+        </div>
       </section>
     </article>}
   </section>;

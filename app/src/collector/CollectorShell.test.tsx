@@ -33,9 +33,6 @@ vi.mock('./observation-store', () => ({ CollectorObservationStore: class { async
 vi.mock('./batch-sync', async importOriginal => ({
   ...await importOriginal<typeof import('./batch-sync')>(),
   runBatchSync: runBatch,
-  dedupeBatchInputs: (inputs: unknown[]) => inputs,
-  retryableBatchInputs: (inputs: Array<{ browserId: string }>, results: Array<{ browserId: string; kind: string }>) =>
-    inputs.filter(i => results.some(r => r.browserId === i.browserId && r.kind !== 'success')),
 }));
 vi.mock('./batch-context', () => ({ resolveBatchContexts: resolveContexts }));
 import { CollectorShell } from './CollectorShell';
@@ -119,7 +116,7 @@ test('failed bowls can be retried without repeating successes', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Futterstelle auslesen' }));
   await screen.findByText('1 von 2 freigegebenen Näpfen ausgelesen.');
   runBatch.mockResolvedValueOnce([successResult('bad', 'node-bad')]);
-  fireEvent.click(screen.getByRole('button', { name: /Fehlgeschlagene erneut versuchen/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Offene Näpfe erneut versuchen/ }));
   await vi.waitFor(() => expect(runBatch).toHaveBeenCalledTimes(2));
   const retryInputs = runBatch.mock.calls[1][0] as Array<{ browserId: string }>;
   expect(retryInputs.map(i => i.browserId)).toEqual(['bad']);
@@ -156,6 +153,85 @@ test('old upload completion cannot overwrite a newly selected organization', asy
   await screen.findByText('New organization upload');
   expect(screen.queryByText('Old organization failure')).toBeNull();
   expect(upload).toHaveBeenLastCalledWith('org-b');
+});
+
+test('retry after browser permission revocation releases the busy state', async () => {
+  authorized.value = [{ id: 'bad', name: 'Bad' }];
+  runBatch.mockResolvedValue([{ ...successResult('bad', 'node-bad'), kind: 'unreachable' }]);
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Futterstelle auslesen' }));
+  const retry = await screen.findByRole('button', { name: /Offene Näpfe erneut versuchen/ });
+  authorized.value = [];
+  fireEvent.click(retry);
+  await screen.findByText(/Keine wiederholbaren Näpfe mehr vorhanden/);
+  expect(screen.getByRole('button', { name: 'Futterstelle auslesen' }).hasAttribute('disabled')).toBe(false);
+  expect(runBatch).toHaveBeenCalledTimes(1);
+});
+
+test('a chooser resolved after an organization change cannot start a batch', async () => {
+  let finish!: (device: unknown) => void;
+  requestDevice.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Weiteren Napf freigeben' }));
+  act(() => { session.activeOrganizationId = 'org-b'; for (const listener of listeners) listener(); });
+  await act(async () => { finish({ id: 'old', name: 'Old selection' }); });
+  expect(runBatch).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Old selection/)).toBeNull();
+});
+
+test('releasing an additional device during a batch queues it without overlapping sync', async () => {
+  let finish!: (device: unknown) => void;
+  requestDevice.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  authorized.value = [{ id: 'known', name: 'Known' }];
+  let complete!: (results: unknown[]) => void;
+  runBatch.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Weiteren Napf freigeben' }));
+  // The first release starts a batch; another release stays explicit and
+  // joins the next batch while the first session remains active.
+  await act(async () => { finish({ id: 'new', name: 'New' }); });
+  await vi.waitFor(() => expect(runBatch).toHaveBeenCalledTimes(1));
+  requestDevice.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  fireEvent.click(screen.getByRole('button', { name: 'Weiteren Napf freigeben' }));
+  await act(async () => { finish({ id: 'another', name: 'Another' }); });
+  expect(runBatch).toHaveBeenCalledTimes(1);
+  await screen.findByText(/für den nächsten Sammel-Sync vorgemerkt/);
+  await act(async () => { complete([successResult('new', 'node-new')]); });
+});
+
+test('cancelled partial results do not leave context loading stuck', async () => {
+  authorized.value = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }];
+  runBatch.mockImplementation(async (_inputs, options) => {
+    options.signal.addEventListener('abort', () => {}, { once: true });
+    return [successResult('a', 'node-a'), { ...successResult('b', 'node-b'), kind: 'cancelled' }];
+  });
+  let finish!: (contexts: Map<string, unknown>) => void;
+  resolveContexts.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Futterstelle auslesen' }));
+  await vi.waitFor(() => expect(resolveContexts).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+  await act(async () => { finish(new Map()); });
+  await screen.findByText('1 von 2 freigegebenen Näpfen ausgelesen.');
+  expect(screen.queryByText('Futterstellenkontext wird geladen …')).toBeNull();
+});
+
+test('retry resumes interrupted bowls and updates the credential header', async () => {
+  authorized.value = [{ id: 'ok' }, { id: 'interrupted' }, { id: 'skipped' }];
+  runBatch.mockResolvedValueOnce([successResult('ok', 'node-ok'),
+    { ...successResult('interrupted', 'node-interrupted'), kind: 'cancelled' },
+    { ...successResult('skipped', 'node-skipped'), kind: 'skipped' }]);
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Futterstelle auslesen' }));
+  const retry = await screen.findByRole('button', { name: /Offene Näpfe erneut versuchen/ });
+  runBatch.mockImplementationOnce(async (inputs, options) => {
+    options.onNodeUpdate(0, inputs.length, inputs[0], { credentialState: 'Offline-Credential erneuert.' });
+    return inputs.map((i: { browserId: string }) => successResult(i.browserId, `node-${i.browserId}`));
+  });
+  fireEvent.click(retry);
+  await screen.findByText('3 von 3 freigegebenen Näpfen ausgelesen.');
+  expect(runBatch.mock.calls[1][0].map((i: { browserId: string }) => i.browserId)).toEqual(['interrupted', 'skipped']);
+  expect(screen.getByText('Offline-Credential erneuert.')).toBeTruthy();
 });
 
 test('Sync illustration is replaceable centrally without changing Collector behavior', async () => {

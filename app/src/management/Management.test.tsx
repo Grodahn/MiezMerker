@@ -192,6 +192,7 @@ test('MEMBER registers an observed chip and retains cat visit history', async ()
   await vi.waitFor(() => expect(post).toHaveBeenCalledWith('/api/v1/organizations/{organizationId}/cats', expect.objectContaining({
     headers: { 'X-XSRF-TOKEN': 'csrf' }, body: { chipId: 'CHIP', name: 'Miez', status: '', notes: '' }, cache: 'no-store',
   })));
+  await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Suche nach Name oder Chip-ID')));
 });
 
 test('nodes show the bowl label primarily and keep the technical node id visible', async () => {
@@ -305,6 +306,8 @@ test('cat detail separates fields and preserves paginated historical visits', as
   });
   render(<Management path="/cats"/>);
   fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
+  expect(screen.queryByRole('list', { name: 'Katzen und Chips' })).toBeNull();
+  expect(document.activeElement?.getAttribute('aria-label')).toBe('Ausgewählte Katze');
   const detail = await screen.findByRole('region', { name: 'Katzendetails' });
   expect(within(detail).getByRole('heading', { name: 'Luna' })).toBeTruthy();
   expect(within(detail).getByText('Aktiv')).toBeTruthy();
@@ -322,6 +325,23 @@ test('cat detail separates fields and preserves paginated historical visits', as
   expect(await screen.findByText('Seite 1')).toBeTruthy();
   fireEvent.click(within(detail).getByRole('button', { name: 'Zurück zur Liste' }));
   expect(screen.queryByRole('region', { name: 'Katzendetails' })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Details / bearbeiten' }));
+});
+
+test('an empty later visit page does not claim the cat has no visits', async () => {
+  get.mockImplementation(async (path: string, options?: { params?: { query?: { offset?: number } } }) => {
+    if (path.endsWith('/cats')) return ok([{ id: 'cat', chipId: 'CHIP', name: 'Luna' }]);
+    if (path.endsWith('/visits')) return ok(options?.params?.query?.offset ? []
+      : Array.from({ length: 20 }, (_, i) => ({ id: `visit-${i}`, chipId: 'CHIP' })));
+    return ok([]);
+  });
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Nächste Seite' }));
+  await screen.findByText('Keine weiteren Besuche.');
+  expect(screen.queryByText('Keine abgeleiteten Besuche vorhanden.')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Vorherige Seite' }));
+  await screen.findByRole('list', { name: 'Abgeleitete Besuche' });
 });
 
 test('unknown chip detail does not invent a cat and keeps creation', async () => {

@@ -166,7 +166,7 @@ function classifyThrown(error: unknown, signalAborted: boolean): { kind: BatchNo
   }
   const text = error instanceof Error ? error.message : String(error);
   const name = error && typeof error === 'object' && 'name' in error ? String((error as { name: unknown }).name) : '';
-  const kind = (error as { kind?: unknown }).kind;
+  const kind = error && typeof error === 'object' && 'kind' in error ? error.kind : undefined;
   if (kind === 'timeout' || name === 'NetworkError' || /zeitüberschritten|Timeout|Verbindung|disconnected|nicht erreichbar|Kein Node gefunden/i.test(text)) {
     return { kind: 'unreachable', message: text };
   }
@@ -183,6 +183,39 @@ async function disconnectQuietly(transport: NodeTransport | undefined): Promise<
   } catch {
     // Cleanup must not mask the operation result.
   }
+}
+
+// Bound operations even when an underlying API ignores cancellation. Late
+// completion cannot send another frame or disconnect a newer visit.
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new DOMException('Node-Vorgang abgebrochen', 'AbortError'));
+    if (signal.aborted) { abort(); void promise.catch(() => {}); return; }
+    signal.addEventListener('abort', abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
+
+function sessionTransport(raw: NodeTransport, signal: AbortSignal) {
+  let closed = false;
+  let cleanup: Promise<void> | undefined;
+  const close = () => {
+    if (!closed) {
+      closed = true;
+      cleanup = disconnectQuietly(raw);
+    }
+    return cleanup!;
+  };
+  const checked = async <T>(action: () => Promise<T>) => {
+    signal.throwIfAborted();
+    if (closed) throw new DOMException('Node-Vorgang abgebrochen', 'AbortError');
+    const value = await abortable(action(), signal);
+    signal.throwIfAborted();
+    return value;
+  };
+  return { transport: { connect: () => checked(() => raw.connect()),
+    disconnect: () => closed ? cleanup! : signal.aborted ? close() : raw.disconnect(),
+    read: () => checked(() => raw.read()), write: (frame: Uint8Array) => checked(() => raw.write(frame)) }, close };
 }
 
 // Sequential orchestration: exactly one GATT session at a time. A failing
@@ -223,23 +256,29 @@ export async function runBatchSync(
     const perNode = new AbortController();
     const forwardAbort = () => perNode.abort();
     callbacks.signal?.addEventListener('abort', forwardAbort, { once: true });
+    if (callbacks.signal?.aborted) perNode.abort();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     if (Number.isFinite(perNodeTimeoutMs) && perNodeTimeoutMs > 0) {
       timeout = setTimeout(() => perNode.abort(), perNodeTimeoutMs);
     }
     let transport: NodeTransport | undefined;
+    let closeSession: (() => Promise<void>) | undefined;
     try {
       try {
-        transport = callbacks.createTransport
-          ? await callbacks.createTransport(input.device)
-          : await defaultTransportFor(input.device);
+        const creating = Promise.resolve(callbacks.createTransport
+          ? callbacks.createTransport(input.device) : defaultTransportFor(input.device));
+        void creating.then(raw => { if (perNode.signal.aborted) void disconnectQuietly(raw); }, () => {});
+        const session = sessionTransport(await abortable(creating, perNode.signal), perNode.signal);
+        transport = session.transport;
+        closeSession = session.close;
       } catch (error) {
         const classified = classifyThrown(error, perNode.signal.aborted || callbacks.signal?.aborted === true);
         const result: BatchNodeResult = {
           browserId: input.browserId, browserLabel: input.browserLabel,
-          kind: classified.kind === 'cancelled' ? 'cancelled' : 'unreachable',
+          kind: callbacks.signal?.aborted ? 'cancelled' : 'unreachable',
           nodeId: null, ownerNodeId: null, recordsReceived: 0, watermark: null,
-          message: classified.message || 'Napf nicht erreichbar. Bitte Napf einschalten und erneut versuchen.',
+          message: perNode.signal.aborted && !callbacks.signal?.aborted ? 'Zeitüberschreitung beim Verbinden mit diesem Napf.'
+            : classified.message || 'Napf nicht erreichbar. Bitte Napf einschalten und erneut versuchen.',
           foreignOrganizationName: null, unclaimed: false, durationMs: startedAt() - nodeStarted,
         };
         results.push(result);
@@ -255,17 +294,23 @@ export async function runBatchSync(
         }));
       let view: CollectorViewState = { ...initialCollectorView };
       try {
-        view = await runner(transport, perNode.signal, next =>
-          callbacks.onNodeUpdate?.(index, devices.length, input, next));
+        view = await abortable(runner(transport, perNode.signal, next => {
+          if (!perNode.signal.aborted) {
+            view = next;
+            callbacks.onNodeUpdate?.(index, devices.length, input, next);
+          }
+        }), perNode.signal);
       } catch (error) {
         const aborted = perNode.signal.aborted || callbacks.signal?.aborted === true;
         const timedOut = perNode.signal.aborted && !callbacks.signal?.aborted;
-        const classified = classifyThrown(error, aborted);
+        const confirmed = view.fertig && view.nodeState === 'complete';
+        const classified = confirmed ? classifyBatchView(view, aborted) : classifyThrown(error, aborted);
         const kind: BatchNodeKind = timedOut && classified.kind === 'cancelled' ? 'unreachable' : classified.kind;
         const result: BatchNodeResult = {
           browserId: input.browserId, browserLabel: input.browserLabel,
-          kind, nodeId: null, ownerNodeId: null, recordsReceived: 0, watermark: null,
-          message: timedOut
+          kind, nodeId: confirmed ? view.owner?.nodeId ?? null : null, ownerNodeId: view.owner?.nodeId ?? null,
+          recordsReceived: view.recordsReceived, watermark: view.watermark,
+          message: timedOut && !confirmed
             ? `Zeitüberschreitung bei diesem Napf (${Math.round(perNodeTimeoutMs / 1000)} s). Übrige Näpfe wurden weiter bearbeitet; bitte erneut versuchen.`
             : classified.message,
           foreignOrganizationName: null, unclaimed: false, durationMs: startedAt() - nodeStarted,
@@ -303,7 +348,7 @@ export async function runBatchSync(
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
       callbacks.signal?.removeEventListener('abort', forwardAbort);
-      await disconnectQuietly(transport);
+      await closeSession?.();
     }
   }
   return results;
@@ -314,14 +359,15 @@ async function defaultTransportFor(device: unknown): Promise<NodeTransport> {
   return new WebBluetoothTransport(device as never);
 }
 
-// Selects only retryable outcomes. Successful, cancelled and skipped nodes
-// are never repeated by a retry.
+// Resume failed or interrupted bowls without repeating confirmed successes.
+// Unclaimed and foreign bowls still require their separate authorization flow.
 export function retryableBatchInputs(
   inputs: BatchNodeInput[],
   results: BatchNodeResult[],
 ): BatchNodeInput[] {
   const retryIds = new Set(results
-    .filter(r => r.kind === 'unreachable' || r.kind === 'failed' || r.kind === 'unauthorized')
+    .filter(r => r.kind === 'unreachable' || r.kind === 'failed' || r.kind === 'unauthorized' ||
+      r.kind === 'cancelled' || r.kind === 'skipped')
     .map(r => r.browserId));
   return inputs.filter(i => retryIds.has(i.browserId));
 }
