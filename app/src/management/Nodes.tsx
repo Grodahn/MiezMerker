@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import { currentDeployment, Feedback, LoadState, siteName, Table, time,
   type Deployment, type Node, type Site } from './common';
 import { requestOptions, result, useLoad, useMutation } from './data';
+import { Status } from '../ui/Status';
+import { statusMessages } from '../ui/status-messages';
 
 function NodeDetail({ node, history, sites, close, saved }: {
   node: Node; history: Deployment[]; sites: Site[]; close: () => void; saved: () => void;
@@ -37,7 +39,7 @@ function NodeDetail({ node, history, sites, close, saved }: {
     {ownHistory.length ? <Table label="Deployment-Historie" headings={['Futterstelle', 'Gültig ab (einschließlich)', 'Gültig bis (ausschließlich)']}>
       {ownHistory.map(deployment => <tr key={deployment.id}><td>{siteName(sites, deployment.feedingSiteId)}</td>
         <td>{time(deployment.validFrom)}</td><td>{deployment.validUntil ? time(deployment.validUntil) : 'Offen'}</td></tr>)}
-    </Table> : <p>Noch keine Zuordnung vorhanden.</p>}
+    </Table> : <Status {...statusMessages.unassigned}/>}
     <button onClick={close}>Schließen</button>
   </section>;
 }
@@ -63,7 +65,7 @@ export function Nodes({ organizationId, admin }: { organizationId: string; admin
         <td>Firmware: {node.firmwareVersion || 'Unbekannt'}<small>Protokoll: {node.protocolVersion || 'Unbekannt'}</small></td>
         <td>{time(node.lastContactAt)}<small className="preserve-lines">{node.statusNote}</small></td>
         <td><button onClick={() => setSelected(node)}>Details</button></td></tr>)}</Table>
-      : <p>Noch keine Nodes vorhanden. Ein ADMIN kann im Vor-Ort-Sync einen physischen Node claimen; die Futterstellenzuordnung erfolgt im Admin-Backend.</p>)}
+      : <Status {...statusMessages.emptyNodes} graphic="node"/>)}
     {selected && data && <NodeDetail key={selected.nodeId} node={selected} sites={data.sites} history={data.history}
       close={() => setSelected(null)} saved={() => { setSelected(null); list.reload(); }}/>}</>;
 }

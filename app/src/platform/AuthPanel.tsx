@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AppIcon } from '../ui/Graphic';
+import { Status } from '../ui/Status';
+import { errorStatus } from '../ui/status-messages';
 import { fetchSession, getAuthState, login, logout, selectOrganization, subscribeAuth } from './auth';
 
 export function AuthPanel() {
@@ -80,6 +82,7 @@ export function AuthPanel() {
         onChange={event => setPassword(event.target.value)}/></label>
       <button type="submit" disabled={busy}>Anmelden</button>
     </form>}
-    {error && <p role="alert">{error}</p>}
+    {busy && <Status kind="loading" title="Konto wird aktualisiert …"/>}
+    {error && <Status {...errorStatus(error)}/>}
   </section></details>;
 }

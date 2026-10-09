@@ -16,6 +16,7 @@ import offline from './assets/icons/offline.svg';
 import arrow from './assets/icons/arrow.svg';
 import account from './assets/icons/account.svg';
 import logout from './assets/icons/logout.svg';
+import info from './assets/icons/info.svg';
 
 // Single artwork adapter: screens use semantic references, never filenames.
 // Imports keep fallbacks in Vite's dependency graph and Workbox precache.
@@ -24,5 +25,6 @@ export const assets = {
   illustrations: { background, home, sync: bluetooth, syncSuccess: success, error, offline },
   placeholders: { cat, feedingSite, node: bowl, bowl, generic: feedingSite },
   icons: { home: homeIcon, sync, feedingSite: pin, cat: catIcon, bluetooth, success, error, offline, arrow, account, logout },
+  status: { loading: sync, empty: feedingSite, error, offline, success, info, bluetooth, cat, node: bowl, feedingSite },
 };
 export type IconName = keyof typeof assets.icons;

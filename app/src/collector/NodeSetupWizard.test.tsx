@@ -108,3 +108,43 @@ test('existing assignment is surfaced, never overwritten', async () => {
   await screen.findByText(/bereits einer Futterstelle zugeordnet/);
   expect(deployMock).toHaveBeenCalledWith(ORG, NODE, SITE);
 });
+
+test.each([
+  ['unauthorized', 'Sitzung abgelaufen. Bitte erneut anmelden; der Claim bleibt gültig.'],
+  ['forbidden-role', 'Einrichtung verweigert: ACTIVE ADMIN erforderlich oder fremde Organisation.'],
+] as const)('setup %s directs to recovery instead of offering a futile retry', async (kind, message) => {
+  fetchMock.mockRejectedValue(new SetupError(kind, message));
+  render(<NodeSetupWizard organizationId={ORG} nodeId={NODE}/>);
+  await screen.findByRole('alert');
+  expect(screen.queryByRole('button', { name: 'Erneut versuchen' })).toBeNull();
+});
+
+test('a failed refresh after confirmed assignment retries reading the state rather than the write', async () => {
+  deployMock.mockResolvedValue({ deployment: { id: 'confirmed', feedingSiteId: SITE } as never, created: true, alreadyAssigned: false });
+  render(<NodeSetupWizard organizationId={ORG} nodeId={NODE}/>);
+  const submit = await screen.findByRole('button', { name: 'Einrichtung abschließen' });
+  fetchMock.mockRejectedValueOnce(new SetupError('backend', 'Status-Refresh fehlgeschlagen.'));
+  fireEvent.click(submit);
+  await screen.findByText('Status-Refresh fehlgeschlagen.');
+  fireEvent.click(screen.getByRole('button', { name: 'Einrichtungsstatus erneut laden' }));
+  await screen.findByRole('button', { name: 'Name speichern' });
+  expect(deployMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+test('site-list permission failures retain the saved setup and do not offer a futile retry', async () => {
+  sitesMock.mockRejectedValue(new SetupError('forbidden-role', 'Einrichtung verweigert: ACTIVE ADMIN erforderlich oder fremde Organisation.'));
+  render(<NodeSetupWizard organizationId={ORG} nodeId={NODE}/>);
+  await screen.findByText(/ACTIVE ADMIN erforderlich/);
+  expect(screen.getByRole('button', { name: 'Name speichern' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Erneut versuchen' })).toBeNull();
+});
+
+test('assignment session failures preserve claim guidance and do not retry provisioning', async () => {
+  deployMock.mockRejectedValue(new SetupError('unauthorized', 'Sitzung abgelaufen. Bitte erneut anmelden; der Claim bleibt gültig.'));
+  render(<NodeSetupWizard organizationId={ORG} nodeId={NODE}/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Einrichtung abschließen' }));
+  await screen.findByText(/Claim bleibt gültig/);
+  expect(screen.queryByRole('button', { name: 'Erneut versuchen' })).toBeNull();
+  expect(deployMock).toHaveBeenCalledTimes(1);
+});

@@ -1,7 +1,9 @@
 import { catName, duration, millis, siteName, Table, type Cat, type Site, type Visit } from './common';
+import { Status } from '../ui/Status';
+import { statusMessages } from '../ui/status-messages';
 
 export function VisitTable({ rows, sites, cats }: { rows: Visit[]; sites: Site[]; cats: Cat[] }) {
-  if (!rows.length) return <p>Keine abgeleiteten Besuche vorhanden.</p>;
+  if (!rows.length) return <Status {...statusMessages.emptyVisits}/>;
   return <Table label="Abgeleitete Besuche" headings={['Beginn / Ende', 'Dauer / Reads', 'Futterstelle', 'Katze / Chip', 'Ableitung']}>
     {rows.map(row => <tr key={row.id}><td>{millis(row.startAtMillis)}<small>bis {millis(row.endAtMillis)}</small></td>
       <td>{duration(row)}<small>{row.observationCount} Reads</small></td>

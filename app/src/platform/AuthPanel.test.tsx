@@ -42,7 +42,7 @@ test('failed server logout displays an error without restoring local access', as
   get.mockResolvedValue({ data: { token: 'csrf' } });
   post.mockResolvedValue({ error: {}, response: { status: 403 } });
   fireEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
-  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Abmelden fehlgeschlagen');
+  expect((await screen.findByRole('alert')).textContent).toContain('Abmelden fehlgeschlagen');
   expect(screen.queryByText('Angemeldet als a@example.org')).toBeNull();
   expect(screen.getByRole('button', { name: 'Anmelden' })).toBeTruthy();
 });
