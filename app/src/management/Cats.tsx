@@ -125,11 +125,7 @@ export function Cats({ organizationId }: { organizationId: string }) {
   const selectedPanel = useRef<HTMLDivElement>(null);
   const selectionOrigin = useRef<HTMLButtonElement | null>(null);
   const focusSearchOnReload = useRef(false);
-  const searchElement = useCallback((element: HTMLInputElement | null) => {
-    if (element && focusSearchOnReload.current) {
-      element.focus(); focusSearchOnReload.current = false;
-    }
-  }, []);
+  const searchReloadBaseline = useRef<unknown>(null);
   useEffect(() => {
     if (selected) selectedPanel.current?.focus();
     else if (selectionOrigin.current) {
@@ -150,6 +146,12 @@ export function Cats({ organizationId }: { organizationId: string }) {
     return { cats, activity, sites };
   }, [organizationId]));
   const data = list.data;
+  useEffect(() => {
+    if (!selected && data && focusSearchOnReload.current && data !== searchReloadBaseline.current) {
+      document.getElementById('cat-search')?.focus();
+      focusSearchOnReload.current = false;
+    }
+  }, [selected, data]);
 
   const entries = useMemo(() => {
     if (!data) return { entries: [], total: 0 };
@@ -201,7 +203,7 @@ export function Cats({ organizationId }: { organizationId: string }) {
       <div className="cat-toolbar">
         <div className="field cat-search">
           <label htmlFor="cat-search">Suche nach Name oder Chip-ID</label>
-          <input ref={searchElement} id="cat-search" type="search" autoComplete="off" placeholder="Name oder Chip-ID suchen"
+          <input id="cat-search" type="search" autoComplete="off" placeholder="Name oder Chip-ID suchen"
             value={query} onChange={event => setQuery(event.target.value)} />
         </div>
         <div className="cat-filter" role="group" aria-label="Katzen und Chips filtern">
@@ -258,6 +260,7 @@ export function Cats({ organizationId }: { organizationId: string }) {
     {selected && <CatEditor key={`editor-${selected.id ?? selected.chipId ?? 'new'}`} organizationId={organizationId} initial={selected}
       onClose={() => setSelected(null)} onSaved={() => {
         selectionOrigin.current = null; focusSearchOnReload.current = true;
+        searchReloadBaseline.current = data;
         setSelected(null); list.reload();
       }} />}
     {selected?.chipId && data && <CatVisits key={`visits-${selected.chipId}`} organizationId={organizationId}

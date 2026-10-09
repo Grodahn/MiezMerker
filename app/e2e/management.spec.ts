@@ -105,6 +105,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await editor.getByLabel('Name (optional)').fill('Miez');
     await editor.getByRole('button', { name: 'Speichern' }).click();
     await expect(page.getByRole('heading', { name: 'Miez' }).first()).toBeVisible();
+    await expect(page.getByLabel('Suche nach Name oder Chip-ID')).toBeFocused();
     await page.locator('.auth-panel > summary').click();
     await page.getByLabel('Aktive Organisation').selectOption(orgB);
     await expect(page.getByRole('heading', { name: 'Miez' })).toHaveCount(0);

@@ -192,6 +192,7 @@ test('MEMBER registers an observed chip and retains cat visit history', async ()
   await vi.waitFor(() => expect(post).toHaveBeenCalledWith('/api/v1/organizations/{organizationId}/cats', expect.objectContaining({
     headers: { 'X-XSRF-TOKEN': 'csrf' }, body: { chipId: 'CHIP', name: 'Miez', status: '', notes: '' }, cache: 'no-store',
   })));
+  await screen.findByRole('list', { name: 'Katzen und Chips' });
   await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Suche nach Name oder Chip-ID')));
 });
 
