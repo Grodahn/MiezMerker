@@ -1,0 +1,40 @@
+.cats-page { display: grid; gap: var(--space-4); min-width: 0; }
+.cat-toolbar { display: grid; gap: var(--space-3); }
+.cat-search { max-width: 32rem; }
+.cat-filter { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.cat-filter button[aria-pressed="true"] { background: var(--color-soft-green); border-color: var(--color-primary); font-weight: 750; }
+.cat-count { margin: 0; color: var(--color-muted); font-size: var(--font-small); }
+.cat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.cat-card { display: grid; gap: var(--space-3); }
+.cat-card__main { display: flex; gap: var(--space-4); align-items: flex-start; min-width: 0; }
+.cat-card__avatar { inline-size: 3.5rem; block-size: 3.5rem; flex: 0 0 auto; }
+.cat-card__body { flex: 1; min-width: 0; }
+.cat-card__body p { margin: 0 0 var(--space-1); }
+.cat-card__title { margin: 0 0 var(--space-1); font-size: 1.125rem; line-height: 1.3; overflow-wrap: anywhere; }
+.cat-card__chip code, .cat-detail__chip code, .visit-card__chip code { overflow-wrap: anywhere; }
+.cat-card__label { font-weight: 650; }
+.cat-card__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.cat-card .status-card { margin-block: var(--space-2); }
+.cat-detail__header { display: flex; gap: var(--space-4); align-items: flex-start; }
+.cat-detail__avatar { inline-size: 4rem; block-size: 4rem; flex: 0 0 auto; }
+.cat-detail__titles { min-width: 0; }
+.cat-detail__title { margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
+.cat-detail__chip { margin: 0; }
+.cat-detail__list { display: grid; gap: var(--space-3); margin: var(--space-4) 0; }
+.cat-detail__list > div { display: grid; gap: var(--space-1); padding-block-start: var(--space-2); border-top: var(--border); }
+.cat-detail__list dt { font-weight: 650; }
+.cat-detail__list dd { margin: 0; min-width: 0; }
+.cat-visits__hint { color: var(--color-muted); font-size: var(--font-small); }
+.cat-visits__pager { align-items: center; }
+.visit-list { list-style: none; margin: var(--space-4) 0; padding: 0; display: grid; gap: var(--space-3); }
+.visit-card { display: grid; gap: var(--space-2); }
+.visit-card__title { margin: 0; overflow-wrap: anywhere; }
+.visit-card__chip { margin: 0; }
+.visit-card__list { display: grid; gap: var(--space-2); margin: 0; }
+.visit-card__list > div { display: grid; gap: var(--space-1); }
+.visit-card__list dt { font-weight: 650; }
+.visit-card__list dd { margin: 0; }
+@media (min-width: 700px) {
+  .cat-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .visit-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

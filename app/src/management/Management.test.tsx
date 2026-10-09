@@ -90,7 +90,8 @@ test('cats include observed unknown chips and separate last sighting from late s
   ] : []));
   render(<Management path="/cats"/>);
   expect(await screen.findByText('CHIP-NEW')).toBeTruthy();
-  expect(screen.getByText('Garten')).toBeTruthy();
+  expect(screen.getByText('Unbekannter Chip')).toBeTruthy();
+  expect(screen.getByText(/Garten/)).toBeTruthy();
   expect(screen.getByText('2 Read(s) ohne verlässliche Uhrzeit')).toBeTruthy();
   expect(screen.getByText(millis('1735689600000'))).toBeTruthy();
 });
@@ -191,6 +192,8 @@ test('MEMBER registers an observed chip and retains cat visit history', async ()
   await vi.waitFor(() => expect(post).toHaveBeenCalledWith('/api/v1/organizations/{organizationId}/cats', expect.objectContaining({
     headers: { 'X-XSRF-TOKEN': 'csrf' }, body: { chipId: 'CHIP', name: 'Miez', status: '', notes: '' }, cache: 'no-store',
   })));
+  await screen.findByRole('list', { name: 'Katzen und Chips' });
+  await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Suche nach Name oder Chip-ID')));
 });
 
 test('nodes show the bowl label primarily and keep the technical node id visible', async () => {
@@ -224,4 +227,133 @@ test('default Cat avatar is replaceable centrally without adding backend image f
     await screen.findByText('Miez');
     expect(container.querySelector('.avatar')?.getAttribute('src')).toBe('/replacement-avatar.svg');
   } finally { assets.placeholders.cat = original; }
+});
+
+test('cats overview uses mobile cards with search, filter and unknown-chip wording', async () => {
+  get.mockImplementation(async (path: string) => ok(path.endsWith('/cats')
+    ? [{ id: 'cat-luna', chipId: 'CHIP-LUNA', name: 'Luna', status: 'Aktiv', notes: 'Scheu' }]
+    : path.endsWith('/chip-activity') ? [
+      { chipId: 'CHIP-LUNA', lastSeenAtMillis: '1735689600000', lastReceivedAt: '2026-10-01T00:00:00Z', uncertainClockCount: 0, feedingSiteIds: ['site-a'] },
+      { chipId: 'CHIP-UNKNOWN', lastSeenAtMillis: null, lastReceivedAt: '2026-10-08T12:00:00Z', uncertainClockCount: 1, feedingSiteIds: [] },
+    ] : path.endsWith('/feeding-sites') ? [site] : path.endsWith('/visits') ? [] : []));
+  render(<Management path="/cats"/>);
+  const list = await screen.findByRole('list', { name: 'Katzen und Chips' });
+  expect(within(list).getByRole('heading', { name: 'Luna' })).toBeTruthy();
+  expect(within(list).getByRole('heading', { name: 'Unbekannter Chip' })).toBeTruthy();
+  expect(screen.queryByText('Unbekannte Katze')).toBeNull();
+  expect(screen.queryByRole('table')).toBeNull();
+  expect(screen.getByLabelText('Suche nach Name oder Chip-ID')).toBeTruthy();
+  expect(screen.getByRole('group', { name: 'Katzen und Chips filtern' })).toBeTruthy();
+  expect(screen.getByText('CHIP-LUNA')).toBeTruthy();
+  expect(screen.getByText(/Status: Aktiv/)).toBeTruthy();
+  expect(screen.getByText(millis('1735689600000'))).toBeTruthy();
+  expect(screen.getAllByText(/Serverempfang:/).length).toBe(2);
+  expect(screen.getByText(/Bekannte Futterstellen: Garten/)).toBeTruthy();
+  expect(screen.getByText('Keine verlässliche Sichtungszeit')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Details / bearbeiten' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Katze dazu anlegen' })).toBeTruthy();
+});
+
+test('cats search and filter reuse loaded data without extra observation loads', async () => {
+  get.mockImplementation(async (path: string) => ok(path.endsWith('/cats')
+    ? [{ id: 'cat-luna', chipId: 'CHIP-LUNA', name: 'Luna' }, { id: 'cat-minka', chipId: 'CHIP-MINKA', name: 'Minka' }]
+    : path.endsWith('/chip-activity') ? [
+      { chipId: 'CHIP-LUNA', feedingSiteIds: [] },
+      { chipId: 'CHIP-MINKA', feedingSiteIds: [] },
+      { chipId: 'CHIP-UNKNOWN', feedingSiteIds: [] },
+    ] : []));
+  render(<Management path="/cats"/>);
+  await screen.findByRole('list', { name: 'Katzen und Chips' });
+  const initialCalls = get.mock.calls.length;
+  expect(initialCalls).toBe(3);
+  fireEvent.change(screen.getByLabelText('Suche nach Name oder Chip-ID'), { target: { value: 'luna' } });
+  expect(screen.getByRole('heading', { name: 'Luna' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Minka' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Unbekannter Chip' })).toBeNull();
+  expect(get.mock.calls.length).toBe(initialCalls);
+  fireEvent.change(screen.getByLabelText('Suche nach Name oder Chip-ID'), { target: { value: 'CHIP-UNKNOWN' } });
+  expect(screen.getByRole('heading', { name: 'Unbekannter Chip' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Luna' })).toBeNull();
+  fireEvent.change(screen.getByLabelText('Suche nach Name oder Chip-ID'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Unbekannte Chips' }));
+  expect(screen.queryByRole('heading', { name: 'Luna' })).toBeNull();
+  expect(screen.getByRole('heading', { name: 'Unbekannter Chip' })).toBeTruthy();
+  expect(screen.getByText(/1 von 3 Einträgen/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Bekannte Katzen' }));
+  expect(screen.getByRole('heading', { name: 'Luna' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Unbekannter Chip' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Alle' }));
+  fireEvent.change(screen.getByLabelText('Suche nach Name oder Chip-ID'), { target: { value: 'nichts-passendes-xyz' } });
+  expect(await screen.findByText('Keine Treffer für diese Suche.')).toBeTruthy();
+  expect(get.mock.calls.length).toBe(initialCalls);
+  expect(get.mock.calls.every(([path]) => !String(path).includes('/observations'))).toBe(true);
+});
+
+test('cat detail separates fields and preserves paginated historical visits', async () => {
+  const visit = (id: string) => ({ id, chipId: 'CHIP-LUNA', feedingSiteId: 'site-a',
+    startAtMillis: '1735689600000', endAtMillis: '1735689601000', observationCount: 2,
+    algorithmVersion: 'visit-gap-v1', gapSeconds: 60, firstObservationId: 'first', lastObservationId: 'last' });
+  get.mockImplementation(async (path: string, options?: { params?: { query?: { offset?: number } } }) => {
+    if (path.endsWith('/cats')) return ok([{ id: 'cat-luna', chipId: 'CHIP-LUNA', name: 'Luna', status: 'Aktiv', notes: 'Scheue Notiz' }]);
+    if (path.endsWith('/chip-activity')) return ok([{ chipId: 'CHIP-LUNA', lastSeenAtMillis: '1735689600000',
+      lastReceivedAt: '2026-10-01T00:00:00Z', uncertainClockCount: 0, feedingSiteIds: ['site-a'] }]);
+    if (path.endsWith('/feeding-sites')) return ok([site]);
+    if (path.endsWith('/visits')) {
+      const offset = options?.params?.query?.offset ?? 0;
+      if (!offset) return ok(Array.from({ length: 20 }, (_, index) => visit(`visit-${index}`)));
+      return ok([visit('visit-20')]);
+    }
+    return ok([]);
+  });
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
+  expect(screen.queryByRole('list', { name: 'Katzen und Chips' })).toBeNull();
+  expect(document.activeElement?.getAttribute('aria-label')).toBe('Ausgewählte Katze');
+  const detail = await screen.findByRole('region', { name: 'Katzendetails' });
+  expect(within(detail).getByRole('heading', { name: 'Luna' })).toBeTruthy();
+  expect(within(detail).getByText('Aktiv')).toBeTruthy();
+  expect(within(detail).getByText('Scheue Notiz')).toBeTruthy();
+  expect(within(detail).getAllByText('CHIP-LUNA').length).toBe(2);
+  expect(within(detail).getByText(millis('1735689600000'))).toBeTruthy();
+  expect(within(detail).getByText(/2026/)).toBeTruthy();
+  const visits = await screen.findByRole('list', { name: 'Abgeleitete Besuche' });
+  expect(within(visits).getAllByText(/Garten/).length).toBeGreaterThan(0);
+  expect(within(visits).getAllByText('visit-gap-v1').length).toBe(20);
+  expect(screen.getByText('Seite 1')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Nächste Seite' }));
+  expect(await screen.findByText('Seite 2')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Vorherige Seite' }));
+  expect(await screen.findByText('Seite 1')).toBeTruthy();
+  fireEvent.click(within(detail).getByRole('button', { name: 'Zurück zur Liste' }));
+  expect(screen.queryByRole('region', { name: 'Katzendetails' })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Details / bearbeiten' }));
+});
+
+test('an empty later visit page does not claim the cat has no visits', async () => {
+  get.mockImplementation(async (path: string, options?: { params?: { query?: { offset?: number } } }) => {
+    if (path.endsWith('/cats')) return ok([{ id: 'cat', chipId: 'CHIP', name: 'Luna' }]);
+    if (path.endsWith('/visits')) return ok(options?.params?.query?.offset ? []
+      : Array.from({ length: 20 }, (_, i) => ({ id: `visit-${i}`, chipId: 'CHIP' })));
+    return ok([]);
+  });
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Nächste Seite' }));
+  await screen.findByText('Keine weiteren Besuche.');
+  expect(screen.queryByText('Keine abgeleiteten Besuche vorhanden.')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Vorherige Seite' }));
+  await screen.findByRole('list', { name: 'Abgeleitete Besuche' });
+});
+
+test('unknown chip detail does not invent a cat and keeps creation', async () => {
+  get.mockImplementation(async (path: string) => ok(path.endsWith('/chip-activity')
+    ? [{ chipId: 'CHIP-UNKNOWN', lastSeenAtMillis: null, lastReceivedAt: '2026-10-08T12:00:00Z', uncertainClockCount: 1, feedingSiteIds: [] }]
+    : path.endsWith('/visits') ? [] : []));
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Katze dazu anlegen' }));
+  const detail = await screen.findByRole('region', { name: 'Katzendetails' });
+  expect(within(detail).getByRole('heading', { name: 'Unbekannter Chip' })).toBeTruthy();
+  expect(within(detail).getByText(/noch keine Katze angelegt/)).toBeTruthy();
+  expect(within(detail).queryByText('Notizen')).toBeNull();
+  expect((screen.getByLabelText('Chip-ID') as HTMLInputElement).value).toBe('CHIP-UNKNOWN');
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { encodeFrame, encodeHelloPublic, encodeOwnerResponse, Opcode } from '../src/collector/ble-codec';
 
 async function backend(page: Page) {
   const state = { fail: false, unknownClock: false, hold: Promise.resolve() };
@@ -52,9 +53,9 @@ test('unknown clock explains receipt time instead of claiming a precise sighting
   await expect(page.getByText(/Serverempfang:/)).toBeVisible();
 });
 
-for (const [name, title, message = 'selection'] of [
-  ['NotFoundError', 'Geräteauswahl beendet'], ['NotAllowedError', 'Zugriff nicht erlaubt'],
-  ['AbortError', 'Auswahl abgebrochen'], ['NetworkError', 'Bluetooth nicht verfügbar', 'Bluetooth adapter not available'],
+for (const [name, pattern, message = 'selection'] of [
+  ['NotFoundError', /abgebrochen oder kein passendes Gerät/], ['NotAllowedError', /Browser-Einstellungen/],
+  ['AbortError', /abgebrochen/], ['NetworkError', /Bluetooth nicht verfügbar/, 'Bluetooth adapter not available'],
 ] as const) {
   test(`Bluetooth ${name} has its own recovery and does not claim local or server success`, async ({ page }) => {
     await backend(page);
@@ -62,20 +63,15 @@ for (const [name, title, message = 'selection'] of [
       value: { getDevices: async () => [], requestDevice: async () => { throw new DOMException(message, errorName); } },
     }), { errorName: name, message });
     await page.goto('/sync');
-    await page.getByRole('button', { name: 'Node auswählen & synchronisieren' }).click();
-    await expect(page.getByText(title, { exact: true })).toBeVisible();
+    // Batch sync itself never opens the chooser; only the explicit release does.
+    await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+    await expect(page.getByText('Noch kein Napf freigegeben')).toBeVisible();
+    await page.getByRole('button', { name: 'Weiteren Napf freigeben' }).click();
+    await expect(page.getByText('Browser-Freigabe')).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Browser-Freigabe' }).getByText(pattern)).toBeVisible();
     await expect(page.getByText('Napf ausgelesen', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Daten an Server übertragen', { exact: true })).toHaveCount(0);
-    if (name === 'NotFoundError') {
-      const retry = page.getByRole('button', { name: 'Napf erneut auswählen' });
-      await retry.focus(); await page.keyboard.press('Enter');
-      await expect(page.getByText(/abgebrochen oder kein passendes Gerät/)).toBeVisible();
-    } else if (name === 'NotAllowedError') {
-      await expect(page.getByRole('alert').getByText(/Browser-Einstellungen/)).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Napf erneut auswählen' })).toHaveCount(0);
-    } else {
-      await expect(page.getByRole('button', { name: 'Napf erneut auswählen' })).toBeEnabled();
-    }
+    await expect(page.getByRole('button', { name: 'Weiteren Napf freigeben' })).toBeEnabled();
   });
 }
 
@@ -87,14 +83,11 @@ test('long Bluetooth waits explain recovery and respect reduced motion without b
     value: { getDevices: async () => [], requestDevice: () => new Promise(() => {}) },
   }));
   await page.goto('/sync');
-  await page.clock.install();
-  await page.getByRole('button', { name: 'Node auswählen & synchronisieren' }).click();
-  await page.clock.fastForward(16_000);
-  await expect(page.getByText(/Das dauert länger. Bitte Napf einschalten/)).toBeVisible();
-  const progress = page.getByRole('progressbar', { name: 'Napf wird verbunden …' });
-  await expect(page.getByRole('progressbar')).toHaveCount(1);
-  await expect(progress).not.toHaveAttribute('value');
-  expect(await progress.evaluate(el => getComputedStyle(el).appearance)).toBe('none');
+  // With no authorized bowls the batch reports an honest fallback instead of
+  // an endless spinner; navigation stays available throughout.
+  await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+  await expect(page.getByText('Noch kein Napf freigegeben')).toBeVisible();
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath('loading-mobile.png') });
   await page.getByRole('link', { name: 'Katzen', exact: true }).click();
   await expect(page).toHaveURL(/\/cats$/);
@@ -107,4 +100,49 @@ test('offline login displays an honest connection state and no server success', 
   await expect(page.getByRole('status').filter({ hasText: 'Offline' })).toContainText('Serververbindung');
   await expect(page.getByRole('navigation')).toHaveCount(0);
   await expect(page.getByText('Daten an Server übertragen', { exact: true })).toHaveCount(0);
+});
+
+test('one click probes two fake nodes sequentially after a connection failure without a chooser', async ({ page }) => {
+  await backend(page);
+  const nodeId = '44444444-4444-4444-8444-444444444444';
+  const hello = Array.from(encodeFrame({ version: 1, opcode: Opcode.HelloPublic,
+    payload: encodeHelloPublic({ serverVer: 1, caps: 0x1f, nodeId,
+      incarnation: '55555555-5555-4555-9555-555555555555', firmwareVersion: 'fake', claimState: 0, clockStatus: 0 }) }));
+  const owner = Array.from(encodeFrame({ version: 1, opcode: Opcode.OwnerResponse,
+    payload: encodeOwnerResponse({ nodeId, claimState: 0,
+      organizationId: '00000000-0000-0000-0000-000000000000', organizationName: '', organizationSlug: '', publicContact: '' }) }));
+  await page.addInitScript(({ hello, owner }) => {
+    const events: string[] = [];
+    Object.assign(window, { batchEvents: events });
+    const device = (id: string, fail: boolean) => ({ id, name: id, gatt: {
+      connected: false,
+      async connect() {
+        events.push(`${id}:connect`);
+        if (fail) throw new DOMException('not reachable', 'NetworkError');
+        this.connected = true; return this;
+      },
+      disconnect() { events.push(`${id}:disconnect`); this.connected = false; },
+      async getPrimaryService() { return {
+        async getCharacteristic(uuid: string) { return {
+          async readValue() {
+            events.push(`${id}:read`);
+            return new DataView(new Uint8Array(uuid.endsWith('5b01') ? hello : owner).buffer);
+          },
+        }; },
+      }; },
+    } });
+    Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {
+      getDevices: async () => [device('unreachable', true), device('unclaimed', false)],
+      requestDevice: () => { events.push('chooser'); throw new Error('Unexpected chooser'); },
+    } });
+  }, { hello, owner });
+  await page.goto('/sync');
+  await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+  await expect(page.getByText('0 von 2 freigegebenen Näpfen ausgelesen.')).toBeVisible();
+  await expect(page.getByText('Napf nicht erreichbar', { exact: true })).toBeVisible();
+  await expect(page.getByText('Napf noch nicht registriert', { exact: true })).toBeVisible();
+  const events = await page.evaluate(() => (window as unknown as { batchEvents: string[] }).batchEvents);
+  expect(events.indexOf('unreachable:disconnect')).toBeLessThan(events.indexOf('unclaimed:connect'));
+  expect(events).not.toContain('chooser');
+  await expect(page.getByText('Napf ausgelesen', { exact: true })).toHaveCount(0);
 });

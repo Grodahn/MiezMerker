@@ -8,7 +8,7 @@ export const destinations: { href: string; label: string; icon: IconName }[] = [
   { href: '/cats', label: 'Katzen', icon: 'cat' },
 ];
 export function sectionPath(path: string) {
-  if (path === '/nodes') return '/feeding-sites'; // Legacy management until #68.
+  if (path === '/nodes' || path.startsWith('/nodes/')) return '/feeding-sites'; // #68: legacy Nodes redirects to feeding sites.
   return destinations.find(d => d.href !== '/' && (path === d.href || path.startsWith(`${d.href}/`)))?.href ?? path;
 }
 export function BottomNavigation({ path }: { path: string }) {

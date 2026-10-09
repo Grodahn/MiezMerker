@@ -32,7 +32,7 @@ async function backend(page: Page) {
 test('reconnect verifies the session before showing management', async ({ page, context }) => {
   const state = await backend(page);
   await page.goto('/cats');
-  await expect(page.getByRole('cell', { name: 'Private site' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Private site' })).toBeVisible();
   await context.setOffline(true);
   await expect(page.getByRole('navigation')).not.toBeVisible();
   state.expired = true;
@@ -41,7 +41,7 @@ test('reconnect verifies the session before showing management', async ({ page, 
   await context.setOffline(false);
   await expect(page.getByText('Anmeldung wird geprüft …')).toBeVisible();
   await expect(page.getByRole('navigation')).not.toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Private site' })).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Private site' })).toHaveCount(0);
   release();
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
 });
@@ -49,14 +49,14 @@ test('reconnect verifies the session before showing management', async ({ page, 
 test('logout clears the shell while its server request is pending', async ({ page }) => {
   const state = await backend(page);
   await page.goto('/cats');
-  await expect(page.getByRole('cell', { name: 'Private site' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Private site' })).toBeVisible();
   let release!: () => void;
   state.logoutHold = new Promise(resolve => { release = resolve; });
   await page.locator('.auth-panel > summary').click();
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
   await expect(page.getByRole('navigation')).not.toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Private site' })).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Private site' })).toHaveCount(0);
   release();
 });
 

@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function session(page: Page, organizationName = 'Tierschutz A') {
   const state = { signedOut: false };
+  const siteId = '11111111-1111-4111-8111-111111111111';
+  const site = { id: siteId, organizationId: 'org-a', name: 'Garten', locationLabel: 'Hinter dem Haus', description: 'Neben dem Tor' };
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const send = (data: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json',
@@ -15,16 +17,37 @@ async function session(page: Page, organizationName = 'Tierschutz A') {
     if (path === '/api/v1/auth/csrf') return send({ token: 'csrf' });
     if (path === '/api/v1/auth/logout') { state.signedOut = true; return route.fulfill({ status: 204 }); }
     if (path.includes('offline-credential')) return send({}, 403);
+    if (path.endsWith('/cat-activity')) return send([]);
+    if (path.includes('/feeding-sites/') && !path.endsWith('/feeding-sites')) return send(site);
+    if (path.endsWith('/feeding-sites')) return send([site]);
+    if (path.endsWith('/deployments')) return send([]);
+    if (path.endsWith('/nodes')) return send([]);
     return send([]);
   });
+}
+
+async function selectOrganization(page: Page) {
+  const summary = page.locator('.auth-panel > summary');
+  await summary.click();
+  await page.getByLabel('Aktive Organisation').selectOption('org-a');
+  await summary.click();
 }
 
 for (const width of [320, 375, 390, 430, 768, 1280]) {
   test(`shell navigation and content fit at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await session(page);
-    for (const [path, active] of [['/', 'Home'], ['/sync', 'Sync'], ['/feeding-sites', 'Futterstellen'], ['/cats', 'Katzen'], ['/nodes', 'Futterstellen']]) {
+    await page.goto('/');
+    await selectOrganization(page);
+    for (const [path, active, expectedUrl] of [
+      ['/', 'Home', '/'], ['/sync', 'Sync', '/sync'],
+      ['/feeding-sites', 'Futterstellen', '/feeding-sites'], ['/cats', 'Katzen', '/cats'],
+      ['/nodes', 'Futterstellen', '/feeding-sites'],
+      ['/feeding-sites/11111111-1111-4111-8111-111111111111', 'Futterstellen', '/feeding-sites/11111111-1111-4111-8111-111111111111'],
+    ]) {
       await page.goto(path);
+      if (path === '/nodes') await expect(page).toHaveURL(/\/feeding-sites$/);
+      else await expect(page).toHaveURL(new RegExp(`${expectedUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
       const nav = page.getByRole('navigation', { name: 'Bereiche' });
       await expect(nav.getByRole('link')).toHaveText(['Home', 'Sync', 'Futterstellen', 'Katzen']);
       await expect(nav.locator('[aria-current="page"]')).toHaveText(active);
@@ -53,13 +76,19 @@ for (const width of [320, 375, 390, 430, 768, 1280]) {
 test('native links preserve deep links, refresh, back/forward and legacy Nodes', async ({ page }) => {
   await session(page);
   await page.goto('/');
+  await selectOrganization(page);
   await page.getByRole('navigation', { name: 'Bereiche' }).getByRole('link', { name: 'Futterstellen', exact: true }).click();
   await expect(page).toHaveURL(/\/feeding-sites$/);
-  await page.getByRole('link', { name: 'Näpfe und Zuordnungen öffnen' }).click();
-  await expect(page.getByRole('heading', { name: 'Nodes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Futterstellen', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Garten' }).click();
+  await expect(page.getByRole('heading', { name: 'Garten', exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Bereiche' }).getByRole('link', { name: 'Futterstellen', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Nodes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Garten', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: '← Zurück zu Futterstellen' }).click();
+  await expect(page.getByRole('heading', { name: 'Futterstellen', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Garten', exact: true })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Futterstellen', exact: true })).toBeVisible();
   await page.goBack();
@@ -70,9 +99,16 @@ test('native links preserve deep links, refresh, back/forward and legacy Nodes',
   await expect(page.getByRole('heading', { name: 'Katzen', exact: true })).toBeVisible();
   await page.reload();
   await expect(page).toHaveTitle('Katzen · MiezMerker');
+  await page.goto('/nodes');
+  await expect(page).toHaveURL(/\/feeding-sites$/);
+  await expect(page.getByRole('heading', { name: 'Futterstellen', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nodes', exact: true })).toHaveCount(0);
   await page.goto('/does-not-exist');
   await expect(page.getByRole('heading', { name: 'Seite nicht gefunden' })).toBeVisible();
   await expect(page.locator('nav [aria-current]')).toHaveCount(0);
+  await page.goto('/sites');
+  await expect(page.getByRole('heading', { name: 'Seite nicht gefunden' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Futterstelle anlegen' })).toHaveCount(0);
 });
 
 test('keyboard skip link, account disclosure, organization and logout remain usable', async ({ page }) => {

@@ -6,20 +6,27 @@ import { Management, managementAreas } from './management/Management';
 import { ApplicationShell } from './ui/ApplicationShell';
 import { documentNavigation } from './ui/navigation';
 import { Home } from './home/Home';
-import { FeedingSitesEntry } from './ui/TransitionalPages';
+import { FeedingSitesPage, LegacyNodesRedirect, isLegacyNodesPath, parseFeedingSitePath } from './feeding-sites/FeedingSites';
 import { Status } from './ui/Status';
 
 const subscribePath = (update: () => void) => {
   window.addEventListener('popstate', update);
   return () => window.removeEventListener('popstate', update);
 };
+function feedingSitesTitle(path: string): string | undefined {
+  const route = parseFeedingSitePath(path);
+  if (route.kind !== 'unknown') return 'Futterstellen';
+  return undefined;
+}
 function AllowedShell({ path, authenticated, online }: { path: string; authenticated: boolean; online: boolean }) {
   return <ApplicationShell path={path} authenticated={authenticated}>
     <div hidden={authenticated}>{!authenticated && <>
       <Status kind="offline" title="Offline-Betrieb" message="Verwaltung ist ohne gültige Online-Sitzung gesperrt. Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential verfügbar."/>
       {online && <LoginView online={online}/>}
     </>}</div>
-    {isCollectorPath(path) ? <CollectorShell/> : path === '/' ? <Home/> : path === '/feeding-sites' ? <FeedingSitesEntry/>
+    {isCollectorPath(path) ? <CollectorShell/> : path === '/' ? <Home/>
+      : isLegacyNodesPath(path) ? <LegacyNodesRedirect/>
+      : feedingSitesTitle(path) ? <FeedingSitesPage path={path}/>
       : <Management path={path}/>}
   </ApplicationShell>;
 }
@@ -34,7 +41,8 @@ export function App() {
   }, [offlineEntry]);
   useEffect(() => {
     const title = status === 'authenticated'
-      ? ({ '/': 'Home', '/sync': 'Sync', '/feeding-sites': 'Futterstellen', ...managementAreas }[path] ?? 'Seite nicht gefunden')
+      ? (isLegacyNodesPath(path) ? 'Futterstellen'
+        : ({ '/': 'Home', '/sync': 'Sync', ...managementAreas }[path] ?? feedingSitesTitle(path) ?? 'Seite nicht gefunden'))
       : status === 'offline-sync' ? 'Offline-Sync' : 'Anmeldung';
     document.title = `${title} · MiezMerker`;
   }, [path, status]);
