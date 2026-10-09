@@ -67,6 +67,7 @@ class Issue10VisitsTest {
     @Autowired DerivedVisitRepository derivedVisits;
     @Autowired PasswordEncoder passwords;
     @Autowired TestDatabaseCleaner cleaner;
+    @Autowired org.miezmerker.backend.service.CatHistoryService catHistory;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
@@ -747,15 +748,39 @@ class Issue10VisitsTest {
                 Instant.now().minus(Duration.ofDays(30)), null);
         long base = Instant.now().minus(Duration.ofDays(1)).toEpochMilli();
         ingest(s.orgA().getId(),
-                List.of(item(n.nodeId(), 1, "chip-Cat", base, "SYNCED")));
+                List.of(item(n.nodeId(), 1, " 000chip-Cat ", base, "SYNCED")));
+        assertTrue(cats.findByOrganizationId(s.orgA().getId()).isEmpty());
+        // B's managed profile does not make this chip known in A.
+        login("a10-admin-b@example.org", "supersecret-password-b");
+        createCat(s.orgB().getId(), "000CHIP-CAT");
+        login("a10-admin-a@example.org", "supersecret-password-a");
         // No cat yet: relation stays null.
-        assertTrue(recompute(s.orgA().getId(), 60, null).get("visits").get(0)
-                .get("catId").isNull());
-        UUID cat = createCat(s.orgA().getId(), "chip-Cat");
+        recompute(s.orgA().getId(), 60, null);
+        JsonNode before = listVisits(s.orgA().getId()).get(0);
+        assertTrue(before.get("catId").isNull());
+        assertTrue(cats.findByOrganizationId(s.orgA().getId()).isEmpty());
+        var rawBefore = observations.findAll().get(0);
+        UUID cat = createCat(s.orgA().getId(), " 000chip-cat ");
+        // Registration exposes existing history without rewriting observations or visits.
+        var user = users.findByEmail("a10-admin-a@example.org").orElseThrow();
+        var history = catHistory.visits(user.getId(), s.orgA().getId(), cats.findById(cat).orElseThrow().getChipId());
+        assertEquals(1, history.size());
+        assertEquals(before.get("id").asText(), history.get(0).id().toString());
+        assertEquals(before.get("startAt").asText(), history.get(0).start());
+        assertEquals(before.get("endAt").asText(), history.get(0).end());
+        assertEquals(before, listVisits(s.orgA().getId()).get(0));
+        assertEquals(rawBefore.getId(), observations.findAll().get(0).getId());
+        assertEquals("000CHIP-CAT", observations.findAll().get(0).getChipId());
+        var filtered = get("/api/v1/observations?organizationId=" + s.orgA().getId() + "&chipId=000chip-cat");
+        assertEquals(200, filtered.statusCode(), filtered.body());
+        assertEquals(1, mapper.readTree(filtered.body()).size());
+        var filteredVisits = get("/api/v1/organizations/" + s.orgA().getId() + "/visits?chipId=000chip-cat");
+        assertEquals(200, filteredVisits.statusCode(), filteredVisits.body());
+        assertEquals(before, mapper.readTree(filteredVisits.body()).get(0));
         JsonNode out = recompute(s.orgA().getId(), 60, null);
         assertEquals(cat.toString(),
                 out.get("visits").get(0).get("catId").asText());
-        assertEquals("CHIP-CAT", out.get("visits").get(0).get("chipId").asText());
+        assertEquals("000CHIP-CAT", out.get("visits").get(0).get("chipId").asText());
     }
 
     @Test
