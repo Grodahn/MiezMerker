@@ -22,7 +22,7 @@ import info from './assets/icons/info.svg';
 // Imports keep fallbacks in Vite's dependency graph and Workbox precache.
 export const assets = {
   brand: { logo, ...pwaBrandAssets },
-  illustrations: { background, home, sync: bluetooth, syncSuccess: success, error, offline },
+  illustrations: { background, home, loginBackground: background, sync: bluetooth, syncSuccess: success, error, offline },
   placeholders: { cat, feedingSite, node: bowl, bowl, generic: feedingSite },
   icons: { home: homeIcon, sync, feedingSite: pin, cat: catIcon, bluetooth, success, error, offline, arrow, account, logout },
   status: { loading: sync, empty: feedingSite, error, offline, success, info, bluetooth, cat, node: bowl, feedingSite },
