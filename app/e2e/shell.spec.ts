@@ -26,10 +26,19 @@ async function session(page: Page, organizationName = 'Tierschutz A') {
   });
 }
 
+async function selectOrganization(page: Page) {
+  const summary = page.locator('.auth-panel > summary');
+  await summary.click();
+  await page.getByLabel('Aktive Organisation').selectOption('org-a');
+  await summary.click();
+}
+
 for (const width of [320, 375, 390, 430, 768, 1280]) {
   test(`shell navigation and content fit at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await session(page);
+    await page.goto('/');
+    await selectOrganization(page);
     for (const [path, active, expectedUrl] of [
       ['/', 'Home', '/'], ['/sync', 'Sync', '/sync'],
       ['/feeding-sites', 'Futterstellen', '/feeding-sites'], ['/cats', 'Katzen', '/cats'],
@@ -67,6 +76,7 @@ for (const width of [320, 375, 390, 430, 768, 1280]) {
 test('native links preserve deep links, refresh, back/forward and legacy Nodes', async ({ page }) => {
   await session(page);
   await page.goto('/');
+  await selectOrganization(page);
   await page.getByRole('navigation', { name: 'Bereiche' }).getByRole('link', { name: 'Futterstellen', exact: true }).click();
   await expect(page).toHaveURL(/\/feeding-sites$/);
   await expect(page.getByRole('heading', { name: 'Futterstellen', exact: true })).toBeVisible();
