@@ -83,7 +83,8 @@ public class BoundaryConfiguration {
     @Bean
     SecurityFilterChain security(HttpSecurity http, CookieCsrfTokenRepository csrfRepository,
             SessionAuthenticationStrategy sessionAuthenticationStrategy, AppUserRepository users,
-            MembershipRepository memberships, AdminAuthSuccessHandler adminSuccessHandler)
+            MembershipRepository memberships, AdminAuthSuccessHandler adminSuccessHandler,
+            org.miezmerker.backend.security.SystemAuthorizationService systemAuthorization)
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
         var adminLoginEntry = new LoginUrlAuthenticationEntryPoint("/admin/login");
@@ -112,6 +113,14 @@ public class BoundaryConfiguration {
                         .permitAll()
                         // Admin shell: public login + denied pages, everything else ADMIN-only (#33).
                         .requestMatchers("/admin/login", "/admin/denied").permitAll()
+                        // Reserved #92 surface: global privilege, independent of tenant ADMIN.
+                        .requestMatchers("/admin/organizations", "/admin/organizations/**")
+                        .access((authentication, context) -> {
+                            var current = authentication.get();
+                            return new AuthorizationDecision(current.isAuthenticated()
+                                    && current.getPrincipal() instanceof AppUserDetails principal
+                                    && systemAuthorization.isSysadmin(principal.getId()));
+                        })
                         .requestMatchers("/admin", "/admin/**").access((authentication, context) -> {
                             var current = authentication.get();
                             if (!current.isAuthenticated()

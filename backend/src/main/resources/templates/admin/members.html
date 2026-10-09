@@ -53,7 +53,7 @@ table.members td[data-label]::before{content:attr(data-label) ": ";font-weight:6
 <tr th:each="m : ${members}">
 <td data-label="Name" th:text="${m.displayOrEmail}">Name</td>
 <td data-label="E-Mail" th:text="${m.email}">a@example.org</td>
-<td data-label="Rolle"><span th:text="${m.role}">MEMBER</span></td>
+<td data-label="Rolle"><span th:text="${m.role == 'ADMIN' ? 'Orgaadmin' : m.role}">MEMBER</span></td>
 <td data-label="Status">
 <span class="badge" th:classappend="${m.status == 'ACTIVE' ? ' badge-active' : (m.status == 'PENDING' ? ' badge-pending' : ' badge-disabled')}" th:text="${m.status}">ACTIVE</span>
 </td>
@@ -63,7 +63,7 @@ table.members td[data-label]::before{content:attr(data-label) ": ";font-weight:6
 <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
 <select name="role" aria-label="Rolle ändern">
 <option value="">Rolle…</option>
-<option value="ADMIN" th:selected="${m.role == 'ADMIN'}">ADMIN</option>
+<option value="ADMIN" th:selected="${m.role == 'ADMIN'}">Orgaadmin</option>
 <option value="MEMBER" th:selected="${m.role == 'MEMBER'}">MEMBER</option>
 </select>
 <select name="status" aria-label="Status ändern">
@@ -86,8 +86,8 @@ table.members td[data-label]::before{content:attr(data-label) ": ";font-weight:6
 </tbody>
 </table>
 </div>
-<p class="muted" style="opacity:.7;font-size:.85rem">Hinweis: Es gibt bewusst keinen Schutz vor dem Entfernen des letzten ADMIN (Stand #16-Semantik);
-eine Organisation ohne ADMIN benötigt erneute ADMIN-Provisionierung.</p>
+<p class="muted" style="opacity:.7;font-size:.85rem">Hinweis: Es gibt bewusst keinen Schutz vor dem Entfernen des letzten Orgaadmins (Stand #16-Semantik);
+eine Organisation ohne Orgaadmin benötigt erneute Orgaadmin-Provisionierung.</p>
 </main>
 <div th:replace="~{admin/layout :: footer}"></div>
 </body>

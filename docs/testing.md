@@ -58,8 +58,10 @@ Backend tags cover all existing test classes:
 | ingest | Issue9IngestTest, AdminObservationsVisitsTest |
 | visits | Issue10VisitsTest, FeedingSiteCatActivityTest, AdminCatsTest, AdminObservationsVisitsTest, AdminObservationsVisitsControllerTest |
 | admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, AdminObservationsVisitsControllerTest |
-| schema | DatabaseSchemaTest, DisplayNameTest, NodeDisplayNameTest |
-| system | FoundationTest, SystemControllerTest |
+| schema | DatabaseSchemaTest, DisplayNameTest, NodeDisplayNameTest, SystemPrivilegeTest, SystemRoleMigrationTest |
+| system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |
+
+`SystemPrivilegeTest` also belongs to the `auth` domain.
 
 CTest labels are `ble`, `auth`, `storage`, `lifecycle`, and `simulator`.
 Labels overlap where appropriate. Scenario labels follow the numbered scenario

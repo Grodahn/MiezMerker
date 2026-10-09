@@ -70,7 +70,7 @@ export function AuthPanel() {
           onChange={event => selectOrganization(event.target.value)}>
           <option value="" disabled>Organisation auswählen</option>
           {memberships.map(m => <option key={m.membershipId} value={m.organizationId}>
-            {m.organizationName} ({m.role})
+            {m.organizationName} ({m.role === 'ADMIN' ? 'Orgaadmin' : m.role})
           </option>)}
         </select>
       </label> : <p>Keine aktive Organisationsmitgliedschaft.</p>}
