@@ -43,7 +43,7 @@ export function siteName(sites: Site[], id?: string) {
   return id ? sites.find(site => site.id === id)?.name ?? 'Futterstelle nicht verfügbar' : 'Nicht zugeordnet';
 }
 export function catName(cats: Cat[], chip?: string) {
-  return cats.find(cat => cat.chipId === chip)?.name || 'Unbekannte Katze';
+  return cats.find(cat => cat.chipId === chip)?.name || 'Unbekannter Chip';
 }
 export function LoadState({ loading, error, reload }: { loading: boolean; error?: string; reload: () => void }) {
   const failure = error ? errorStatus(error) : undefined;
