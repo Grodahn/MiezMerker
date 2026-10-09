@@ -140,6 +140,26 @@ localhost, and user-initiated Web Bluetooth are the collector target. Unsupporte
 browsers may use management; collector capability handling belongs to #8. There
 is no native Android application in the MVP. See ADR 0010.
 
+## Planned system roles and cross-organization sharing (#89/#90)
+
+[ADR 0016](adr/0016-cross-organization-sharing.md) is the **accepted design
+contract**, not yet an implemented feature. It adds a global `SYSADMIN`
+authority for system-level organization management without granting that user
+unconditional access to tenant-owned cats, observations or feeding sites.
+Existing membership roles remain `ADMIN|MEMBER`; `ADMIN` is labelled
+**Orgaadmin** in the interface. Multiple memberships per global user remain
+supported and tenant data remains scoped to the currently validated ACTIVE
+membership.
+
+Cats with the same chip can have distinct organization-owned profiles and
+names. Any cross-organization care/visit display must use explicit,
+default-deny, scope-limited **read-only backend projections**. Separate
+permissions are required for care hints, visits, feeding-site labels and
+photos; organization discoverability alone permits none of these.
+No global chip lookup, cross-tenant visit aggregation, or new BLE sharing is
+authorized. Until #91–#99 implement and test these contracts, the current
+strict tenant isolation remains authoritative.
+
 ## Trust boundaries
 
 | Boundary | Inputs are untrusted | Required authority / checks |
