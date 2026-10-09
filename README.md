@@ -98,7 +98,7 @@ Die nächsten Schritte sind bewusst praxisorientiert:
 6. das System so paketieren, dass andere Tierheime und Organisationen es ohne
    projektspezifisches Vorwissen installieren und betreiben können.
 
-Mithilfe ist willkommen, insbesondere bei Embedded-Hardware, RFID- und
+Beiträge sind willkommen, insbesondere bei Embedded-Hardware, RFID- und
 Antennentests, Web Bluetooth, Spring/Java, React/PWA, Sicherheitsprüfungen,
 Bereitstellung, Dokumentation und Bedienbarkeit im Feldeinsatz.
 
@@ -270,8 +270,8 @@ Upload unveränderter Rohbeobachtungen, historisierte Node-Zuordnungen,
 Backend-Visit-Ableitung und ursprünglich kleine Verwaltungsseiten in derselben PWA.
 Seit #30–#38 bleiben dort Login, `/sync`, `/nodes` und `/cats`; die übrige
 Verwaltung liegt unter `/admin/**` in Spring MVC/Thymeleaf.
-Katzen bleiben bewusst in beiden Oberflächen. Nodes nutzt weiterhin
-Futterstellenkontext; Futterstellen-Stammdatenpflege ist Admin-UI.
+Katzen bleiben bewusst in beiden Oberflächen. Die Node-Ansicht nutzt weiterhin
+den Futterstellenkontext; die Stammdatenpflege erfolgt in der Admin-Oberfläche.
 [Endgültige Aufteilung und Routing](docs/issue38-field-pwa.md).
 Seit #64 nutzt die Feld-PWA Home (`/`), Sync (`/sync`), Futterstellen
 (`/feeding-sites`, vorläufiger Einstieg in die bestehende `/nodes`-Ansicht) und
