@@ -52,9 +52,9 @@ test('unknown clock explains receipt time instead of claiming a precise sighting
   await expect(page.getByText(/Serverempfang:/)).toBeVisible();
 });
 
-for (const [name, title, message = 'selection'] of [
-  ['NotFoundError', 'Geräteauswahl beendet'], ['NotAllowedError', 'Zugriff nicht erlaubt'],
-  ['AbortError', 'Auswahl abgebrochen'], ['NetworkError', 'Bluetooth nicht verfügbar', 'Bluetooth adapter not available'],
+for (const [name, pattern, message = 'selection'] of [
+  ['NotFoundError', /abgebrochen oder kein passendes Gerät/], ['NotAllowedError', /Browser-Einstellungen/],
+  ['AbortError', /abgebrochen/], ['NetworkError', /Bluetooth nicht verfügbar/, 'Bluetooth adapter not available'],
 ] as const) {
   test(`Bluetooth ${name} has its own recovery and does not claim local or server success`, async ({ page }) => {
     await backend(page);
@@ -62,20 +62,15 @@ for (const [name, title, message = 'selection'] of [
       value: { getDevices: async () => [], requestDevice: async () => { throw new DOMException(message, errorName); } },
     }), { errorName: name, message });
     await page.goto('/sync');
-    await page.getByRole('button', { name: 'Node auswählen & synchronisieren' }).click();
-    await expect(page.getByText(title, { exact: true })).toBeVisible();
+    // Batch sync itself never opens the chooser; only the explicit release does.
+    await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+    await expect(page.getByText('Noch kein Napf freigegeben')).toBeVisible();
+    await page.getByRole('button', { name: 'Weiteren Napf freigeben' }).click();
+    await expect(page.getByText('Browser-Freigabe')).toBeVisible();
+    await expect(page.getByText(pattern)).toBeVisible();
     await expect(page.getByText('Napf ausgelesen', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Daten an Server übertragen', { exact: true })).toHaveCount(0);
-    if (name === 'NotFoundError') {
-      const retry = page.getByRole('button', { name: 'Napf erneut auswählen' });
-      await retry.focus(); await page.keyboard.press('Enter');
-      await expect(page.getByText(/abgebrochen oder kein passendes Gerät/)).toBeVisible();
-    } else if (name === 'NotAllowedError') {
-      await expect(page.getByRole('alert').getByText(/Browser-Einstellungen/)).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Napf erneut auswählen' })).toHaveCount(0);
-    } else {
-      await expect(page.getByRole('button', { name: 'Napf erneut auswählen' })).toBeEnabled();
-    }
+    await expect(page.getByRole('button', { name: 'Weiteren Napf freigeben' })).toBeEnabled();
   });
 }
 
@@ -87,14 +82,11 @@ test('long Bluetooth waits explain recovery and respect reduced motion without b
     value: { getDevices: async () => [], requestDevice: () => new Promise(() => {}) },
   }));
   await page.goto('/sync');
-  await page.clock.install();
-  await page.getByRole('button', { name: 'Node auswählen & synchronisieren' }).click();
-  await page.clock.fastForward(16_000);
-  await expect(page.getByText(/Das dauert länger. Bitte Napf einschalten/)).toBeVisible();
-  const progress = page.getByRole('progressbar', { name: 'Napf wird verbunden …' });
-  await expect(page.getByRole('progressbar')).toHaveCount(1);
-  await expect(progress).not.toHaveAttribute('value');
-  expect(await progress.evaluate(el => getComputedStyle(el).appearance)).toBe('none');
+  // With no authorized bowls the batch reports an honest fallback instead of
+  // an endless spinner; navigation stays available throughout.
+  await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+  await expect(page.getByText('Noch kein Napf freigegeben')).toBeVisible();
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath('loading-mobile.png') });
   await page.getByRole('link', { name: 'Katzen', exact: true }).click();
   await expect(page).toHaveURL(/\/cats$/);

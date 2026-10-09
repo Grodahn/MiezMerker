@@ -19,10 +19,11 @@ export const statusMessages = {
 
 export const syncHelp = [
   'Bluetooth benötigt einen unterstützten Browser und HTTPS, zum Beispiel Chrome auf Android.',
-  'Bei verweigerter Berechtigung bitte den Zugriff in den Browser-Einstellungen erlauben und erneut wählen.',
-  'Bei leerer oder abgebrochener Geräteauswahl bitte den Napf einschalten, näher herangehen und erneut auswählen.',
-  'Bei mehreren Näpfen erfolgt die Auswahl im Browser-Dialog.',
-  'Nach einem Verbindungsabbruch können Sie erneut versuchen. Bereits gespeicherte Beobachtungen werden ohne Duplikate wiederholt.',
+  'Ein Klick auf „Futterstelle auslesen“ arbeitet alle zuvor freigegebenen Näpfe nacheinander ab — ohne weiteren Geräte-Chooser. Nur neue Näpfe brauchen „Weiteren Napf freigeben“.',
+  'Bei verweigerter Berechtigung bitte den Zugriff in den Browser-Einstellungen erlauben und über „Weiteren Napf freigeben“ erneut wählen.',
+  'Bei leerer oder abgebrochener Geräteauswahl bitte den Napf einschalten, näher herangehen und erneut freigeben. Nicht freigegebene Näpfe werden nicht automatisch gefunden.',
+  'Ein neues Smartphone, ein Browser-Reset oder gelöschte Website-Daten erfordern eine erneute einmalige Freigabe je Napf; das Organisations-Claiming bleibt davon unberührt.',
+  'Nach einem Verbindungsabbruch können Sie fehlgeschlagene Näpfe gezielt erneut versuchen. Bereits gespeicherte Beobachtungen werden ohne Duplikate wiederholt; erfolgreiche Näpfe werden nicht wiederholt.',
   'Bei fremder Organisation werden nur öffentliche Eigentümerangaben gezeigt; keine Beobachtungen abgerufen.',
   'Bei fehlender oder abgelaufener Offline-Berechtigung bitte einmal mit Internet anmelden und erneuern.',
   'Bei vollem Speicher bitte Browser-Speicher freigeben. Ohne dauerhafte Speicherung wird dem Napf keine Übernahme quittiert.',

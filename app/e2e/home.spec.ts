@@ -122,10 +122,15 @@ test('keyboard activation enters Sync without opening the chooser; only the coll
   await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem('chooser-calls'))).toBeNull();
   await page.reload();
-  const choose = page.getByRole('button', { name: 'Node auswählen & synchronisieren' });
-  await expect(choose).toBeEnabled();
+  const batch = page.getByRole('button', { name: 'Futterstelle auslesen' });
+  await expect(batch).toBeEnabled();
   expect(await page.evaluate(() => sessionStorage.getItem('chooser-calls'))).toBeNull();
-  await choose.click();
+  // Batch sync of previously authorized bowls never opens the chooser.
+  await batch.click();
+  expect(await page.evaluate(() => sessionStorage.getItem('chooser-calls'))).toBeNull();
+  const release = page.getByRole('button', { name: 'Weiteren Napf freigeben' });
+  await expect(release).toBeEnabled();
+  await release.click();
   expect(await page.evaluate(() => sessionStorage.getItem('chooser-calls'))).toBe('1');
   expect(await page.evaluate(() => sessionStorage.getItem('chooser-user-active'))).toBe('true');
   await page.getByRole('navigation').getByRole('link', { name: 'Home', exact: true }).click();
