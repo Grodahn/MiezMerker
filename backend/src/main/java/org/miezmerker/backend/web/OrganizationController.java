@@ -4,7 +4,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -12,14 +14,17 @@ import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
 import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationMembership;
+import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
+import org.miezmerker.backend.service.SharePolicyService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,19 +39,22 @@ public class OrganizationController {
     private final MembershipRepository memberships;
     private final org.miezmerker.backend.repo.AppUserRepository users;
     private final TenantService tenants;
+    private final SharePolicyService sharePolicies;
 
     public OrganizationController(OrganizationRepository organizations,
             MembershipRepository memberships,
-            org.miezmerker.backend.repo.AppUserRepository users, TenantService tenants) {
+            org.miezmerker.backend.repo.AppUserRepository users, TenantService tenants,
+            SharePolicyService sharePolicies) {
         this.organizations = organizations;
         this.memberships = memberships;
         this.users = users;
         this.tenants = tenants;
+        this.sharePolicies = sharePolicies;
     }
 
     @Schema(name = "OrganizationView")
     public record OrganizationView(UUID id, String slug, String displayName,
-            String publicContact, String status) {}
+            String publicContact, String status, boolean discoverable) {}
 
     @Schema(name = "CreateOrganizationRequest")
     public record CreateOrganizationRequest(
@@ -54,9 +62,15 @@ public class OrganizationController {
             @NotBlank @Size(max = 255) String displayName,
             @Size(max = 500) String publicContact) {}
 
+    @Schema(name = "OrganizationDirectoryEntry")
+    public record OrganizationDirectoryEntry(UUID id, String slug, String displayName) {}
+
+    @Schema(name = "UpdateVisibilityRequest")
+    public record UpdateVisibilityRequest(@NotNull Boolean discoverable) {}
+
     private static OrganizationView toView(Organization org) {
         return new OrganizationView(org.getId(), org.getSlug(), org.getDisplayName(),
-                org.getPublicContact(), org.getStatus().name());
+                org.getPublicContact(), org.getStatus().name(), org.isDiscoverable());
     }
 
     @GetMapping(value = "/organizations", produces = "application/json")
@@ -113,5 +127,45 @@ public class OrganizationController {
         }
         OrganizationMembership membership = tenants.requireActive(principal.getId(), organizationId);
         return toView(membership.getOrganization());
+    }
+
+    /**
+     * Authenticated organization directory (ADR 0016): only discoverable,
+     * ACTIVE organizations are listed. Hidden or disabled organizations are
+     * never exposed here, and listing never authorizes any data read.
+     */
+    @GetMapping(value = "/organizations/directory", produces = "application/json")
+    @Operation(operationId = "listDiscoverableOrganizations",
+            summary = "Authenticated directory of discoverable, ACTIVE organizations")
+    @Transactional(readOnly = true)
+    public List<OrganizationDirectoryEntry> directory(@AuthenticationPrincipal AppUserDetails principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        return organizations.findByDiscoverableTrueAndStatus(OrganizationStatus.ACTIVE).stream()
+                .sorted(Comparator.comparing(Organization::getDisplayName, String.CASE_INSENSITIVE_ORDER))
+                .map(o -> new OrganizationDirectoryEntry(o.getId(), o.getSlug(), o.getDisplayName()))
+                .toList();
+    }
+
+    /**
+     * Owner ADMIN changes discoverability (ADR 0016). Hiding the organization
+     * immediately invalidates all outgoing grants and removes it from every
+     * allowlist; re-discovery never restores deleted grants.
+     */
+    @PatchMapping(value = "/organizations/{organizationId}/visibility",
+            consumes = "application/json", produces = "application/json")
+    @Operation(operationId = "updateOrganizationVisibility",
+            summary = "Owner ADMIN changes discoverability; hiding invalidates outgoing grants immediately")
+    @Transactional
+    public OrganizationView updateVisibility(@PathVariable UUID organizationId,
+            @Valid @RequestBody UpdateVisibilityRequest request,
+            @AuthenticationPrincipal AppUserDetails principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        sharePolicies.setDiscoverable(principal.getId(), organizationId, request.discoverable());
+        return toView(organizations.findById(organizationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
     }
 }

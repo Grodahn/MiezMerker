@@ -10,6 +10,8 @@ import org.miezmerker.backend.repo.NodeDeploymentRepository;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.repo.RawObservationRepository;
+import org.miezmerker.backend.repo.SharePolicyRepository;
+import org.miezmerker.backend.repo.ShareRecipientRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +42,8 @@ public class TestDatabaseCleaner {
     private final MembershipRepository memberships;
     private final AppUserRepository users;
     private final OrganizationRepository organizations;
+    private final ShareRecipientRepository shareRecipients;
+    private final SharePolicyRepository sharePolicies;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public TestDatabaseCleaner(
@@ -52,7 +56,10 @@ public class TestDatabaseCleaner {
             NodeRepository nodes,
             MembershipRepository memberships,
             AppUserRepository users,
-            OrganizationRepository organizations, org.springframework.jdbc.core.JdbcTemplate jdbc) {
+            OrganizationRepository organizations,
+            ShareRecipientRepository shareRecipients,
+            SharePolicyRepository sharePolicies,
+            org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.jdbc = jdbc;
         this.derivedVisits = derivedVisits;
         this.observations = observations;
@@ -64,6 +71,8 @@ public class TestDatabaseCleaner {
         this.memberships = memberships;
         this.users = users;
         this.organizations = organizations;
+        this.shareRecipients = shareRecipients;
+        this.sharePolicies = sharePolicies;
     }
 
     /** Deletes all fixture rows, children before parents. */
@@ -79,6 +88,9 @@ public class TestDatabaseCleaner {
         memberships.deleteAllInBatch();
         jdbc.update("DELETE FROM app_user_system_role_audit");
         jdbc.update("DELETE FROM app_user_system_roles");
+        shareRecipients.deleteAllInBatch();
+        sharePolicies.deleteAllInBatch();
+        jdbc.update("DELETE FROM organization_share_audit");
         users.deleteAllInBatch();
         organizations.deleteAllInBatch();
     }
