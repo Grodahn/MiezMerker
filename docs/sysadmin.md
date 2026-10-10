@@ -60,7 +60,9 @@ your trusted account/password maintenance procedure; this command deliberately
 does not introduce a password-reset or unauthenticated recovery backdoor.
 
 Account row locking serializes changes for each user. Grant/revoke and audit are
-committed together. Repeating the exact command with the same operation UUID is
+committed together. Failed writes, including JVM errors, trigger rollback; if
+rollback itself fails, the dedicated connection is closed without restoring
+auto-commit (which could commit an incomplete grant). Repeating the exact command with the same operation UUID is
 a no-op, even after a later revocation: replaying initial bootstrap never restores
 revoked authority. Reusing an ID for different inputs fails. Fresh no-op commands
 are audited with `changed=false`. Keep the ledger; deleting operation IDs defeats

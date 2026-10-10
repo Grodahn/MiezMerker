@@ -62,6 +62,8 @@ Backend tags cover all existing test classes:
 | system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |
 
 `SystemPrivilegeTest` also belongs to the `auth` domain.
+`SystemRoleMaintenanceTest` belongs to `auth` and covers failure cleanup of
+operator transactions.
 
 CTest labels are `ble`, `auth`, `storage`, `lifecycle`, and `simulator`.
 Labels overlap where appropriate. Scenario labels follow the numbered scenario

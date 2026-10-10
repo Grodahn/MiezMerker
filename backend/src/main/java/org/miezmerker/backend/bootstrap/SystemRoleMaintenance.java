@@ -49,6 +49,7 @@ public final class SystemRoleMaintenance {
             throw new IllegalArgumentException("Maintenance requires a dedicated auto-commit connection");
         }
         connection.setAutoCommit(false);
+        boolean transactionResolved = false;
         try {
             // Serializes operations for the same account, including the first grant.
             String status;
@@ -70,6 +71,7 @@ public final class SystemRoleMaintenance {
                             throw new IllegalArgumentException("Operation ID already used for another command");
                         }
                         connection.commit();
+                        transactionResolved = true;
                         return false; // A consumed grant must never recreate a revoked privilege.
                     }
                 }
@@ -115,12 +117,22 @@ public final class SystemRoleMaintenance {
                 statement.executeUpdate();
             }
             connection.commit();
+            transactionResolved = true;
             return changed;
-        } catch (SQLException | RuntimeException exception) {
-            connection.rollback();
+        } catch (SQLException | RuntimeException | Error exception) {
+            try {
+                connection.rollback();
+                transactionResolved = true;
+            } catch (SQLException rollbackFailure) {
+                exception.addSuppressed(rollbackFailure);
+            }
             throw exception;
         } finally {
-            connection.setAutoCommit(true);
+            // JDBC commits an open transaction when auto-commit is restored.
+            // If rollback failed, leave this dedicated connection for its owner to close.
+            if (transactionResolved) {
+                connection.setAutoCommit(true);
+            }
         }
     }
 }
