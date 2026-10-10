@@ -8,7 +8,7 @@
 <div th:replace="~{admin/layout :: nav('')}"></div>
 <main>
 <h1>Organisation wählen</h1>
-<p>Mehrere ACTIVE ADMIN-Mitgliedschaften. Bitte aktiven Organisationskontext wählen. Der Kontext wird serverseitig in der Session gehalten; eine clientseitige ID allein ist kein Berechtigungsnachweis.</p>
+<p>Mehrere aktive Orgaadmin-Mitgliedschaften. Bitte aktiven Organisationskontext wählen. Der Kontext wird serverseitig in der Session gehalten; eine clientseitige ID allein ist kein Berechtigungsnachweis.</p>
 <div class="card">
 <form th:action="@{/admin/org}" method="post">
 <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>

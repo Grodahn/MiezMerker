@@ -26,6 +26,8 @@ test('user can log in, choose an organization and log out', async () => {
   fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'supersecret-password' } });
   fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
   expect(await screen.findByText('Angemeldet als admin@example.org')).toBeTruthy();
+  expect(screen.getByRole('option', { name: 'Org A (Orgaadmin)' })).toBeTruthy();
+  expect(getAuthState().user?.memberships[0].role).toBe('ADMIN');
   expect(screen.queryByRole('option', { name: /Pending/ })).toBeNull();
   fireEvent.change(screen.getByLabelText('Aktive Organisation'), { target: { value: 'o2' } });
   expect(getAuthState().activeOrganizationId).toBe('o2');

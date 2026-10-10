@@ -207,6 +207,7 @@ class AdminMembersTest {
         assertTrue(html.contains("adm-admin-a@example.org"), html);
         assertTrue(html.contains("adm-member-a@example.org"), html);
         assertTrue(html.contains("ADMIN"), html);
+        assertTrue(html.contains("Orgaadmin"), html);
         assertTrue(html.contains("MEMBER"), html);
         assertTrue(html.contains("ACTIVE"), html);
         assertTrue(html.contains("adm-noname-a@example.org"), html);

@@ -40,6 +40,7 @@ public class TestDatabaseCleaner {
     private final MembershipRepository memberships;
     private final AppUserRepository users;
     private final OrganizationRepository organizations;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public TestDatabaseCleaner(
             DerivedVisitRepository derivedVisits,
@@ -51,7 +52,8 @@ public class TestDatabaseCleaner {
             NodeRepository nodes,
             MembershipRepository memberships,
             AppUserRepository users,
-            OrganizationRepository organizations) {
+            OrganizationRepository organizations, org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
         this.derivedVisits = derivedVisits;
         this.observations = observations;
         this.deployments = deployments;
@@ -75,6 +77,8 @@ public class TestDatabaseCleaner {
         devices.deleteAllInBatch();
         nodes.deleteAllInBatch();
         memberships.deleteAllInBatch();
+        jdbc.update("DELETE FROM app_user_system_role_audit");
+        jdbc.update("DELETE FROM app_user_system_roles");
         users.deleteAllInBatch();
         organizations.deleteAllInBatch();
     }

@@ -1,5 +1,9 @@
 # Local bootstrap and test-phase setup
 
+This bootstrap creates an organization **Orgaadmin** (`ADMIN` membership), never
+a global SYSADMIN. Explicit SYSADMIN setup, revocation and recovery are documented
+in [Global SYSADMIN operations](sysadmin.md).
+
 There is no public self-registration and no mail sending in the MVP (#16, #19 deferred).
 The first organization and its admin are created by the backend `BootstrapRunner` when
 the database contains no users yet.
