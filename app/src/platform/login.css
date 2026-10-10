@@ -6,7 +6,7 @@
   place-items: center;
   padding-block: var(--space-4);
 }
-.login-background {
+.login-page .login-background {
   position: absolute;
   z-index: -1;
   inset-inline: 0;
@@ -17,12 +17,12 @@
   border-radius: var(--radius-card);
   pointer-events: none;
 }
-.login-card {
+.login-page .login-card {
   inline-size: min(100%, 28rem);
   min-inline-size: 0;
   padding: clamp(1rem, 4vw, 2rem);
 }
-.login-logo {
+.login-page .login-logo {
   inline-size: 8rem;
   block-size: 8rem;
   margin-inline: auto;
@@ -48,5 +48,5 @@
 .login-card .status-card { padding: var(--space-3); box-shadow: none; margin-block-end: 0; }
 @media (max-height: 600px) {
   .login-page { padding-block: 0; }
-  .login-logo { inline-size: 5rem; block-size: 5rem; }
+  .login-page .login-logo { inline-size: 5rem; block-size: 5rem; }
 }

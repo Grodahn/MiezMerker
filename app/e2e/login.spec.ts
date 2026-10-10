@@ -115,3 +115,29 @@ test('network failure offers safe connection guidance', async ({ page }) => {
   await expect(page.getByRole('alert')).toContainText('Internetverbindung prüfen');
   await expect(page.getByRole('navigation')).toHaveCount(0);
 });
+
+test('replacement artwork retains reserved logo dimensions and background cropping', async ({ page }) => {
+  await backend(page);
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/assets/logo-*.png', async route => {
+    await hold;
+    // Deliberately different intrinsic proportions from the original logo.
+    await route.fulfill({ contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="40"><rect width="400" height="40" fill="#24584b"/></svg>' });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const logo = page.locator('.login-logo');
+  await expect(logo).toBeVisible();
+  const before = (await logo.boundingBox())!;
+  expect(before.width).toBe(128);
+  expect(before.height).toBe(128);
+  expect(await page.locator('.login-background').evaluate(element => getComputedStyle(element).objectFit)).toBe('cover');
+  release();
+  await expect.poll(() => logo.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(400);
+  const after = (await logo.boundingBox())!;
+  expect(after.width).toBe(before.width);
+  expect(after.height).toBe(before.height);
+  expect(await logo.evaluate(element => getComputedStyle(element).objectFit)).toBe('contain');
+  expect(await page.getByRole('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+});

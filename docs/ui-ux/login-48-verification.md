@@ -18,10 +18,13 @@ uses `object-fit: cover`. Both remain in the production Workbox precache.
 
 - Compact frontend regression: 109 tests passed across `src/platform`,
   `src/App.test.tsx` and `src/ui/ui.test.tsx`.
-- Playwright: 11 login tests and 4 existing auth-gate tests passed. Login
+- Playwright: 12 login tests and 4 existing auth-gate tests passed. Login
   viewports: 320×740, 390×844, 430×932, 768×1024, 1280×900, 844×390 and 390×360.
   Document and main scroll width fit the viewport. Inputs and submit action
   meet 44px touch targets; inputs have at least 16px text.
+- Artwork replacement regression delays loading of a wide replacement logo and
+  checks its reserved dimensions before/after loading, plus background cropping.
+  Login artwork/card selectors override the later shared graphic/card styles.
 - Keyboard Tab order, visible focus and Enter submission verified. Loading
   announces status and disables submission. Error feedback is announced and
   associated with the fields; 401, 500 and network failures expose no raw details.

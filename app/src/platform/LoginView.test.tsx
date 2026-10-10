@@ -48,7 +48,7 @@ test('form submission announces loading, blocks duplicate submits and clears pas
   fillAndSubmit();
   expect(login).toHaveBeenCalledWith('volunteer@example.org', 'test-password');
   expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
-  expect((await screen.findByRole('status')).textContent).toContain('Anmeldung wird geprüft');
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Anmeldung wird geprüft'));
   fireEvent.submit(screen.getByRole('form'));
   expect(login).toHaveBeenCalledTimes(1);
   resolve();
