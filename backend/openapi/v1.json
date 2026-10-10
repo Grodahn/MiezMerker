@@ -597,6 +597,21 @@
         },
         "type": "object"
       },
+      "LatestSiteVisitView": {
+        "properties": {
+          "feedingSiteId": {
+            "type": "string"
+          },
+          "feedingSiteName": {
+            "type": "string"
+          },
+          "latestVisitStartAtMillis": {
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -3116,6 +3131,15 @@
               "format": "int32",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "newestFirst",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -3134,6 +3158,49 @@
           }
         },
         "summary": "List derived visits of an organization (requires ACTIVE membership)",
+        "tags": [
+          "visit-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/visits/latest-per-site": {
+      "get": {
+        "operationId": "latestVisitsPerFeedingSite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chipId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LatestSiteVisitView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Latest reliable visit per feeding site for one chip; frozen historical site attribution, never current deployments",
         "tags": [
           "visit-controller"
         ]

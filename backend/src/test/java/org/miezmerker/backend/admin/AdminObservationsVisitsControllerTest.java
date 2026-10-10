@@ -81,7 +81,7 @@ class AdminObservationsVisitsControllerTest {
         var raw = new RawObservation(org, node, 1, "CHIP", 1L, "SYNCED", null, null, null, site, null);
         var at = Instant.ofEpochMilli(1);
         var visit = new DerivedVisit(org, site, "CHIP", cat, at, at, 1, "visit-gap-v1", 60, raw, raw);
-        when(queries.visits(userId, orgId, null, "", null, null, 51, 0)).thenReturn(List.of(visit));
+        when(queries.visits(userId, orgId, null, "", null, null, 51, 0, false)).thenReturn(List.of(visit));
         var request = mock(HttpServletRequest.class);
         when(request.getServletPath()).thenReturn("/admin/visits");
         var model = new ExtendedModelMap();

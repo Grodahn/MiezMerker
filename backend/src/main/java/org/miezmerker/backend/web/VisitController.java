@@ -59,6 +59,11 @@ public class VisitController {
             int observationCount, String algorithmVersion, int gapSeconds,
             String firstObservationId, String lastObservationId, String createdAt) {}
 
+    @Schema(name = "LatestSiteVisitView")
+    public record LatestSiteVisitView(String feedingSiteId, String feedingSiteName,
+            @JsonFormat(shape = JsonFormat.Shape.STRING)
+            @Schema(type = "string", pattern = "^[0-9]+$") Long latestVisitStartAtMillis) {}
+
     @Schema(name = "RecomputeVisitsRequest")
     public record RecomputeVisitsRequest(Integer gapSeconds, String algorithmVersion) {}
 
@@ -90,14 +95,33 @@ public class VisitController {
             @RequestParam(required = false) Long toMillis,
             @RequestParam(required = false, defaultValue = "100") int limit,
             @RequestParam(required = false, defaultValue = "0") int offset,
+            @RequestParam(required = false, defaultValue = "false") boolean newestFirst,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireActive(principal.getId(), organizationId);
         return queries.visits(principal.getId(), organizationId, feedingSiteId,
-                chipId, fromMillis, toMillis, limit, offset)
+                chipId, fromMillis, toMillis, limit, offset, newestFirst)
                 .stream().map(VisitController::toView).toList();
+    }
+
+    @GetMapping(value = "/latest-per-site", produces = "application/json")
+    @Operation(operationId = "latestVisitsPerFeedingSite",
+            summary = "Latest reliable visit per feeding site for one chip; "
+                    + "frozen historical site attribution, never current deployments")
+    @Transactional(readOnly = true)
+    public List<LatestSiteVisitView> latestPerSite(@PathVariable UUID organizationId,
+            @RequestParam String chipId,
+            @AuthenticationPrincipal AppUserDetails principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        tenants.requireActive(principal.getId(), organizationId);
+        return queries.latestVisitsBySite(principal.getId(), organizationId, chipId)
+                .stream().map(v -> new LatestSiteVisitView(v.feedingSiteId().toString(),
+                        v.feedingSiteName(), v.latestVisitStart().toEpochMilli()))
+                .toList();
     }
 
     @GetMapping(value = "/{visitId}", produces = "application/json")

@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /** #37: Admin context is tenant authority; no organization or chip identity edits. */
 @Controller
@@ -114,14 +115,30 @@ public class AdminCatsController {
         return "admin/cats-list";
     }
     @GetMapping("/{catId}")
-    public String detail(@PathVariable UUID catId, @AuthenticationPrincipal AppUserDetails principal,
+    public String detail(@PathVariable UUID catId,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit,
+            @AuthenticationPrincipal AppUserDetails principal,
             HttpSession session, Model model) {
         UUID org = context(principal, session, model);
         if (org == null) return "redirect:/admin/org";
+        if (limit < 1 || limit > 100 || offset < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "offset must be >= 0 and limit must be 1..100");
+        }
         Cat cat = own(org, catId);
         model.addAttribute("cat", rows(principal.getId(), org).stream()
                 .filter(r -> catId.equals(r.id())).findFirst().orElseThrow());
-        model.addAttribute("visits", history.visits(principal.getId(), org, cat.getChipId()));
+        var page = history.visitPage(principal.getId(), org, cat.getChipId(), offset, limit + 1);
+        boolean more = page.size() > limit;
+        model.addAttribute("visits", more ? page.subList(0, limit) : page);
+        model.addAttribute("visitOffset", offset);
+        model.addAttribute("visitLimit", limit);
+        model.addAttribute("visitTotal", history.visitTotal(principal.getId(), org, cat.getChipId()));
+        model.addAttribute("visitPrevious",
+                offset > 0 ? detailUrl(catId, Math.max(0, offset - limit), limit) : null);
+        model.addAttribute("visitNext", more ? detailUrl(catId, offset + limit, limit) : null);
+        model.addAttribute("siteVisits", history.latestSiteVisits(principal.getId(), org, cat.getChipId()));
         return "admin/cats-detail";
     }
     @GetMapping("/{catId}/edit")
@@ -197,5 +214,10 @@ public class AdminCatsController {
     private void stale(UUID active, UUID submitted) {
         if (!active.equals(submitted)) throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Organisation gewechselt. Bitte Formular neu öffnen.");
+    }
+    private String detailUrl(UUID catId, int offset, int limit) {
+        return UriComponentsBuilder.fromPath("/admin/cats/{catId}")
+                .queryParam("offset", offset).queryParam("limit", limit)
+                .buildAndExpand(catId).encode().toUriString();
     }
 }

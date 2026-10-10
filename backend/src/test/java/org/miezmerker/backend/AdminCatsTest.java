@@ -422,4 +422,67 @@ class AdminCatsTest {
         assertEquals("Foreign Same Chip Cat", cats.findByOrganizationIdAndChipId(f.orgB().getId(), "SAME-CHIP").orElseThrow().getName());
     }
 
+    @Test
+    void catDetailSummarizesVisitedSitesWithLatestReliableVisit() throws Exception {
+        var f = seed(); var c = cat(f.orgA(), "SITES", "Sites Cat"); var n = saveClaimedNode(f.orgA());
+        var oldSite = saveSite(f.orgA(), "Old Frozen Site", null, null);
+        var newSite = saveSite(f.orgA(), "New Frozen Site", null, null);
+        Instant time = Instant.parse("2026-03-01T12:00:00Z");
+        var firstDeployment = new NodeDeployment(f.orgA(), n, oldSite, time.minusSeconds(60), time.plusSeconds(60));
+        deployments.save(firstDeployment);
+        deployments.save(new NodeDeployment(f.orgA(), n, newSite, time.plusSeconds(60), null));
+        var first = observations.save(new RawObservation(f.orgA(), n, 1, "SITES", time.toEpochMilli(),
+                "SYNCED", null, null, null, oldSite, firstDeployment));
+        var later = observations.save(new RawObservation(f.orgA(), n, 2, "SITES",
+                time.plusSeconds(300).toEpochMilli(), "SYNCED", null, null, null, newSite, null));
+        derivedVisits.save(new DerivedVisit(f.orgA(), oldSite, "SITES", c, time, time.plusSeconds(10),
+                1, "visit-gap-v1", 300, first, first));
+        derivedVisits.save(new DerivedVisit(f.orgA(), newSite, "SITES", c, time.plusSeconds(300),
+                time.plusSeconds(310), 1, "visit-gap-v1", 300, later, later));
+        loginA();
+        var detail = get("/admin/cats/" + c.getId()); assertEquals(200, detail.statusCode(), detail.body());
+        // Feeding-site summary: each site once with its latest reliable visit,
+        // frozen historical attribution intact despite the later node move.
+        assertTrue(detail.body().contains("Besuchte Futterstellen"));
+        assertTrue(detail.body().contains("Old Frozen Site"));
+        assertTrue(detail.body().contains(time.toString()));
+        assertTrue(detail.body().contains("New Frozen Site"));
+        assertTrue(detail.body().contains(time.plusSeconds(300).toString()));
+        // Pageable visit list with deterministic newest-first order.
+        assertTrue(detail.body().contains("Besuche dieses Chips"));
+        assertTrue(detail.body().contains("Ab Eintrag 1"));
+        assertTrue(detail.body().contains(time.plusSeconds(310).toString()));
+    }
+
+    @Test
+    void catDetailVisitPagingIsBoundedAndRejectsInvalidPages() throws Exception {
+        var f = seed(); var c = cat(f.orgA(), "PAGED", "Paged Cat"); var n = saveClaimedNode(f.orgA());
+        var site = saveSite(f.orgA(), "Paged Site", null, null);
+        Instant time = Instant.parse("2026-04-01T12:00:00Z");
+        var o = observations.save(new RawObservation(f.orgA(), n, 1, "PAGED", time.toEpochMilli(),
+                "SYNCED", null, null, null, site, null));
+        for (int i = 0; i < 25; i++) {
+            derivedVisits.save(new DerivedVisit(f.orgA(), site, "PAGED", c, time.plusSeconds(i * 600L),
+                    time.plusSeconds(i * 600L + 10), 1, "visit-gap-v1", 300, o, o));
+        }
+        loginA();
+        var first = get("/admin/cats/" + c.getId()); assertEquals(200, first.statusCode(), first.body());
+        assertTrue(first.body().contains("Ab Eintrag 1"));
+        assertTrue(first.body().contains("Nächste Seite"));
+        assertTrue(first.body().contains(time.plusSeconds(24 * 600L).toString()));
+        // The oldest visit ends at a time shown nowhere else on the first page.
+        assertFalse(first.body().contains(time.plusSeconds(10).toString()),
+                "Oldest visit must not be on the first page");
+
+        var second = get("/admin/cats/" + c.getId() + "?offset=20&limit=20");
+        assertEquals(200, second.statusCode(), second.body());
+        assertTrue(second.body().contains("Ab Eintrag 21"));
+        assertTrue(second.body().contains("Vorherige Seite"));
+        assertTrue(second.body().contains(time.plusSeconds(10).toString()));
+        assertFalse(second.body().contains("Nächste Seite"));
+
+        assertEquals(400, get("/admin/cats/" + c.getId() + "?limit=0").statusCode());
+        assertEquals(400, get("/admin/cats/" + c.getId() + "?offset=-1").statusCode());
+    }
+
 }

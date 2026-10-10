@@ -102,7 +102,7 @@ public class AdminObservationsVisitsController {
                         .forEach(rows::add);
             } else {
                 var page = queries.visits(principal.getId(), active.id(), site, filters.chipId,
-                        from, to, filters.limit + 1, filters.offset);
+                        from, to, filters.limit + 1, filters.offset, false);
                 more = page.size() > filters.limit;
                 page.stream().limit(filters.limit).map(AdminObservationsVisitsController::visitRow)
                         .forEach(rows::add);

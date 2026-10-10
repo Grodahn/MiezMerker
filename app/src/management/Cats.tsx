@@ -40,21 +40,43 @@ export function CatEditor({ organizationId, initial, onSaved, onClose }: {
     </form><Feedback {...mutation}/></section>;
 }
 
+const VISIT_PAGE_SIZE = 10;
+
 function CatVisits({ organizationId, chipId, cats, sites }: {
   organizationId: string; chipId: string; cats: Cat[]; sites: Site[];
 }) {
   const [offset, setOffset] = useState(0);
   const visits = useLoad(useCallback(async (signal: AbortSignal) => result(await api.GET(
     '/api/v1/organizations/{organizationId}/visits', { ...requestOptions(signal),
-      params: { path: { organizationId }, query: { chipId, limit: 20, offset } } })), [organizationId, chipId, offset]));
-  return <section className="detail cat-visits" aria-label="Besuchsverlauf"><h2>Bekannte Besuche</h2>
-    <p className="cat-visits__hint">Besuche behalten ihre historische Futterstelle. Der Serverempfang ist keine Sichtungszeit.</p>
+      params: { path: { organizationId }, query: { chipId, limit: VISIT_PAGE_SIZE, offset, newestFirst: true } } })),
+    [organizationId, chipId, offset]));
+  return <section className="detail cat-visits" aria-label="Besuchsverlauf"><h2>Besuchsverlauf</h2>
+    <p className="cat-visits__hint">Besuchszeiten stammen aus Reads mit verlässlicher Uhrzeit. Reads mit unbekannter Uhrzeit werden nie zu Besuchen. Der Serverempfang ist keine Sichtungszeit.</p>
     <LoadState {...visits}/>
     {visits.data && <>{offset > 0 && visits.data.length === 0
       ? <Status kind="empty" title="Keine weiteren Besuche." message="Die bisherigen Besuche sind auf der vorigen Seite verfügbar."/>
       : <VisitTable rows={visits.data} sites={sites} cats={cats}/>}
-      <div className="actions cat-visits__pager"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Vorherige Seite</button>
-        <span aria-live="polite">Seite {offset / 20 + 1}</span><button disabled={visits.data.length !== 20} onClick={() => setOffset(offset + 20)}>Nächste Seite</button></div></>}
+      <div className="actions cat-visits__pager">
+        <button type="button" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - VISIT_PAGE_SIZE))}>Neuere</button>
+        <span aria-live="polite">Seite {offset / VISIT_PAGE_SIZE + 1}</span>
+        <button type="button" disabled={visits.data.length !== VISIT_PAGE_SIZE} onClick={() => setOffset(offset + VISIT_PAGE_SIZE)}>Älter</button>
+      </div></>}
+  </section>;
+}
+
+function CatSiteVisits({ organizationId, chipId }: { organizationId: string; chipId: string }) {
+  const sites = useLoad(useCallback(async (signal: AbortSignal) => result(await api.GET(
+    '/api/v1/organizations/{organizationId}/visits/latest-per-site', { ...requestOptions(signal),
+      params: { path: { organizationId }, query: { chipId } } })), [organizationId, chipId]));
+  return <section className="detail cat-site-visits" aria-label="Besuchte Futterstellen"><h2>Besuchte Futterstellen</h2>
+    <p className="cat-visits__hint">Jede Futterstelle einmal, mit der letzten verlässlichen Besuchszeit. Historische Zuordnungen bleiben erhalten.</p>
+    <LoadState {...sites}/>
+    {sites.data && (sites.data.length
+      ? <ul className="site-visit-list">{sites.data.map(site => <li key={site.feedingSiteId}>
+          <span className="site-visit-list__name">{site.feedingSiteName}</span>
+          <span className="site-visit-list__time">Letzter Besuch: {millis(site.latestVisitStartAtMillis)}</span>
+        </li>)}</ul>
+      : <Status kind="empty" title="Keine besuchte Futterstelle." message="Besuche mit verlässlicher Uhrzeit erscheinen hier."/>)}
   </section>;
 }
 
@@ -80,8 +102,8 @@ function feedingSiteLabels(sites: Site[], ids?: string[]): string[] {
 
 type CatFilter = 'all' | 'known' | 'unknown';
 
-function CatDetail({ chipId, cat, activity, sites, onClose }: {
-  chipId: string; cat?: Cat; activity?: Activity; sites: Site[]; onClose: () => void;
+function CatDetail({ organizationId, chipId, cat, activity, sites, onClose }: {
+  organizationId: string; chipId: string; cat?: Cat; activity?: Activity; sites: Site[]; onClose: () => void;
 }) {
   const title = cat ? catDisplayTitle(cat) : 'Unbekannter Chip';
   const seen = lastSeenValue(activity);
@@ -116,6 +138,7 @@ function CatDetail({ chipId, cat, activity, sites, onClose }: {
       <div><dt>Bekannte Futterstellen (Verlauf)</dt>
         <dd>{siteLabels.length ? siteLabels.join(', ') : 'Keine bekannte Zuordnung'}</dd></div>
     </dl>
+    <CatSiteVisits organizationId={organizationId} chipId={chipId}/>
     <div className="actions"><button type="button" onClick={onClose}>Zurück zur Liste</button></div>
   </section>;
 }
@@ -252,6 +275,7 @@ export function Cats({ organizationId }: { organizationId: string }) {
     <div ref={selectedPanel} tabIndex={-1} aria-label="Ausgewählte Katze" hidden={!selected}>
     {selected?.chipId && data && <CatDetail
       key={`detail-${selected.id ?? selected.chipId}`}
+      organizationId={organizationId}
       chipId={selected.chipId}
       cat={selectedEntry?.cat}
       activity={selectedEntry?.activity}
