@@ -300,8 +300,8 @@ test('cat detail separates fields and preserves paginated historical visits', as
     if (path.endsWith('/feeding-sites')) return ok([site]);
     if (path.endsWith('/visits')) {
       const offset = options?.params?.query?.offset ?? 0;
-      if (!offset) return ok(Array.from({ length: 20 }, (_, index) => visit(`visit-${index}`)));
-      return ok([visit('visit-20')]);
+      if (!offset) return ok(Array.from({ length: 10 }, (_, index) => visit(`visit-${index}`)));
+      return ok([visit('visit-10')]);
     }
     return ok([]);
   });
@@ -318,30 +318,99 @@ test('cat detail separates fields and preserves paginated historical visits', as
   expect(within(detail).getByText(/2026/)).toBeTruthy();
   const visits = await screen.findByRole('list', { name: 'Abgeleitete Besuche' });
   expect(within(visits).getAllByText(/Garten/).length).toBeGreaterThan(0);
-  expect(within(visits).getAllByText('visit-gap-v1').length).toBe(20);
+  expect(within(visits).getAllByText('visit-gap-v1').length).toBe(10);
+  expect(within(visits).getAllByText('verlässlich').length).toBe(10);
   expect(screen.getByText('Seite 1')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Nächste Seite' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Älter' }));
   expect(await screen.findByText('Seite 2')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Vorherige Seite' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Neuere' }));
   expect(await screen.findByText('Seite 1')).toBeTruthy();
   fireEvent.click(within(detail).getByRole('button', { name: 'Zurück zur Liste' }));
   expect(screen.queryByRole('region', { name: 'Katzendetails' })).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Details / bearbeiten' }));
 });
 
-test('an empty later visit page does not claim the cat has no visits', async () => {
-  get.mockImplementation(async (path: string, options?: { params?: { query?: { offset?: number } } }) => {
-    if (path.endsWith('/cats')) return ok([{ id: 'cat', chipId: 'CHIP', name: 'Luna' }]);
-    if (path.endsWith('/visits')) return ok(options?.params?.query?.offset ? []
-      : Array.from({ length: 20 }, (_, i) => ({ id: `visit-${i}`, chipId: 'CHIP' })));
+test('visit history is newest first and older pages stay stable', async () => {
+  const visit = (id: string, at: string) => ({ id, chipId: 'CHIP-LUNA', feedingSiteId: 'site-a',
+    startAtMillis: at, endAtMillis: at, observationCount: 1,
+    algorithmVersion: 'visit-gap-v1', gapSeconds: 60, firstObservationId: 'first', lastObservationId: 'last' });
+  get.mockImplementation(async (path: string, options?: { params?: { query?: { offset?: number, newestFirst?: boolean } } }) => {
+    if (path.endsWith('/cats')) return ok([{ id: 'cat-luna', chipId: 'CHIP-LUNA', name: 'Luna' }]);
+    if (path.endsWith('/visits')) {
+      const offset = options?.params?.query?.offset ?? 0;
+      if (options?.params?.query?.newestFirst !== true) return ok([]);
+      if (!offset) return ok(Array.from({ length: 10 }, (_, index) =>
+        visit(`visit-${index}`, String(1735689702000 - index * 1000))));
+      return ok([visit('visit-old', '1735689600000')]);
+    }
     return ok([]);
   });
   render(<Management path="/cats"/>);
   fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Nächste Seite' }));
+  await screen.findByRole('list', { name: 'Abgeleitete Besuche' });
+  expect(screen.queryAllByText(millis('1735689702000')).length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(millis('1735689600000'))).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Älter' }));
+  expect((await screen.findAllByText(millis('1735689600000'))).length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(millis('1735689702000'))).toHaveLength(0);
+});
+
+test('cat detail lists visited feeding sites with the latest reliable visit', async () => {
+  get.mockImplementation(async (path: string) => ok(path.endsWith('/cats')
+    ? [{ id: 'cat-luna', chipId: 'CHIP-LUNA', name: 'Luna' }]
+    : path.endsWith('/visits/latest-per-site') ? [
+      { feedingSiteId: 'site-a', feedingSiteName: 'Garten', latestVisitStartAtMillis: '1735689602000' },
+      { feedingSiteId: 'site-b', feedingSiteName: 'Scheune', latestVisitStartAtMillis: '1735689601000' },
+    ] : path.endsWith('/visits') ? [] : []));
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
+  const section = await screen.findByRole('region', { name: 'Besuchte Futterstellen' });
+  expect(within(section).getByRole('heading', { name: 'Besuchte Futterstellen' })).toBeTruthy();
+  expect(within(section).getByText('Garten')).toBeTruthy();
+  expect(within(section).getByText('Scheune')).toBeTruthy();
+  expect(section.textContent).toContain(millis('1735689602000'));
+  expect(section.textContent).toContain(millis('1735689601000'));
+  expect(within(section).getAllByText(/Letzter Besuch:/).length).toBe(2);
+});
+
+test('unknown chip detail shows visited feeding sites without inventing a cat', async () => {
+  get.mockImplementation(async (path: string) => ok(path.endsWith('/chip-activity')
+    ? [{ chipId: 'CHIP-UNKNOWN', lastSeenAtMillis: null, lastReceivedAt: '2026-10-08T12:00:00Z', uncertainClockCount: 1, feedingSiteIds: ['site-a'] }]
+    : path.endsWith('/visits/latest-per-site') ? [
+      { feedingSiteId: 'site-a', feedingSiteName: 'Garten', latestVisitStartAtMillis: '1735689600000' },
+    ] : path.endsWith('/visits') ? [] : []));
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Katze dazu anlegen' }));
+  const detail = await screen.findByRole('region', { name: 'Katzendetails' });
+  expect(within(detail).getByRole('heading', { name: 'Unbekannter Chip' })).toBeTruthy();
+  const section = within(detail).getByRole('region', { name: 'Besuchte Futterstellen' });
+  expect(within(section).getByText('Garten')).toBeTruthy();
+  expect(within(section).getByText(/1\.1\.2025, 01:00:00/)).toBeTruthy();
+});
+
+test('empty visited feeding sites state is honest', async () => {
+  get.mockImplementation(async (path: string) => ok(path.endsWith('/cats')
+    ? [{ id: 'cat-luna', chipId: 'CHIP-LUNA', name: 'Luna' }]
+    : path.endsWith('/visits/latest-per-site') ? [] : path.endsWith('/visits') ? [] : []));
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
+  const section = await screen.findByRole('region', { name: 'Besuchte Futterstellen' });
+  expect(within(section).getByText('Keine besuchte Futterstelle.')).toBeTruthy();
+});
+
+test('an empty later visit page does not claim the cat has no visits', async () => {
+  get.mockImplementation(async (path: string, options?: { params?: { query?: { offset?: number } } }) => {
+    if (path.endsWith('/cats')) return ok([{ id: 'cat', chipId: 'CHIP', name: 'Luna' }]);
+    if (path.endsWith('/visits')) return ok(options?.params?.query?.offset ? []
+      : Array.from({ length: 10 }, (_, i) => ({ id: `visit-${i}`, chipId: 'CHIP' })));
+    return ok([]);
+  });
+  render(<Management path="/cats"/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Details / bearbeiten' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Älter' }));
   await screen.findByText('Keine weiteren Besuche.');
   expect(screen.queryByText('Keine abgeleiteten Besuche vorhanden.')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Vorherige Seite' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Neuere' }));
   await screen.findByRole('list', { name: 'Abgeleitete Besuche' });
 });
 

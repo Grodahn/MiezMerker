@@ -2,6 +2,7 @@ package org.miezmerker.backend.service;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.miezmerker.backend.domain.Cat;
@@ -72,7 +73,8 @@ public class ObservationVisitQueryService {
     }
 
     public List<DerivedVisit> visits(UUID userId, UUID organizationId, UUID feedingSiteId,
-            String chipId, Long fromMillis, Long toMillis, int limit, int offset) {
+            String chipId, Long fromMillis, Long toMillis, int limit, int offset,
+            boolean newestFirst) {
         tenants.requireActive(userId, organizationId);
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -99,7 +101,9 @@ public class ObservationVisitQueryService {
                 + (normalizedChip != null ? " and v.chipId = :chip" : "")
                 + (fromMillis != null ? " and v.startAt >= :from" : "")
                 + (toMillis != null ? " and v.startAt < :to" : "")
-                + " order by v.startAt asc, v.chipId asc, v.feedingSite.id asc, v.id asc";
+                + (newestFirst
+                        ? " order by v.startAt desc, v.chipId desc, v.feedingSite.id desc, v.id desc"
+                        : " order by v.startAt asc, v.chipId asc, v.feedingSite.id asc, v.id asc");
         var query = entities.createQuery(jpql, DerivedVisit.class)
                 .setParameter("org", organizationId)
                 .setFirstResult(offset).setMaxResults(limit);
@@ -117,6 +121,35 @@ public class ObservationVisitQueryService {
             query.setParameter("to", java.time.Instant.ofEpochMilli(toMillis));
         }
         return query.getResultList();
+    }
+
+    /**
+     * Latest visit start per feeding site for one chip (#100). Grouped
+     * server-side; frozen {@link DerivedVisit#getFeedingSite() feeding-site}
+     * attribution keeps historical node moves correct. Every visit is derived
+     * from reliable-clock observations only, so the latest start is always a
+     * reliable time; no {@code received_at} is involved.
+     */
+    public record LatestSiteVisit(UUID feedingSiteId, String feedingSiteName,
+            Instant latestVisitStart) {}
+
+    public List<LatestSiteVisit> latestVisitsBySite(UUID userId, UUID organizationId,
+            String chipId) {
+        tenants.requireActive(userId, organizationId);
+        String normalizedChip =
+                chipId == null || chipId.isBlank() ? null : Cat.normalizeChipId(chipId);
+        if (normalizedChip == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "chipId is required");
+        }
+        return entities.createQuery("select v.feedingSite.id, s.name, max(v.startAt) "
+                + "from DerivedVisit v join v.feedingSite s "
+                + "where v.organization.id = :org and v.chipId = :chip "
+                + "group by v.feedingSite.id, s.name order by s.name", Object[].class)
+                .setParameter("org", organizationId).setParameter("chip", normalizedChip)
+                .getResultList().stream()
+                .map(row -> new LatestSiteVisit((UUID) row[0], (String) row[1],
+                        (Instant) row[2]))
+                .toList();
     }
 
     private void rejectForeignNodeFilter(UUID nodeId, UUID organizationId) {

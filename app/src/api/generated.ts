@@ -612,6 +612,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/visits/latest-per-site": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest reliable visit per feeding site for one chip; frozen historical site attribution, never current deployments */
+        get: operations["latestVisitsPerFeedingSite"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}/visits/recompute": {
         parameters: {
             query?: never;
@@ -874,6 +891,11 @@ export interface components {
                 [key: string]: string;
             };
             keyId?: string;
+        };
+        LatestSiteVisitView: {
+            feedingSiteId?: string;
+            feedingSiteName?: string;
+            latestVisitStartAtMillis?: string;
         };
         LoginRequest: {
             /** Format: email */
@@ -2225,6 +2247,7 @@ export interface operations {
                 toMillis?: number;
                 limit?: number;
                 offset?: number;
+                newestFirst?: boolean;
             };
             header?: never;
             path: {
@@ -2241,6 +2264,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VisitView"][];
+                };
+            };
+        };
+    };
+    latestVisitsPerFeedingSite: {
+        parameters: {
+            query: {
+                chipId: string;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LatestSiteVisitView"][];
                 };
             };
         };

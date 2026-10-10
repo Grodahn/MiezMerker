@@ -56,7 +56,7 @@ Backend tags cover all existing test classes:
 | node | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, AdminNodesTest, AdminSitesTest, NodeProvisionSetupTest |
 | auth | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, OfflineCredentialTest, IssuerConfigurationTest, InteropVectorTest, TenancyAuthTest, CookieSecurityTest, BootstrapTest, DisplayNameTest, FoundationTest, AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, NodeProvisionSetupTest, OrganizationSharingTest |
 | ingest | Issue9IngestTest, AdminObservationsVisitsTest |
-| visits | Issue10VisitsTest, FeedingSiteCatActivityTest, AdminCatsTest, AdminObservationsVisitsTest, AdminObservationsVisitsControllerTest |
+| visits | Issue10VisitsTest, Issue100CatVisitsTest, FeedingSiteCatActivityTest, AdminCatsTest, AdminObservationsVisitsTest, AdminObservationsVisitsControllerTest |
 | admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, AdminObservationsVisitsControllerTest |
 | schema | DatabaseSchemaTest, DisplayNameTest, NodeDisplayNameTest, SystemPrivilegeTest, SystemRoleMigrationTest |
 | system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |

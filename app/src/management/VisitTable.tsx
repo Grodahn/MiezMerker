@@ -14,6 +14,7 @@ export function VisitTable({ rows, sites, cats }: { rows: Visit[]; sites: Site[]
           <div><dt>Beginn</dt><dd>{millis(row.startAtMillis)}</dd></div>
           <div><dt>Ende</dt><dd>{millis(row.endAtMillis)}</dd></div>
           <div><dt>Dauer</dt><dd>{duration(row)} <small>({row.observationCount} Reads)</small></dd></div>
+          <div><dt>Uhrzeit</dt><dd>verlässlich</dd></div>
           <div><dt>Futterstelle (historisch)</dt><dd>{siteName(sites, row.feedingSiteId)}</dd></div>
           <div><dt>Ableitung</dt><dd>{row.algorithmVersion}<small> Gap: {row.gapSeconds} s</small></dd></div>
         </dl>

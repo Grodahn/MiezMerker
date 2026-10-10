@@ -57,6 +57,20 @@ async function backend(page: Page) {
       const chipId = url.searchParams.get('chipId');
       return send(chipId ? visits.filter(visit => visit.chipId === chipId) : visits);
     }
+    if (path.includes('/visits/latest-per-site')) {
+      // Mirror the #100 server projection: one latest reliable visit per site.
+      const chipId = url.searchParams.get('chipId');
+      const latest = new Map<string, components['schemas']['LatestSiteVisitView']>();
+      for (const visit of visits.filter(visit => visit.chipId === chipId)) {
+        const site = sites.find(candidate => candidate.id === visit.feedingSiteId);
+        const current = latest.get(visit.feedingSiteId);
+        if (!current || visit.startAtMillis > current.latestVisitStartAtMillis) {
+          latest.set(visit.feedingSiteId, { feedingSiteId: visit.feedingSiteId,
+            feedingSiteName: site?.name ?? 'Unbekannt', latestVisitStartAtMillis: visit.startAtMillis });
+        }
+      }
+      return send([...latest.values()]);
+    }
     return send({}, 403);
   });
   await page.addInitScript(org => {
@@ -182,6 +196,8 @@ test('cats overview supports search, filter and mobile detail without a desktop 
   await expect(detail.getByRole('heading', { name: 'Luna' })).toBeVisible();
   await expect(detail.getByText('Aktiv')).toBeVisible();
   await expect(page.getByRole('list', { name: 'Abgeleitete Besuche' })).toHaveCount(0);
+  const lunaSites = detail.getByRole('region', { name: 'Besuchte Futterstellen' });
+  await expect(lunaSites.getByText('Keine besuchte Futterstelle.')).toBeVisible();
   await detail.getByRole('button', { name: 'Zurück zur Liste' }).click();
   await expect(detail).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Details / bearbeiten' })).toBeFocused();
@@ -189,6 +205,8 @@ test('cats overview supports search, filter and mobile detail without a desktop 
   const unknownDetail = page.getByRole('region', { name: 'Katzendetails' });
   await expect(unknownDetail.getByRole('heading', { name: 'Unbekannter Chip' })).toBeVisible();
   await expect(page.getByText('visit-gap-v1').first()).toBeVisible();
-  await expect(unknownDetail.getByText('Garten', { exact: true })).toBeVisible();
+  const visitedSites = unknownDetail.getByRole('region', { name: 'Besuchte Futterstellen' });
+  await expect(visitedSites.getByText('Garten')).toBeVisible();
+  await expect(visitedSites.getByText(/Letzter Besuch:/)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
