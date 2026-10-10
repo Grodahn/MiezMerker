@@ -57,6 +57,8 @@ struct Reader {
     void done() { if (pos != end) throw std::runtime_error("trailing state"); }
 };
 constexpr std::uint32_t identity_magic = 0x01494d4d, log_magic = 0x014f4d4d;
+// Complete owner metadata uses the backend's character bounds in UTF-8 bytes.
+constexpr std::size_t name_bytes = 255 * 4, contact_bytes = 500 * 4;
 bool valid_identity(const NodeIdentity& id) {
     if ((std::to_integer<unsigned>(id.node_id[6]) & 0xf0) != 0x40
         || (std::to_integer<unsigned>(id.node_id[8]) & 0xc0) != 0x80
@@ -95,8 +97,8 @@ NodeIdentityLoadResult PersistentIdentity::load(NodeIdentity& out) {
             o.reset_pending = pending; candidate.observations = o;
         }
         candidate.organization_id = r.string(36);
-        candidate.organization_name = r.string(512);
-        candidate.public_contact = r.string(512);
+        candidate.organization_name = r.string(name_bytes);
+        candidate.public_contact = r.string(contact_bytes);
         candidate.claim_receipt = r.string(4096);
         r.done();
         if (!valid_identity(candidate)) return NodeIdentityLoadResult::error;
@@ -115,8 +117,8 @@ bool PersistentIdentity::save(const NodeIdentity& id) {
             w.array(o.node_id.bytes); w.array(o.incarnation.bytes); w.number(o.next_sequence, 8);
             w.number(o.boot_counter, 4); w.number(static_cast<unsigned>(o.claim_state), 1); w.number(o.reset_pending, 1);
         }
-        w.string(id.organization_id, 36); w.string(id.organization_name, 512);
-        w.string(id.public_contact, 512); w.string(id.claim_receipt, 4096);
+        w.string(id.organization_id, 36); w.string(id.organization_name, name_bytes);
+        w.string(id.public_contact, contact_bytes); w.string(id.claim_receipt, 4096);
         return blob_.replace(w.finish());
     } catch (const std::exception&) { return false; }
 }

@@ -207,8 +207,10 @@ bool verify_claim_receipt(std::string_view receipt, std::span<const unsigned cha
     ClaimReceiptInfo candidate;
     candidate.node_id = string(c, "sub"); candidate.organization_id = string(c, "org");
     candidate.organization_name = string(c, "org_name"); candidate.public_contact = string(c, "contact");
-    if (candidate.organization_name.empty() || candidate.organization_name.size() > 512
-        || candidate.public_contact.size() > 512
+    // Backend allows 255 name / 500 contact characters. Bound UTF-8 storage by
+    // four bytes per character; the complete signed JWT remains capped at 4096.
+    if (candidate.organization_name.empty() || candidate.organization_name.size() > 255 * 4
+        || candidate.public_contact.size() > 500 * 4
         || !point(c, "ndpk_x", "ndpk_y", "ndpf", candidate.public_key)) return false;
     // ipk fields are never a trust anchor. If present, require the signed echo to match the independently pinned key.
     Bytes x, y;

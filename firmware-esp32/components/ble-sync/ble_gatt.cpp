@@ -1,5 +1,6 @@
 #include "miezmerker/ble_gatt.hpp"
 #include "miezmerker/ble_codec.hpp"
+#include <algorithm>
 
 namespace miezmerker::ble_gatt {
 
@@ -9,6 +10,13 @@ using namespace miezmerker::ble;
 std::vector<std::uint8_t> error_frame(SyncError code, const std::string& msg) {
     ErrorMsg e{code, msg};
     return encode_frame(Frame{kProtocolVersion, Opcode::Error, encode_error_payload(e)});
+}
+// Owner text is a public display hint. Preserve complete signed metadata in the
+// identity store, but project hints into v1 codec bounds without splitting UTF-8.
+std::string hint(const std::string& value, std::size_t limit) {
+    if (value.size() <= limit) return value;
+    while (limit && (static_cast<unsigned char>(value[limit]) & 0xc0) == 0x80) --limit;
+    return value.substr(0, limit);
 }
 }  // namespace
 
@@ -108,10 +116,17 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad owner req");
             OwnerInfo info = server_->public_owner();
             if (info.claim_state == miezmerker::ClaimState::CLAIMED) {
+                // Never shorten the ownership identifier itself.
+                if (owner_->organization_id.size() > 128)
+                    return error_frame(SyncError::Internal, "invalid owner identifier");
                 info.organization_id = owner_->organization_id;
-                info.organization_slug = owner_->organization_slug;
-                info.organization_name = owner_->organization_name;
-                info.public_contact = owner_->public_contact;
+                info.organization_slug = hint(owner_->organization_slug, 128);
+                info.organization_name = hint(owner_->organization_name, 128);
+                // Frame header + UUID/claim marker + four string length fields.
+                constexpr std::size_t overhead = 4 + 16 + 1 + 4 * 2;
+                const auto remaining = 512 - overhead - info.organization_id.size()
+                    - info.organization_slug.size() - info.organization_name.size();
+                info.public_contact = hint(owner_->public_contact, std::min<std::size_t>(256, remaining));
             }
             return encode_frame(
                 Frame{kProtocolVersion, Opcode::OwnerResponse, encode_owner_response(info)});

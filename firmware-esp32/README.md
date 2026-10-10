@@ -172,8 +172,10 @@ for read. Read Blob offsets return a stable cached full frame; NimBLE slices it.
 MTU is bounded to 23..517; worst-case batch pages are clamped to 1..3 records
 and <=512-byte ATT values. With negotiated MTU >=185, whole page notifications
 fit MTU-3. At MTU 23, use one-record long reads; no truncated notification is
-sent. The existing PWA requests one record and reads responses. Large owner
-metadata exceeding the ATT value bound fails safely instead of being truncated.
+sent. The existing PWA requests one record and reads responses. Public owner
+display hints are shortened at UTF-8 boundaries to the existing v1 field limits
+and the 512-byte ATT value bound. The ownership UUID and complete signed/persisted
+metadata are retained unchanged.
 
 ## Explicit synthetic input and local tests
 

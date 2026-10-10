@@ -19,6 +19,32 @@ def partitions(data):
         result[name.rstrip(b'\0').decode('ascii')] = (kind, subtype, address, size, flags)
     return result
 
+def flash_arguments(build, flash):
+    """One validated source of offsets, files and non-destructive flash options."""
+    settings = flash['flash_settings']
+    if settings['flash_size'] != '4MB' or settings['flash_mode'] not in ('dio', 'dout', 'qio', 'qout') \
+            or settings['flash_freq'] not in ('20m', '26m', '40m', '80m'):
+        raise SystemExit('Unexpected flash settings')
+    expected = {
+        0: ('bootloader/bootloader.bin', 0x8000),
+        0x8000: ('partition_table/partition-table.bin', 0x1000),
+        0x10000: ('miezmerker-node.bin', 0x200000),
+    }
+    files = flash['flash_files']
+    if len(files) != len(expected) or {int(offset, 0) for offset in files} != set(expected):
+        raise SystemExit('Unexpected flash offsets; refusing to overwrite node state')
+    args = ['--flash-mode', settings['flash_mode'], '--flash-size', '4MB', '--flash-freq', settings['flash_freq']]
+    for offset, file in sorted(files.items(), key=lambda entry: int(entry[0], 0)):
+        name, maximum = expected[int(offset, 0)]
+        target = (build / file).resolve()
+        if target != (build / name).resolve():
+            raise SystemExit(f'Unexpected image at {offset}; refusing inconsistent build artifacts')
+        size = target.stat().st_size
+        if not 0 < size <= maximum:
+            raise SystemExit(f'Image at {offset} exceeds its partition boundary or is empty')
+        args += [hex(int(offset, 0)), str(target)]
+    return args
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', required=True)
@@ -31,8 +57,7 @@ def main():
         raise SystemExit('Refusing a port without Espressif native USB VID/PID')
     build = args.build_dir.resolve()
     flash = json.loads((build / 'flasher_args.json').read_text())
-    if flash['flash_settings']['flash_size'] != '4MB':
-        raise SystemExit('Expected a 4MB image')
+    write_args = flash_arguments(build, flash)
     command = [sys.executable, '-m', 'esptool', '--chip', 'esp32c3', '--port', args.port]
     check = subprocess.run(command + ['chip-id'], text=True, capture_output=True)
     print(check.stdout)
@@ -52,12 +77,8 @@ def main():
         if name in old and old[name] != new[name]:
             raise SystemExit(f'Refusing layout change of established {name}; explicit migration required')
     # No erase-flash, data-partition image, or --force. Only generated application images.
-    files = flash['flash_files']
-    allowed = {0, 0x8000, 0x10000}
-    if {int(offset, 0) for offset in files} != allowed:
-        raise SystemExit('Unexpected flash offsets; refusing to overwrite node state')
     subprocess.run(command + ['--before', 'default-reset', '--after', 'hard-reset',
-        'write-flash', '@flash_args'], cwd=build, check=True)
+        'write-flash'] + write_args, cwd=build, check=True)
 
 if __name__ == '__main__':
     main()

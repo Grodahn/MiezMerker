@@ -23,6 +23,7 @@ jobs:
           VARIANT: ${{ matrix.variant }}
         run: |
           . /opt/esp/idf/export.sh > /dev/null
+          python -m unittest discover -s firmware-esp32/tools -p 'test_*.py'
           defaults=sdkconfig.defaults
           if [ "$VARIANT" = dev ]; then defaults="$defaults;sdkconfig.dev"; fi
           idf.py -C firmware-esp32/idf -B "$GITHUB_WORKSPACE/firmware-esp32/idf/build-ci-$VARIANT" \
