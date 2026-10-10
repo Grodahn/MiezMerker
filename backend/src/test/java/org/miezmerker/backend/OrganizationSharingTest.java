@@ -179,15 +179,20 @@ class OrganizationSharingTest {
     void discoverableColumnDefaultsToFalseAndNewOrganizationsStayHidden() throws Exception {
         seed();
         // Migration default: NOT NULL DEFAULT FALSE; existing and new rows hidden.
+        // Portable across H2 (uppercases unquoted identifiers, default 'FALSE')
+        // and PostgreSQL (keeps lowercase, default ''false'::boolean').
         String defaultValue = jdbc.queryForObject(
                 "SELECT column_default FROM information_schema.columns"
-                        + " WHERE table_name = 'ORGANIZATIONS' AND column_name = 'DISCOVERABLE'",
+                        + " WHERE lower(table_name) = 'organizations'"
+                        + " AND lower(column_name) = 'discoverable'",
                 String.class);
         assertNotNull(defaultValue);
-        assertEquals("false", defaultValue.toLowerCase(java.util.Locale.ROOT));
+        assertTrue(defaultValue.toLowerCase(java.util.Locale.ROOT).contains("false"),
+                "discoverable must default to FALSE, got: " + defaultValue);
         assertEquals("NO", jdbc.queryForObject(
                 "SELECT is_nullable FROM information_schema.columns"
-                        + " WHERE table_name = 'ORGANIZATIONS' AND column_name = 'DISCOVERABLE'",
+                        + " WHERE lower(table_name) = 'organizations'"
+                        + " AND lower(column_name) = 'discoverable'",
                 String.class));
         assertFalse(orgA.isDiscoverable());
         assertFalse(orgB.isDiscoverable());
@@ -285,6 +290,25 @@ class OrganizationSharingTest {
         assertEquals(403, get(policies(orgB.getId())).statusCode());
         assertEquals(403, put(policy(orgB.getId(), ShareScope.CARE),
                 "{\"audience\":\"PRIVATE\"}").statusCode());
+
+        // PENDING and DISABLED memberships manage nothing, even with an ADMIN role.
+        AppUser pendingB = users.save(new AppUser("pending-b@example.org", passwords.encode(password)));
+        memberships.save(new OrganizationMembership(orgB, pendingB, MembershipRole.ADMIN, MembershipStatus.PENDING));
+        AppUser staleB = users.save(new AppUser("stale-b@example.org", passwords.encode(password)));
+        OrganizationMembership stale = new OrganizationMembership(orgB, staleB,
+                MembershipRole.ADMIN, MembershipStatus.ACTIVE);
+        memberships.save(stale);
+        stale.disable();
+        memberships.save(stale);
+        for (String email : List.of("pending-b@example.org", "stale-b@example.org")) {
+            login(email);
+            assertEquals(403, get(policies(orgB.getId())).statusCode(), email);
+            assertEquals(403, put(policy(orgB.getId(), ShareScope.CARE),
+                    "{\"audience\":\"PRIVATE\"}").statusCode(), email);
+            assertEquals(403, delete(policy(orgB.getId(), ShareScope.CARE)).statusCode(), email);
+            assertEquals(403, patch("/api/v1/organizations/" + orgB.getId() + "/visibility",
+                    "{\"discoverable\":true}").statusCode(), email);
+        }
 
         // B's admin manages B's own visibility.
         login("admin-b@example.org");
