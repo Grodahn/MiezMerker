@@ -95,6 +95,17 @@ int main(int argc, char** argv) {
     OfflineAuthSession foreign("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", key);
     assert(foreign.begin(nonce, challenge)); assert(!foreign.authorize(jwt, proof, now));
     auto bad_key = key; bad_key[5] ^= 1;
+    ClaimReceiptInfo receipt_info;
+    const auto receipt = value(json, "claim_receipt_jwt");
+    assert(verify_claim_receipt(receipt, key, now, receipt_info));
+    assert(receipt_info.node_id == value(json, "node_id") && receipt_info.organization_id == org);
+    assert(receipt_info.organization_name == "Vector Org" && receipt_info.public_key[0] == 4);
+    assert(!verify_claim_receipt(receipt, key, 0, receipt_info));
+    assert(!verify_claim_receipt(receipt, key, now - 1, receipt_info));
+    assert(!verify_claim_receipt(receipt, key, 2106259200, receipt_info));
+    assert(!verify_claim_receipt(receipt, bad_key, now, receipt_info));
+    assert(!verify_claim_receipt(jwt, key, now, receipt_info));
+    assert(!verify_claim_receipt(receipt + ".", key, now, receipt_info));
     OfflineAuthSession wrong_issuer(org, bad_key);
     assert(wrong_issuer.begin(nonce, challenge)); assert(!wrong_issuer.authorize(jwt, proof, now));
     for (const auto& bad : {jwt + ".", std::string("malformed"), jwt.substr(0, jwt.size() - 1),
@@ -133,6 +144,27 @@ int main(int argc, char** argv) {
     check("{\"alg\":\"ES256\",\"kid\":\"other\"}", payload, false);
     check("{\"alg\":\"ES256\",\"kid\":\"miezmerker-issuer-v1\",\"crit\":[\"x\"]}", payload, false);
     check(header, payload.substr(0, payload.size() - 1) + ",\"ver\":1}", false);
+    // Legal backend owner text may exceed 512 UTF-8 bytes, while the signed
+    // receipt itself still fits the existing 4096-byte transport contract.
+    const auto receipt_first = receipt.find('.'), receipt_second = receipt.find('.', receipt_first + 1);
+    const auto receipt_bytes = decode(receipt.substr(receipt_first + 1, receipt_second - receipt_first - 1));
+    const std::string receipt_payload(receipt_bytes.begin(), receipt_bytes.end());
+    auto receipt_claims = cJSON_Parse(receipt_payload.c_str()); assert(receipt_claims);
+    const auto test_x = encode(std::span(test_key).subspan(1, 32));
+    const auto test_y = encode(std::span(test_key).subspan(33, 32));
+    assert(cJSON_ReplaceItemInObjectCaseSensitive(receipt_claims, "ipk_x", cJSON_CreateString(test_x.c_str())));
+    assert(cJSON_ReplaceItemInObjectCaseSensitive(receipt_claims, "ipk_y", cJSON_CreateString(test_y.c_str())));
+    const std::string long_name(255, 'n');
+    std::string long_contact;
+    for (unsigned i = 0; i < 300; ++i) long_contact += "\xe7\x8c\xab";
+    assert(cJSON_ReplaceItemInObjectCaseSensitive(receipt_claims, "org_name", cJSON_CreateString(long_name.c_str())));
+    assert(cJSON_ReplaceItemInObjectCaseSensitive(receipt_claims, "contact", cJSON_CreateString(long_contact.c_str())));
+    char* receipt_text = cJSON_PrintUnformatted(receipt_claims); assert(receipt_text);
+    const auto long_receipt = sign(header, receipt_text, group);
+    assert(long_receipt.size() <= 4096);
+    assert(verify_claim_receipt(long_receipt, test_key, now, receipt_info));
+    assert(receipt_info.organization_name == long_name && receipt_info.public_contact == long_contact);
+    cJSON_free(receipt_text); cJSON_Delete(receipt_claims);
     mbedtls_ecp_group_free(&group);
     cJSON_Delete(json);
 }

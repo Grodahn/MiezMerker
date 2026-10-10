@@ -1,0 +1,2 @@
+# Explicit opt-in: idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.dev" build
+CONFIG_MM_DEV_SYNTHETIC_INPUT=y

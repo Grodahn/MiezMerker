@@ -1,0 +1,84 @@
+"""Explicitly selected ESP32-C3 flash; preserve MiezMerker data partitions."""
+import argparse
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from serial_capture import esp_ports
+
+def partitions(data):
+    import struct
+    result = {}
+    for offset in range(0, min(0xC00, len(data)), 32):
+        entry = data[offset:offset+32]
+        if len(entry) != 32 or entry[:2] != b'\xaa\x50':
+            break
+        _, kind, subtype, address, size, name, flags = struct.unpack('<HBBII16sI', entry)
+        result[name.rstrip(b'\0').decode('ascii')] = (kind, subtype, address, size, flags)
+    return result
+
+def flash_arguments(build, flash):
+    """One validated source of offsets, files and non-destructive flash options."""
+    settings = flash['flash_settings']
+    if settings['flash_size'] != '4MB' or settings['flash_mode'] not in ('dio', 'dout', 'qio', 'qout') \
+            or settings['flash_freq'] not in ('20m', '26m', '40m', '80m'):
+        raise SystemExit('Unexpected flash settings')
+    expected = {
+        0: ('bootloader/bootloader.bin', 0x8000),
+        0x8000: ('partition_table/partition-table.bin', 0x1000),
+        0x10000: ('miezmerker-node.bin', 0x200000),
+    }
+    files = flash['flash_files']
+    if len(files) != len(expected) or {int(offset, 0) for offset in files} != set(expected):
+        raise SystemExit('Unexpected flash offsets; refusing to overwrite node state')
+    args = ['--flash-mode', settings['flash_mode'], '--flash-size', '4MB', '--flash-freq', settings['flash_freq']]
+    for offset, file in sorted(files.items(), key=lambda entry: int(entry[0], 0)):
+        name, maximum = expected[int(offset, 0)]
+        target = (build / file).resolve()
+        if target != (build / name).resolve():
+            raise SystemExit(f'Unexpected image at {offset}; refusing inconsistent build artifacts')
+        size = target.stat().st_size
+        if not 0 < size <= maximum:
+            raise SystemExit(f'Image at {offset} exceeds its partition boundary or is empty')
+        args += [hex(int(offset, 0)), str(target)]
+    return args
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', required=True)
+    parser.add_argument('--expected-mac', required=True, help='Chip MAC from a separate esptool chip-id inspection (not Node ID)')
+    parser.add_argument('--build-dir', type=Path, required=True)
+    args = parser.parse_args()
+    if not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', args.expected_mac):
+        raise SystemExit('Expected a complete six-byte chip MAC from esptool inspection')
+    if args.port.upper() not in [p.device.upper() for p in esp_ports()]:
+        raise SystemExit('Refusing a port without Espressif native USB VID/PID')
+    build = args.build_dir.resolve()
+    flash = json.loads((build / 'flasher_args.json').read_text())
+    write_args = flash_arguments(build, flash)
+    command = [sys.executable, '-m', 'esptool', '--chip', 'esp32c3', '--port', args.port]
+    check = subprocess.run(command + ['chip-id'], text=True, capture_output=True)
+    print(check.stdout)
+    if check.returncode:
+        print(check.stderr, file=sys.stderr)
+        raise SystemExit(check.returncode)
+    if args.expected_mac.lower() not in check.stdout.lower() or 'revision' not in check.stdout:
+        raise SystemExit('Selected chip does not match expected hardware MAC')
+    with tempfile.TemporaryDirectory(prefix='mm-partition-') as folder:
+        old_table = Path(folder) / 'partitions.bin'
+        subprocess.run(command + ['read-flash', '0x8000', '0x1000', str(old_table)], check=True)
+        old = partitions(old_table.read_bytes())
+    new = partitions((build / 'partition_table/partition-table.bin').read_bytes())
+    if new.get('node_state') != (1, 2, 0x210000, 0x40000, 0) or new.get('observations') != (1, 2, 0x250000, 0x1B0000, 0):
+        raise SystemExit('Unexpected MiezMerker data partition geometry')
+    for name in ('node_state', 'observations'):
+        if name in old and old[name] != new[name]:
+            raise SystemExit(f'Refusing layout change of established {name}; explicit migration required')
+    # No erase-flash, data-partition image, or --force. Only generated application images.
+    subprocess.run(command + ['--before', 'default-reset', '--after', 'hard-reset',
+        'write-flash'] + write_args, cwd=build, check=True)
+
+if __name__ == '__main__':
+    main()

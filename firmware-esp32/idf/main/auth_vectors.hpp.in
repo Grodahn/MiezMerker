@@ -1,0 +1,9 @@
+#pragma once
+namespace vectors {
+inline constexpr char issuer_x[] = "@MM_ISSUER_X@";
+inline constexpr char issuer_y[] = "@MM_ISSUER_Y@";
+inline constexpr char organization[] = "@MM_ORG@";
+inline constexpr char credential[] = "@MM_CREDENTIAL@";
+inline constexpr char proof[] = "@MM_PROOF@";
+inline constexpr char receipt[] = "@MM_RECEIPT@";
+}
