@@ -385,7 +385,7 @@ test('unknown chip detail shows visited feeding sites without inventing a cat', 
   expect(within(detail).getByRole('heading', { name: 'Unbekannter Chip' })).toBeTruthy();
   const section = within(detail).getByRole('region', { name: 'Besuchte Futterstellen' });
   expect(within(section).getByText('Garten')).toBeTruthy();
-  expect(within(section).getByText(/1\.1\.2025, 01:00:00/)).toBeTruthy();
+  expect(section.textContent).toContain(millis('1735689600000'));
 });
 
 test('empty visited feeding sites state is honest', async () => {
