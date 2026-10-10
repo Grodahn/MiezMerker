@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.miezmerker.backend.crypto.EcKeyUtils;
 import org.miezmerker.backend.crypto.NodeClaimVerifier;
 import org.miezmerker.backend.domain.AppUser;
+import org.miezmerker.backend.domain.Cat;
 import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.domain.MembershipStatus;
 import org.miezmerker.backend.domain.Organization;
@@ -43,6 +45,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -72,6 +76,7 @@ class Issue9IngestTest {
     @Autowired RawObservationRepository observations;
     @Autowired PasswordEncoder passwords;
     @Autowired TestDatabaseCleaner cleaner;
+    @Autowired PlatformTransactionManager transactions;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
@@ -571,6 +576,110 @@ class Issue9IngestTest {
                         + "&chipId=276098106000001").body());
         assertEquals(1, rowsB.size());
         assertEquals(nodeB.nodeId().toString(), rowsB.get(0).get("nodeId").asText());
+    }
+
+    @Test
+    void localCatProfilesAndNormalizedConflictsRemainIndependent() throws Exception {
+        Seed s = seed();
+        String a = "/api/v1/organizations/" + s.orgA().getId() + "/cats";
+        String b = "/api/v1/organizations/" + s.orgB().getId() + "/cats";
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        var createdA = post(a, mapper.writeValueAsString(Map.of(
+                "chipId", " 000abc ", "name", "Minka", "status", "active", "notes", "A notes")));
+        assertEquals(200, createdA.statusCode(), createdA.body());
+        JsonNode catA = mapper.readTree(createdA.body());
+        assertEquals("000ABC", catA.get("chipId").asText());
+        assertEquals(409, post(a, "{\"chipId\":\"000AbC\"}").statusCode());
+        UUID other = createCat(s.orgA().getId(), "000OTHER");
+        assertEquals(409, patch(a + "/" + other, "{\"chipId\":\" 000abc \"}").statusCode());
+        assertEquals("000OTHER", cats.findById(other).orElseThrow().getChipId());
+
+        login("a9-admin-b@example.org", "supersecret-password-b");
+        var createdB = post(b, mapper.writeValueAsString(Map.of(
+                "chipId", "000ABC", "name", "Schwarzi", "status", "missing", "notes", "B notes")));
+        assertEquals(200, createdB.statusCode(), createdB.body());
+        JsonNode catB = mapper.readTree(createdB.body());
+        assertNotEquals(catA.get("id"), catB.get("id"));
+        // Compare persisted timestamps at database precision, not the pre-flush response.
+        catB = mapper.readTree(get(b + "/" + catB.get("id").asText()).body());
+
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        assertEquals(200, patch(a + "/" + catA.get("id").asText(),
+                "{\"chipId\":\" 000abc \",\"name\":\"New Minka\",\"status\":\"treated\",\"notes\":\"New A notes\"}").statusCode());
+        JsonNode updatedA = mapper.readTree(get(a + "/" + catA.get("id").asText()).body());
+        assertEquals("New Minka", updatedA.get("name").asText());
+        assertEquals("treated", updatedA.get("status").asText());
+        assertEquals("New A notes", updatedA.get("notes").asText());
+        assertEquals("000ABC", updatedA.get("chipId").asText());
+        assertEquals(404, get(a + "/" + catB.get("id").asText()).statusCode());
+        assertEquals(404, patch(a + "/" + catB.get("id").asText(), "{\"name\":\"Hack\"}").statusCode());
+        assertEquals(404, delete(a + "/" + catB.get("id").asText()).statusCode());
+        assertEquals(403, get(b).statusCode());
+        login("a9-admin-b@example.org", "supersecret-password-b");
+        assertEquals(catB, mapper.readTree(get(b + "/" + catB.get("id").asText()).body()));
+
+        // The same account explicitly selects either API context; membership never unions results.
+        var userA = users.findByEmail("a9-admin-a@example.org").orElseThrow();
+        memberships.save(new OrganizationMembership(s.orgB(), userA, MembershipRole.ADMIN, MembershipStatus.ACTIVE));
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        assertEquals(2, mapper.readTree(get(a).body()).size());
+        assertEquals(catB, mapper.readTree(get(b).body()).get(0));
+        assertEquals(404, get(a + "/" + catB.get("id").asText()).statusCode());
+        assertEquals(404, patch(b + "/" + catA.get("id").asText(), "{\"notes\":\"Hack\"}").statusCode());
+    }
+
+    @Test
+    void concurrentNormalizedCatRegistrationReturnsOneConflict() throws Exception {
+        Seed s = seed();
+        login("a9-admin-a@example.org", "supersecret-password-a");
+        String token = csrf();
+        String path = "/api/v1/organizations/" + s.orgA().getId() + "/cats";
+        var start = new CyclicBarrier(2);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var jobs = List.of(" 000race ", "000RACE").stream()
+                    .<Callable<Integer>>map(chip -> () -> {
+                        start.await(10, TimeUnit.SECONDS);
+                        return client.send(HttpRequest.newBuilder(URI.create(base(path)))
+                                .header("Content-Type", "application/json").header("X-XSRF-TOKEN", token)
+                                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(
+                                        Map.of("chipId", chip)))).build(), HttpResponse.BodyHandlers.ofString()).statusCode();
+                    }).toList();
+            var results = pool.invokeAll(jobs, 30, TimeUnit.SECONDS);
+            var statuses = new ArrayList<Integer>();
+            for (var result : results) statuses.add(result.get());
+            statuses.sort(Integer::compareTo);
+            assertEquals(List.of(200, 409), statuses);
+        }
+        assertEquals(1, cats.findByOrganizationId(s.orgA().getId()).size());
+    }
+
+    @Test
+    void databaseUniquenessProtectsConcurrentWritersAfterBothPrechecks() throws Exception {
+        Seed s = seed();
+        var checked = new CyclicBarrier(2);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            List<Callable<Boolean>> jobs = new ArrayList<>();
+            for (String chip : List.of(" 000db ", "000DB")) {
+                jobs.add(() -> {
+                    try {
+                        new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+                            assertTrue(cats.findByOrganizationIdAndChipId(s.orgA().getId(), "000DB").isEmpty());
+                            try { checked.await(10, TimeUnit.SECONDS); }
+                            catch (Exception e) { throw new IllegalStateException(e); }
+                            cats.saveAndFlush(new Cat(s.orgA(), chip, "Concurrent", null, null));
+                        });
+                        return true;
+                    } catch (org.springframework.dao.DataIntegrityViolationException expected) {
+                        return false;
+                    }
+                });
+            }
+            int committed = 0;
+            for (var result : pool.invokeAll(jobs, 30, TimeUnit.SECONDS)) if (result.get()) committed++;
+            assertEquals(1, committed);
+        }
+        assertEquals(1, cats.findByOrganizationId(s.orgA().getId()).size());
+        assertEquals("000DB", cats.findByOrganizationId(s.orgA().getId()).get(0).getChipId());
     }
 
     // ---- deployment history ----
