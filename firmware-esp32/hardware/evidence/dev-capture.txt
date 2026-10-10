@@ -1,0 +1,26 @@
+I (119) esp_image: segment 4: paddr=000950c8 vaddr=40381eec sizeESP-ROM:esp32c3-eco7-20230720
+rst:0x15 (USB_UART_CHIP_RESET),boot:0xd (SPI_FAST_FLASH_BOOT)
+Saved PC:0x420346aa
+I (25) boot: chip revision: v1.1
+I (25) boot.esp32c3: SPI Flash Size : 4MB
+I (144) cpu_start: cpu freq: 160000000 Hz
+I (145) app_init: App version:      mm108-7476426-dirty
+I (145) app_init: ELF file SHA256:  fbf76f8b7...
+I (149) main_task: Calling app_main()
+I (149) miezmerker: app_main ESP32-C3 IDF=v6.1 firmware=mm108-7476426-dirty
+I (639) miezmerker: node=2de13b24-e393-4e28-bfaf-3f1b48950e3a key_fingerprint=3b16a9978a075b95 boot=5 next=1 stored=0 ack=0 clock=UNKNOWN
+I (639) miezmerker: development immutable_log_digest=e3b0c44298fc1c14
+W (639) miezmerker: trusted UTC unavailable (#4); claim proof and offline authorization fail closed; issuer_pin=missing
+I (679) ble: NimBLE initialized, MiezMerker GATT registered (11 characteristics)
+I (689) ble: advertising service=6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b6c flags=0
+W (689) miezmerker: DEVELOPMENT synthetic input enabled: status | synthetic 1..16 | reboot
+I (689) miezmerker: alive heap=170380 storage=ready
+I (2479) miezmerker: synthetic capture result=0
+I (2479) miezmerker: synthetic capture result=0
+I (2489) miezmerker: synthetic capture result=0
+I (2489) miezmerker: node=2de13b24-e393-4e28-bfaf-3f1b48950e3a key_fingerprint=3b16a9978a075b95 boot=5 next=4 stored=3 ack=0 clock=UNKNOWN
+I (2489) miezmerker: development immutable_log_digest=3f6810dc721f9d17
+I (2489) miezmerker: node=2de13b24-e393-4e28-bfaf-3f1b48950e3a key_fingerprint=3b16a9978a075b95 boot=5 next=4 stored=3 ack=0 clock=UNKNOWN
+I (2489) miezmerker: development immutable_log_digest=3f6810dc721f9d17
+I (2489) miezmerker: isolated PSA/P-256/credential/claim vectors: PASS (does not authorize GATT)
+I (10709) miezmerker: alive heap=169616 storage=ready

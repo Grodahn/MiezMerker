@@ -1,0 +1,49 @@
+{
+  "expected_node": "2de13b24-e393-4e28-bfaf-3f1b48950e3a",
+  "authorized_sync": "UNVERIFIED: trusted UTC and deployed issuer/claim prerequisites missing",
+  "discovered_service_devices": 1,
+  "advertisement": {
+    "service": "6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b6c",
+    "name": "MM-Node",
+    "service_data": "01000000"
+  },
+  "connection_1": {
+    "node_id": "2de13b24-e393-4e28-bfaf-3f1b48950e3a",
+    "mtu": 517,
+    "characteristics": 11,
+    "clock": 0,
+    "protected_operations": {
+      "5": "ATT rejected",
+      "6": "ATT rejected",
+      "7": "ATT rejected",
+      "8": "ATT rejected",
+      "9": "ATT rejected",
+      "write-5": "ATT rejected",
+      "write-7": "ATT rejected",
+      "write-8": "ATT rejected",
+      "write-9": "ATT rejected"
+    },
+    "invalid_fragmented_auth": "rejected",
+    "invalid_claim_receipt": "rejected"
+  },
+  "connection_2": {
+    "node_id": "2de13b24-e393-4e28-bfaf-3f1b48950e3a",
+    "mtu": 517,
+    "characteristics": 11,
+    "clock": 0,
+    "protected_operations": {
+      "5": "ATT rejected",
+      "6": "ATT rejected",
+      "7": "ATT rejected",
+      "8": "ATT rejected",
+      "9": "ATT rejected",
+      "write-5": "ATT rejected",
+      "write-7": "ATT rejected",
+      "write-8": "ATT rejected",
+      "write-9": "ATT rejected"
+    },
+    "invalid_fragmented_auth": "rejected",
+    "invalid_claim_receipt": "rejected"
+  },
+  "result": "PASS: actual BLE discovery, GATT, rejection and reconnect checks"
+}

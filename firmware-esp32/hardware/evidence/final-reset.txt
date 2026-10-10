@@ -1,0 +1,11 @@
+rst:0x15 (USB_UART_CHIP_RESET),boot:0xd (SPI_FAST_FLASH_BOOT)
+I (151) main_task: Calling app_main()
+I (151) miezmerker: app_main ESP32-C3 IDF=v6.1 firmware=mm108-c165ce5
+I (641) miezmerker: node=2de13b24-e393-4e28-bfaf-3f1b48950e3a key_fingerprint=3b16a9978a075b95 boot=13 next=33 stored=31 ack=0 clock=UNKNOWN
+I (641) miezmerker: development immutable_log_digest=148a1df6a233657c
+I (681) ble: NimBLE initialized, MiezMerker GATT registered (11 characteristics)
+I (691) ble: advertising service=6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b6c flags=0
+I (691) miezmerker: alive heap=166392 storage=ready
+I (2491) miezmerker: node=2de13b24-e393-4e28-bfaf-3f1b48950e3a key_fingerprint=3b16a9978a075b95 boot=13 next=33 stored=31 ack=0 clock=UNKNOWN
+I (2491) miezmerker: development immutable_log_digest=148a1df6a233657c
+I (10711) miezmerker: alive heap=166392 storage=ready

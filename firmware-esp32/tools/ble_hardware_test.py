@@ -88,6 +88,8 @@ async def run(args):
                 assert ('write' in chars[characteristic(index)]) == (index in (4, 5, 7, 8, 9, 11))
             assert 'notify' in chars[characteristic(7)]
             owner = await client.read_gatt_char(characteristic(2)); unpack(owner, 4)
+            _, claim_advertisement = unpack(await client.read_gatt_char(characteristic(10)), 255)
+            assert claim_advertisement[0] == 14, 'claim proof available without physical/trusted-clock prerequisites'
             challenge = await client.read_gatt_char(characteristic(3))
             _, nonce = unpack(challenge, 6)
             assert len(nonce) == 32 and nonce != previous_challenge, 'nonce reused on reconnect'

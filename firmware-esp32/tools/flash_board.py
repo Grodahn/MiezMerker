@@ -1,6 +1,7 @@
 """Explicitly selected ESP32-C3 flash; preserve MiezMerker data partitions."""
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,8 @@ def main():
     parser.add_argument('--expected-mac', required=True, help='Chip MAC from a separate esptool chip-id inspection (not Node ID)')
     parser.add_argument('--build-dir', type=Path, required=True)
     args = parser.parse_args()
+    if not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', args.expected_mac):
+        raise SystemExit('Expected a complete six-byte chip MAC from esptool inspection')
     if args.port.upper() not in [p.device.upper() for p in esp_ports()]:
         raise SystemExit('Refusing a port without Espressif native USB VID/PID')
     build = args.build_dir.resolve()
