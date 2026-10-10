@@ -25,7 +25,7 @@ jobs:
           . /opt/esp/idf/export.sh > /dev/null
           defaults=sdkconfig.defaults
           if [ "$VARIANT" = dev ]; then defaults="$defaults;sdkconfig.dev"; fi
-          idf.py -C firmware-esp32/idf -B "build-ci-$VARIANT" \
+          idf.py -C firmware-esp32/idf -B "$GITHUB_WORKSPACE/firmware-esp32/idf/build-ci-$VARIANT" \
             -D "SDKCONFIG=sdkconfig.local-ci-$VARIANT" \
             -D "SDKCONFIG_DEFAULTS=$defaults" build size
           python - "$VARIANT" <<'PY'
