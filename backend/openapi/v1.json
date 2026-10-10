@@ -973,6 +973,17 @@
         ],
         "type": "object"
       },
+      "RevokeSharePolicyResponse": {
+        "properties": {
+          "revoked": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SessionView": {
         "properties": {
           "displayName": {
@@ -2929,8 +2940,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {},
-                  "type": "object"
+                  "$ref": "#/components/schemas/RevokeSharePolicyResponse"
                 }
               }
             },

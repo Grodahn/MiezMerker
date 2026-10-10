@@ -14,6 +14,6 @@ public interface SharePolicyRepository extends JpaRepository<OrganizationSharePo
     Optional<OrganizationSharePolicy> findByOrganizationIdAndScope(UUID ownerOrgId, ShareScope scope);
 
     @Query("select p from OrganizationSharePolicy p left join fetch p.recipients r"
-            + " where p.organization.id = :ownerOrgId")
+            + " left join fetch r.organization where p.organization.id = :ownerOrgId")
     List<OrganizationSharePolicy> findByOrganizationIdWithRecipients(UUID ownerOrgId);
 }

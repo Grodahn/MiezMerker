@@ -302,6 +302,7 @@ class OrganizationSharingTest {
                 allowlist(orgB.getId(), orgB.getId()),
                 "{\"audience\":\"ALLOWLIST\",\"recipientIds\":[\"" + unknown + "\"]}",
                 "{\"audience\":\"ALLOWLIST\",\"recipientIds\":[\"" + orgA.getId() + "\",\"" + orgA.getId() + "\"]}",
+                "{\"audience\":\"ALLOWLIST\",\"recipientIds\":[null]}",
                 "{\"audience\":\"ALLOWLIST\"}")) {
             var res = put(policy(orgB.getId(), ShareScope.CARE), body);
             assertEquals(400, res.statusCode(), res.body());

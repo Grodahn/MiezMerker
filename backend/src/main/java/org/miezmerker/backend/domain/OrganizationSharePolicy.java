@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +25,8 @@ import org.hibernate.annotations.UuidGenerator;
  * Hiding or disabling the owner invalidates all of its outgoing policies.
  */
 @Entity
-@Table(name = "organization_share_policies")
+@Table(name = "organization_share_policies",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"owner_org_id", "scope"}))
 public class OrganizationSharePolicy {
     @Id
     @UuidGenerator

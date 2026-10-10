@@ -1008,6 +1008,10 @@ export interface components {
             publicKeyX: string;
             publicKeyY: string;
         };
+        RevokeSharePolicyResponse: {
+            revoked?: boolean;
+            scope?: string;
+        };
         SessionView: {
             displayName?: string | null;
             email?: string;
@@ -2181,9 +2185,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RevokeSharePolicyResponse"];
                 };
             };
         };

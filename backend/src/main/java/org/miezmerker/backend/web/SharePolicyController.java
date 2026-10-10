@@ -5,8 +5,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
+import org.miezmerker.backend.domain.ShareAudience;
 import org.miezmerker.backend.domain.ShareScope;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.service.SharePolicyService;
@@ -41,10 +41,13 @@ public class SharePolicyController {
 
     @Schema(name = "UpsertSharePolicyRequest")
     public record UpsertSharePolicyRequest(
-            @NotNull org.miezmerker.backend.domain.ShareAudience audience,
+            @NotNull ShareAudience audience,
             @Schema(type = "array", nullable = true,
                     description = "Required for ALLOWLIST, forbidden otherwise: recipient organization ids")
             List<UUID> recipientIds) {}
+
+    @Schema(name = "RevokeSharePolicyResponse")
+    public record RevokeSharePolicyResponse(String scope, boolean revoked) {}
 
     @GetMapping(produces = "application/json")
     @Operation(operationId = "listSharePolicies",
@@ -76,13 +79,13 @@ public class SharePolicyController {
     @Operation(operationId = "revokeSharePolicy",
             summary = "ADMIN revokes one outgoing policy; effective on the next resolution")
     @Transactional
-    public Map<String, Object> revoke(@PathVariable UUID organizationId,
+    public RevokeSharePolicyResponse revoke(@PathVariable UUID organizationId,
             @PathVariable ShareScope scope,
             @AuthenticationPrincipal AppUserDetails principal) {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         sharePolicies.revoke(principal.getId(), organizationId, scope);
-        return Map.of("scope", scope.name(), "revoked", true);
+        return new RevokeSharePolicyResponse(scope.name(), true);
     }
 }

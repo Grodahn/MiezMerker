@@ -14,7 +14,8 @@ CREATE TABLE organization_share_policies (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_share_policy_owner_scope UNIQUE (owner_org_id, scope)
 );
-CREATE INDEX idx_share_policies_owner ON organization_share_policies (owner_org_id, scope);
+-- No separate (owner_org_id, scope) index: the UNIQUE constraint already
+-- backs owner-side lookups.
 
 -- Explicit ALLOWLIST recipients of one policy. Duplicate grants are impossible;
 -- owner/recipient distinctness is enforced by the service layer.
@@ -25,7 +26,8 @@ CREATE TABLE organization_share_recipients (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_share_recipient_policy_org UNIQUE (policy_id, recipient_org_id)
 );
-CREATE INDEX idx_share_recipients_policy ON organization_share_recipients (policy_id);
+-- No separate (policy_id) index: the UNIQUE constraint backs policy-side
+-- lookups; the recipient-side index below serves allowlist invalidation.
 CREATE INDEX idx_share_recipients_recipient ON organization_share_recipients (recipient_org_id);
 
 -- Append-only audit ledger for grants, revocations and visibility-driven invalidation.

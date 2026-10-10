@@ -10,6 +10,6 @@ public interface ShareRecipientRepository extends JpaRepository<OrganizationShar
     List<OrganizationShareRecipient> findByPolicyId(UUID policyId);
 
     @Query("select r from OrganizationShareRecipient r join fetch r.policy p"
-            + " where r.organization.id = :recipientOrgId")
+            + " join fetch p.organization where r.organization.id = :recipientOrgId")
     List<OrganizationShareRecipient> findByOrganizationIdWithPolicy(UUID recipientOrgId);
 }

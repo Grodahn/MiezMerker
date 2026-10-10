@@ -44,11 +44,13 @@ import org.springframework.web.server.ResponseStatusException;
  * prerequisites are enforced at resolution time: VISITS requires CARE,
  * SITE_LABEL requires CARE + VISITS, PHOTO requires CARE.
  *
- * <p>Hiding or disabling the owner invalidates all outgoing grants
- * immediately; hiding or disabling a recipient removes it from every
- * allowlist. Invalidated grants never silently reactivate: the policy rows
- * are deleted, so re-sharing requires a fresh affirmative grant. Every
- * mutation is recorded in the append-only audit ledger.
+ * <p>Hiding the owner invalidates all outgoing grants immediately; hiding
+ * a recipient removes it from every allowlist. The public invalidation
+ * helpers below give the SYSADMIN organization management surface (#92)
+ * the same semantics when an organization is disabled. Invalidated grants
+ * never silently reactivate: the policy rows are deleted, so re-sharing
+ * requires a fresh affirmative grant. Every mutation is recorded in the
+ * append-only audit ledger.
  */
 @Service
 public class SharePolicyService {
@@ -70,8 +72,10 @@ public class SharePolicyService {
         this.tenants = tenants;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(name = "RecipientView")
     public record RecipientView(UUID id, String slug, String displayName) {}
 
+    @io.swagger.v3.oas.annotations.media.Schema(name = "PolicyView")
     public record PolicyView(ShareScope scope, ShareAudience audience, int revision,
             List<RecipientView> recipients) {}
 
@@ -121,6 +125,9 @@ public class SharePolicyService {
         Map<UUID, Organization> validated = new LinkedHashMap<>();
         if (audience == ShareAudience.ALLOWLIST) {
             for (UUID recipientId : recipientIds) {
+                if (recipientId == null) {
+                    throw invalidRecipient();
+                }
                 if (recipientId.equals(ownerOrgId)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "owner cannot be its own recipient");
@@ -134,7 +141,9 @@ public class SharePolicyService {
             }
         }
 
-        boolean isNew = policies.findByOrganizationIdAndScope(ownerOrgId, scope).isEmpty();
+        java.util.Optional<OrganizationSharePolicy> existing =
+                policies.findByOrganizationIdAndScope(ownerOrgId, scope);
+        boolean isNew = existing.isEmpty();
         OrganizationSharePolicy policy;
         if (isNew) {
             policy = new OrganizationSharePolicy(owner, scope, audience);
@@ -142,9 +151,10 @@ public class SharePolicyService {
             audit.save(new OrganizationShareAudit(actor, owner, null, scope,
                     ShareAction.GRANT, "policy created"));
         } else {
-            policy = policies.findByOrganizationIdAndScope(ownerOrgId, scope).orElseThrow();
+            policy = existing.get();
         }
 
+        boolean changed = false;
         if (policy.getAudience() != audience) {
             boolean widened = policy.getAudience() == ShareAudience.PRIVATE
                     || (policy.getAudience() == ShareAudience.ALLOWLIST
@@ -153,16 +163,19 @@ public class SharePolicyService {
             audit.save(new OrganizationShareAudit(actor, owner, null, scope,
                     widened ? ShareAction.GRANT : ShareAction.REVOKE,
                     "audience changed to " + audience));
+            changed = true;
         }
 
         if (audience == ShareAudience.ALLOWLIST) {
             Set<UUID> current = policy.getRecipients().stream()
                     .map(r -> r.getOrganization().getId())
                     .collect(Collectors.toSet());
-            for (OrganizationShareRecipient existing : List.copyOf(policy.getRecipients())) {
-                if (!validated.containsKey(existing.getOrganization().getId())) {
-                    audit.save(new OrganizationShareAudit(actor, owner, existing.getOrganization(),
-                            scope, ShareAction.REVOKE, "recipient removed"));
+            for (OrganizationShareRecipient existingRecipient : List.copyOf(policy.getRecipients())) {
+                if (!validated.containsKey(existingRecipient.getOrganization().getId())) {
+                    audit.save(new OrganizationShareAudit(actor, owner,
+                            existingRecipient.getOrganization(), scope, ShareAction.REVOKE,
+                            "recipient removed"));
+                    changed = true;
                 }
             }
             policy.getRecipients().removeIf(r -> !validated.containsKey(r.getOrganization().getId()));
@@ -171,16 +184,19 @@ public class SharePolicyService {
                     policy.addRecipient(entry.getValue());
                     audit.save(new OrganizationShareAudit(actor, owner, entry.getValue(), scope,
                             ShareAction.GRANT, "recipient added"));
+                    changed = true;
                 }
             }
-        } else {
-            for (OrganizationShareRecipient existing : List.copyOf(policy.getRecipients())) {
-                audit.save(new OrganizationShareAudit(actor, owner, existing.getOrganization(),
-                        scope, ShareAction.REVOKE, "recipient removed"));
+        } else if (!policy.getRecipients().isEmpty()) {
+            for (OrganizationShareRecipient existingRecipient : List.copyOf(policy.getRecipients())) {
+                audit.save(new OrganizationShareAudit(actor, owner,
+                        existingRecipient.getOrganization(), scope, ShareAction.REVOKE,
+                        "recipient removed"));
             }
             policy.clearRecipients();
+            changed = true;
         }
-        if (!isNew) {
+        if (!isNew && changed) {
             policy.touch();
         }
         policies.save(policy);
