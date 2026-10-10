@@ -57,9 +57,9 @@ function CatVisits({ organizationId, chipId, cats, sites }: {
       ? <Status kind="empty" title="Keine weiteren Besuche." message="Die bisherigen Besuche sind auf der vorigen Seite verfügbar."/>
       : <VisitTable rows={visits.data} sites={sites} cats={cats}/>}
       <div className="actions cat-visits__pager">
-        <button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - VISIT_PAGE_SIZE))}>Neuere</button>
+        <button type="button" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - VISIT_PAGE_SIZE))}>Neuere</button>
         <span aria-live="polite">Seite {offset / VISIT_PAGE_SIZE + 1}</span>
-        <button disabled={visits.data.length !== VISIT_PAGE_SIZE} onClick={() => setOffset(offset + VISIT_PAGE_SIZE)}>Älter</button>
+        <button type="button" disabled={visits.data.length !== VISIT_PAGE_SIZE} onClick={() => setOffset(offset + VISIT_PAGE_SIZE)}>Älter</button>
       </div></>}
   </section>;
 }
