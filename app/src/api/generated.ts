@@ -292,6 +292,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Authenticated directory of discoverable, ACTIVE organizations */
+        get: operations["listDiscoverableOrganizations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}": {
         parameters: {
             query?: never;
@@ -524,6 +541,58 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/share-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ADMIN lists the outgoing sharing policies of the active organization */
+        get: operations["listSharePolicies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/share-policies/{scope}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** ADMIN creates or replaces one outgoing policy; scope in path, audience in body */
+        put: operations["upsertSharePolicy"];
+        post?: never;
+        /** ADMIN revokes one outgoing policy; effective on the next resolution */
+        delete: operations["revokeSharePolicy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Owner ADMIN changes discoverability; hiding invalidates outgoing grants immediately */
+        patch: operations["updateOrganizationVisibility"];
         trace?: never;
     };
     "/api/v1/organizations/{organizationId}/visits": {
@@ -864,13 +933,29 @@ export interface components {
             state?: string;
             statusNote?: string;
         };
+        OrganizationDirectoryEntry: {
+            displayName?: string;
+            /** Format: uuid */
+            id?: string;
+            slug?: string;
+        };
         OrganizationView: {
+            discoverable?: boolean;
             displayName?: string;
             /** Format: uuid */
             id?: string;
             publicContact?: string;
             slug?: string;
             status?: string;
+        };
+        PolicyView: {
+            /** @enum {string} */
+            audience?: "PRIVATE" | "ALL_DISCOVERABLE" | "ALLOWLIST";
+            recipients?: components["schemas"]["RecipientView"][];
+            /** Format: int32 */
+            revision?: number;
+            /** @enum {string} */
+            scope?: "CARE" | "VISITS" | "SITE_LABEL" | "PHOTO";
         };
         RawObservationView: {
             /** Format: int32 */
@@ -888,6 +973,12 @@ export interface components {
             organizationId?: string;
             receivedAt?: string;
             sequence?: string;
+        };
+        RecipientView: {
+            displayName?: string;
+            /** Format: uuid */
+            id?: string;
+            slug?: string;
         };
         RecomputeVisitsRequest: {
             algorithmVersion?: string;
@@ -916,6 +1007,10 @@ export interface components {
             label?: string;
             publicKeyX: string;
             publicKeyY: string;
+        };
+        RevokeSharePolicyResponse: {
+            revoked?: boolean;
+            scope?: string;
         };
         SessionView: {
             displayName?: string | null;
@@ -954,6 +1049,15 @@ export interface components {
             firmwareVersion?: string;
             protocolVersion?: string;
             statusNote?: string;
+        };
+        UpdateVisibilityRequest: {
+            discoverable: boolean;
+        };
+        UpsertSharePolicyRequest: {
+            /** @enum {string} */
+            audience: "PRIVATE" | "ALL_DISCOVERABLE" | "ALLOWLIST";
+            /** @description Required for ALLOWLIST, forbidden otherwise: recipient organization ids */
+            recipientIds?: string | null;
         };
         VersionResponse: {
             apiVersion: string;
@@ -1434,6 +1538,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrganizationView"];
+                };
+            };
+        };
+    };
+    listDiscoverableOrganizations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDirectoryEntry"][];
                 };
             };
         };
@@ -1990,6 +2114,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawObservationView"][];
+                };
+            };
+        };
+    };
+    listSharePolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyView"][];
+                };
+            };
+        };
+    };
+    upsertSharePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                scope: "CARE" | "VISITS" | "SITE_LABEL" | "PHOTO";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertSharePolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyView"];
+                };
+            };
+        };
+    };
+    revokeSharePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                scope: "CARE" | "VISITS" | "SITE_LABEL" | "PHOTO";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeSharePolicyResponse"];
+                };
+            };
+        };
+    };
+    updateOrganizationVisibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationView"];
                 };
             };
         };

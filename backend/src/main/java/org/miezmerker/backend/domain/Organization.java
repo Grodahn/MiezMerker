@@ -27,6 +27,15 @@ public class Organization {
     @Column(name = "public_contact", length = 500)
     private String publicContact;
 
+    /**
+     * Discoverability (ADR 0016): default-deny, separate from data sharing.
+     * Only a discoverable ACTIVE organization appears in the authenticated
+     * directory and may be selected as a sharing recipient; the flag alone
+     * never authorizes reading cats, visits, observations or feeding sites.
+     */
+    @Column(nullable = false)
+    private boolean discoverable;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private OrganizationStatus status = OrganizationStatus.ACTIVE;
@@ -48,10 +57,12 @@ public class Organization {
     public String getSlug() { return slug; }
     public String getDisplayName() { return displayName; }
     public String getPublicContact() { return publicContact; }
+    public boolean isDiscoverable() { return discoverable; }
     public OrganizationStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
 
     public void setDisplayName(String displayName) { this.displayName = displayName; }
     public void setPublicContact(String publicContact) { this.publicContact = publicContact; }
+    public void setDiscoverable(boolean discoverable) { this.discoverable = discoverable; }
     public void setStatus(OrganizationStatus status) { this.status = status; }
 }

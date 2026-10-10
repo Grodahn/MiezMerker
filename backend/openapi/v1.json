@@ -760,8 +760,26 @@
         },
         "type": "object"
       },
+      "OrganizationDirectoryEntry": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OrganizationView": {
         "properties": {
+          "discoverable": {
+            "type": "boolean"
+          },
           "displayName": {
             "type": "string"
           },
@@ -776,6 +794,38 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PolicyView": {
+        "properties": {
+          "audience": {
+            "enum": [
+              "PRIVATE",
+              "ALL_DISCOVERABLE",
+              "ALLOWLIST"
+            ],
+            "type": "string"
+          },
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/RecipientView"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "CARE",
+              "VISITS",
+              "SITE_LABEL",
+              "PHOTO"
+            ],
             "type": "string"
           }
         },
@@ -825,6 +875,21 @@
           },
           "sequence": {
             "pattern": "^[0-9]+$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RecipientView": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
             "type": "string"
           }
         },
@@ -906,6 +971,17 @@
           "publicKeyX",
           "publicKeyY"
         ],
+        "type": "object"
+      },
+      "RevokeSharePolicyResponse": {
+        "properties": {
+          "revoked": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "SessionView": {
@@ -1044,6 +1120,40 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UpdateVisibilityRequest": {
+        "properties": {
+          "discoverable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "discoverable"
+        ],
+        "type": "object"
+      },
+      "UpsertSharePolicyRequest": {
+        "properties": {
+          "audience": {
+            "enum": [
+              "PRIVATE",
+              "ALL_DISCOVERABLE",
+              "ALLOWLIST"
+            ],
+            "type": "string"
+          },
+          "recipientIds": {
+            "description": "Required for ALLOWLIST, forbidden otherwise: recipient organization ids",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "audience"
+        ],
         "type": "object"
       },
       "VersionResponse": {
@@ -1769,6 +1879,30 @@
           }
         },
         "summary": "Create an organization; caller becomes ACTIVE ADMIN (test-phase provisioning)",
+        "tags": [
+          "organization-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/directory": {
+      "get": {
+        "operationId": "listDiscoverableOrganizations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizationDirectoryEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Authenticated directory of discoverable, ACTIVE organizations",
         "tags": [
           "organization-controller"
         ]
@@ -2735,6 +2869,183 @@
         "summary": "List one node's observations within an explicit organization context",
         "tags": [
           "observation-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/share-policies": {
+      "get": {
+        "operationId": "listSharePolicies",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PolicyView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN lists the outgoing sharing policies of the active organization",
+        "tags": [
+          "share-policy-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/share-policies/{scope}": {
+      "delete": {
+        "operationId": "revokeSharePolicy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "CARE",
+                "VISITS",
+                "SITE_LABEL",
+                "PHOTO"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeSharePolicyResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN revokes one outgoing policy; effective on the next resolution",
+        "tags": [
+          "share-policy-controller"
+        ]
+      },
+      "put": {
+        "operationId": "upsertSharePolicy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "CARE",
+                "VISITS",
+                "SITE_LABEL",
+                "PHOTO"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertSharePolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN creates or replaces one outgoing policy; scope in path, audience in body",
+        "tags": [
+          "share-policy-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/visibility": {
+      "patch": {
+        "operationId": "updateOrganizationVisibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVisibilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner ADMIN changes discoverability; hiding invalidates outgoing grants immediately",
+        "tags": [
+          "organization-controller"
         ]
       }
     },
