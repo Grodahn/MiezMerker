@@ -6,6 +6,12 @@
 #include <string_view>
 
 namespace miezmerker {
+struct ClaimReceiptInfo {
+    std::string node_id, organization_id, organization_name, public_contact;
+    std::array<unsigned char, 65> public_key{};
+};
+bool verify_claim_receipt(std::string_view receipt, std::span<const unsigned char, 65> issuer_key,
+                          std::int64_t trusted_epoch_seconds, ClaimReceiptInfo& out);
 // Construct one instance per BLE connection from durably provisioned owner/trust data.
 // Unknown wall time must be supplied as zero and fails closed. Never trust a PWA clock.
 class OfflineAuthSession {

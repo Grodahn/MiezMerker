@@ -1,7 +1,11 @@
 #include "miezmerker/offline_auth.hpp"
 #include "cJSON.h"
+#ifdef ESP_PLATFORM
+#include "psa/crypto.h"
+#else
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/sha256.h"
+#endif
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -62,11 +66,34 @@ bool uuid(std::string_view v) {
     }
     return true;
 }
+bool sha256(std::span<const unsigned char> input, unsigned char* hash) {
+#ifdef ESP_PLATFORM
+    std::size_t length = 0;
+    return psa_hash_compute(PSA_ALG_SHA_256, input.data(), input.size(), hash, 32, &length) == PSA_SUCCESS && length == 32;
+#else
+    return mbedtls_sha256(input.data(), input.size(), hash, 0) == 0;
+#endif
+}
 bool verify(std::span<const unsigned char, 65> key, std::span<const unsigned char> message,
             std::span<const unsigned char> signature) {
     if (signature.size() != 64 || key[0] != 4) return false;
+#ifdef ESP_PLATFORM
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1));
+    psa_set_key_bits(&attributes, 256);
+    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_VERIFY_MESSAGE);
+    psa_set_key_algorithm(&attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+    mbedtls_svc_key_id_t id = 0;
+    const auto imported = psa_import_key(&attributes, key.data(), key.size(), &id);
+    psa_reset_key_attributes(&attributes);
+    if (imported != PSA_SUCCESS) return false;
+    const auto status = psa_verify_message(id, PSA_ALG_ECDSA(PSA_ALG_SHA_256),
+        message.data(), message.size(), signature.data(), signature.size());
+    psa_destroy_key(id);
+    return status == PSA_SUCCESS;
+#else
     unsigned char hash[32];
-    if (mbedtls_sha256(message.data(), message.size(), hash, 0) != 0) return false;
+    if (!sha256(message, hash)) return false;
     mbedtls_ecp_group group; mbedtls_ecp_group_init(&group);
     mbedtls_ecp_point point; mbedtls_ecp_point_init(&point);
     mbedtls_mpi r, s; mbedtls_mpi_init(&r); mbedtls_mpi_init(&s);
@@ -79,6 +106,38 @@ bool verify(std::span<const unsigned char, 65> key, std::span<const unsigned cha
     mbedtls_mpi_free(&s); mbedtls_mpi_free(&r);
     mbedtls_ecp_point_free(&point); mbedtls_ecp_group_free(&group);
     return valid;
+#endif
+}
+Json verified_payload(std::string_view credential, std::span<const unsigned char, 65> issuer_key) {
+    auto reject = [] { return Json(nullptr, cJSON_Delete); };
+    if (credential.size() > 4096) return reject();
+    auto first = credential.find('.');
+    auto second = credential.find('.', first == std::string_view::npos ? 0 : first + 1);
+    if (first == std::string_view::npos || second == std::string_view::npos
+        || credential.find('.', second + 1) != std::string_view::npos) return reject();
+    Bytes header_bytes, payload_bytes, signature;
+    if (!decode(credential.substr(0, first), header_bytes)
+        || !decode(credential.substr(first + 1, second - first - 1), payload_bytes)
+        || !decode(credential.substr(second + 1), signature)) return reject();
+    auto header = parse(header_bytes);
+    if (!header || string(header.get(), "alg") != "ES256"
+        || string(header.get(), "kid") != "miezmerker-issuer-v1"
+        || item(header.get(), "crit") || item(header.get(), "b64")) return reject();
+    auto signed_bytes = std::span(reinterpret_cast<const unsigned char*>(credential.data()), second);
+    if (!verify(issuer_key, signed_bytes, signature)) return reject();
+    return parse(payload_bytes);
+}
+bool point(const cJSON* c, const char* x_name, const char* y_name, const char* fingerprint_name,
+        std::array<unsigned char, 65>& key) {
+    Bytes x, y, fingerprint;
+    if (!decode(string(c, x_name), x) || x.size() != 32
+        || !decode(string(c, y_name), y) || y.size() != 32
+        || !decode(string(c, fingerprint_name), fingerprint) || fingerprint.size() != 32) return false;
+    key[0] = 4;
+    std::copy(x.begin(), x.end(), key.begin() + 1);
+    std::copy(y.begin(), y.end(), key.begin() + 33);
+    unsigned char digest[32];
+    return sha256(key, digest) && std::equal(fingerprint.begin(), fingerprint.end(), digest);
 }
 } // namespace
 
@@ -100,21 +159,7 @@ bool OfflineAuthSession::authorize(std::string_view credential,
     pending_ = false; // Every attempt consumes the nonce, including failed attempts.
     expires_ = 0;
     if (!pending || now <= 0 || credential.size() > 4096 || proof.size() != 64) return false;
-    auto first = credential.find('.');
-    auto second = credential.find('.', first == std::string_view::npos ? 0 : first + 1);
-    if (first == std::string_view::npos || second == std::string_view::npos
-        || credential.find('.', second + 1) != std::string_view::npos) return false;
-    Bytes header_bytes, payload_bytes, signature;
-    if (!decode(credential.substr(0, first), header_bytes)
-        || !decode(credential.substr(first + 1, second - first - 1), payload_bytes)
-        || !decode(credential.substr(second + 1), signature)) return false;
-    auto header = parse(header_bytes);
-    if (!header || string(header.get(), "alg") != "ES256"
-        || string(header.get(), "kid") != "miezmerker-issuer-v1"
-        || item(header.get(), "crit") || item(header.get(), "b64")) return false;
-    auto signed_bytes = std::span(reinterpret_cast<const unsigned char*>(credential.data()), second);
-    if (!verify(issuer_key_, signed_bytes, signature)) return false;
-    auto claims = parse(payload_bytes);
+    auto claims = verified_payload(credential, issuer_key_);
     if (!claims) return false;
     auto c = claims.get();
     std::int64_t version, issued, expires;
@@ -133,16 +178,8 @@ bool OfflineAuthSession::authorize(std::string_view credential,
         if (std::strcmp(scope->valuestring, "node:sync") == 0) sync = true;
     }
     if (!sync) return false;
-    Bytes x, y, fingerprint;
-    if (!decode(string(c, "dpk_x"), x) || x.size() != 32
-        || !decode(string(c, "dpk_y"), y) || y.size() != 32
-        || !decode(string(c, "dpf"), fingerprint) || fingerprint.size() != 32) return false;
-    std::array<unsigned char, 65> device_key{}; device_key[0] = 4;
-    std::copy(x.begin(), x.end(), device_key.begin() + 1);
-    std::copy(y.begin(), y.end(), device_key.begin() + 33);
-    unsigned char digest[32];
-    if (mbedtls_sha256(device_key.data(), device_key.size(), digest, 0) != 0
-        || !std::equal(fingerprint.begin(), fingerprint.end(), digest)
+    std::array<unsigned char, 65> device_key{};
+    if (!point(c, "dpk_x", "dpk_y", "dpf", device_key)
         || !verify(device_key, challenge_, proof)) return false;
     issued_ = issued;
     expires_ = expires;
@@ -154,5 +191,32 @@ bool OfflineAuthSession::can_sync(std::int64_t now) const {
 }
 void OfflineAuthSession::disconnect() {
     pending_ = false; expires_ = 0; issued_ = 0; challenge_.fill(0);
+}
+bool verify_claim_receipt(std::string_view receipt, std::span<const unsigned char, 65> issuer_key,
+        std::int64_t now, ClaimReceiptInfo& out) {
+    if (now <= 0) return false;
+    auto claims = verified_payload(receipt, issuer_key);
+    if (!claims) return false;
+    const auto c = claims.get();
+    std::int64_t version, issued, expires;
+    if (string(c, "iss") != "miezmerker" || string(c, "kind") != "claim"
+        || !integer(c, "ver", version) || version != 1
+        || !uuid(string(c, "sub")) || !uuid(string(c, "org"))
+        || !integer(c, "iat", issued) || !integer(c, "exp", expires)
+        || issued > now || expires <= now || issued >= expires) return false;
+    ClaimReceiptInfo candidate;
+    candidate.node_id = string(c, "sub"); candidate.organization_id = string(c, "org");
+    candidate.organization_name = string(c, "org_name"); candidate.public_contact = string(c, "contact");
+    if (candidate.organization_name.empty() || candidate.organization_name.size() > 512
+        || candidate.public_contact.size() > 512
+        || !point(c, "ndpk_x", "ndpk_y", "ndpf", candidate.public_key)) return false;
+    // ipk fields are never a trust anchor. If present, require the signed echo to match the independently pinned key.
+    Bytes x, y;
+    if (!decode(string(c, "ipk_x"), x) || x.size() != 32
+        || !decode(string(c, "ipk_y"), y) || y.size() != 32
+        || !std::equal(x.begin(), x.end(), issuer_key.begin() + 1)
+        || !std::equal(y.begin(), y.end(), issuer_key.begin() + 33)) return false;
+    out = std::move(candidate);
+    return true;
 }
 } // namespace miezmerker

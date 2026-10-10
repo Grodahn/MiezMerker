@@ -1,0 +1,47 @@
+name: ESP32-C3 board build
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  esp32c3:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
+    strategy:
+      matrix:
+        variant: [production, dev]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and check image/partition sizes (no hardware)
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          . /opt/esp/idf/export.sh > /dev/null
+          defaults=sdkconfig.defaults
+          if [ "$VARIANT" = dev ]; then defaults="$defaults;sdkconfig.dev"; fi
+          idf.py -C firmware-esp32/idf -B "build-ci-$VARIANT" \
+            -D "SDKCONFIG=sdkconfig.local-ci-$VARIANT" \
+            -D "SDKCONFIG_DEFAULTS=$defaults" build size
+          python - "$VARIANT" <<'PY'
+          import json, pathlib, sys
+          variant = sys.argv[1]
+          config = json.loads(pathlib.Path(f'firmware-esp32/idf/build-ci-{variant}/config/sdkconfig.json').read_text())
+          assert config['IDF_TARGET'] == 'esp32c3'
+          assert bool(config.get('MM_DEV_SYNTHETIC_INPUT')) == (variant == 'dev')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: esp32c3-${{ matrix.variant }}
+          path: |
+            firmware-esp32/idf/build-ci-${{ matrix.variant }}/miezmerker-node.bin
+            firmware-esp32/idf/build-ci-${{ matrix.variant }}/miezmerker-node.elf
+            firmware-esp32/idf/build-ci-${{ matrix.variant }}/bootloader/bootloader.bin
+            firmware-esp32/idf/build-ci-${{ matrix.variant }}/partition_table/partition-table.bin
+            firmware-esp32/idf/build-ci-${{ matrix.variant }}/flash_args
+            firmware-esp32/idf/build-ci-${{ matrix.variant }}/flasher_args.json

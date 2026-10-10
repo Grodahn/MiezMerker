@@ -1,0 +1,14 @@
+menu "MiezMerker board"
+config MM_DEV_SYNTHETIC_INPUT
+    bool "Enable bounded synthetic RFID commands on the USB console"
+    default n
+    help
+        Development only. Commands use the real Core capture and NVS path.
+        Does not weaken authorization or expose a BLE injection endpoint.
+config MM_ISSUER_PUBLIC_KEY_HEX
+    string "Independently pinned backend P-256 public key (130 hex characters)"
+    default ""
+    help
+        Uncompressed 04 || x || y, obtained from the trusted deployment.
+        Empty means fail closed for credentials and receipts. No private issuer key.
+endmenu
