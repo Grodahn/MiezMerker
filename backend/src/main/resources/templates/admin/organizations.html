@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Systemverwaltung · Organisationen')}">
+<title>Systemverwaltung · Organisationen</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<main>
+<h1>Systemverwaltung · Organisationen</h1>
+<p style="opacity:.8">Globaler SYSADMIN-Bereich: Metadaten und Orgaadmin-Mitgliedschaften verwalten.
+SYSADMIN ersetzt keine Orgaadmin-Mitgliedschaft und eröffnet keinen Zugang zu Katzen, Futterstellen,
+Näpfen, Rohbeobachtungen oder Besuchen.</p>
+
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}">Fehler</div>
+
+<section class="card">
+<h2>Organisation anlegen</h2>
+<p style="opacity:.8">Neue Organisationen sind versteckt (<code>discoverable=false</code>) und starten ohne Freigaben.
+Der technische Name (Slug) und die technische ID sind stabil und ändern sich nie.</p>
+<form th:action="@{/admin/organizations}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label for="org-slug">Technischer Name (Slug)</label>
+<input id="org-slug" name="slug" type="text" required maxlength="64" pattern="[A-Za-z0-9-]+" autocomplete="off"
+aria-describedby="slug-help" placeholder="z. B. tierschutz-musterstadt"/>
+<p id="slug-help" style="opacity:.7;font-size:.85rem">Kleinbuchstaben, Ziffern und Bindestriche; eindeutig, unveränderlich.</p>
+</div>
+<div>
+<label for="org-name">Organisationsname</label>
+<input id="org-name" name="displayName" type="text" required maxlength="255" autocomplete="off"
+placeholder="z. B. Tierschutz Musterstadt"/>
+</div>
+<div>
+<label for="org-contact">Öffentlicher Kontakt (optional)</label>
+<input id="org-contact" name="publicContact" type="text" maxlength="500" autocomplete="off"/>
+</div>
+<div style="margin-top:1rem"><button class="btn" type="submit">Organisation anlegen</button></div>
+</form>
+</section>
+
+<section class="card" style="padding:0;overflow:auto">
+<style>
+table.orgs{width:100%;border-collapse:collapse;background:#fff}
+table.orgs th,table.orgs td{border-bottom:1px solid #e5e7eb;padding:.55rem .6rem;text-align:left;vertical-align:top}
+table.orgs th{background:#f9fafb;font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:#374151}
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.8rem;border:1px solid #d1d5db;background:#f9fafb}
+.badge-active{background:#ecfdf5;border-color:#6ee7b7;color:#065f46}
+.badge-disabled{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
+.muted{color:#6b7280;font-size:.85rem}
+code.id{font-size:.75rem;word-break:break-all}
+@media(max-width:640px){
+table.orgs thead{display:none}
+table.orgs,table.orgs tbody,table.orgs tr,table.orgs td{display:block;width:100%}
+table.orgs tr{border:1px solid #e5e7eb;border-radius:.5rem;margin-bottom:.8rem;background:#fff}
+table.orgs td{border-bottom:none}
+table.orgs td[data-label]::before{content:attr(data-label) ": ";font-weight:600;color:#374151}
+}
+</style>
+<table class="orgs" th:if="${!#lists.isEmpty(organizations)}">
+<thead>
+<tr><th>Name</th><th>Technischer Name</th><th>Technische ID</th><th>Status</th><th>Sichtbarkeit</th><th>Aktionen</th></tr>
+</thead>
+<tbody>
+<tr th:each="o : ${organizations}">
+<td data-label="Name" th:text="${o.displayName}">Name</td>
+<td data-label="Technischer Name" th:text="${o.slug}">slug</td>
+<td data-label="Technische ID"><code class="id" th:text="${o.id}">id</code></td>
+<td data-label="Status">
+<span class="badge" th:classappend="${o.status.name() == 'ACTIVE' ? ' badge-active' : ' badge-disabled'}" th:text="${o.status.name() == 'ACTIVE' ? 'Aktiv' : 'Deaktiviert'}">Aktiv</span>
+</td>
+<td data-label="Sichtbarkeit" th:text="${o.discoverable ? 'Sichtbar' : 'Versteckt'}">Versteckt</td>
+<td data-label="Aktionen"><a th:href="@{'/admin/organizations/' + ${o.id}}">Verwalten</a></td>
+</tr>
+</tbody>
+</table>
+<p th:if="${#lists.isEmpty(organizations)}" style="padding:1rem"><strong>Keine Organisationen vorhanden.</strong></p>
+</section>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.Query;
 public interface SharePolicyRepository extends JpaRepository<OrganizationSharePolicy, UUID> {
     List<OrganizationSharePolicy> findByOrganizationId(UUID ownerOrgId);
 
+    int countByOrganizationId(UUID ownerOrgId);
+
     Optional<OrganizationSharePolicy> findByOrganizationIdAndScope(UUID ownerOrgId, ShareScope scope);
 
     @Query("select p from OrganizationSharePolicy p left join fetch p.recipients r"
