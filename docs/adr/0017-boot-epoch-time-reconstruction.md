@@ -155,6 +155,28 @@ These DTO qualities are independent of the existing immutable on-wire capture en
 6. **Persistence/activation:** Node atomically commits its verified time anchor and the exact challenge/acceptance uptime and signed-proof digest before publishing a valid security clock, minting a fresh signed claim advertisement or authorizing a time-dependent credential. A trusted clock means a bounded interval, not a magic precise point; validity is checked with the strict `[L,U]` guard above. After a crash before commit, remain UNKNOWN. All attempts consume/retire the nonce, even invalid ones.
 7. **During operation:** Maintain trusted UTC as monotonic elapsed since the verified anchor with a conservative growing error envelope and finite maximum age. When a JWT iat/exp boundary falls **inside the uncertainty interval**, deny rather than treat validity as certain. Recheck can_sync at every protected GATT operation. A new boot starts UNKNOWN under this MVP policy, even after a soft reset, unless a later explicit continuity design is proven. Detect rollback/clock jumps; invalidate and rebootstrap instead of silently moving the trusted clock backwards.
 
+**Startup usability/iat ordering:** a just-issued offline JWT can have an
+`iat` later than the clock interval's conservative lower bound immediately
+after bootstrap, even though both are legitimate. The PWA should refresh
+or obtain an offline credential **before** initiating the signed time
+handshake where practical. Otherwise clearly report a temporary
+time-confidence blocker and retry after the monotonic lower bound safely
+passes `iat`; do not add an expiry/future-iat grace period to hide it.
+
+**State machine:**
+
+~~~text
+BOOT or timer discontinuity -> SECURITY_TIME_UNKNOWN
+  -> NEW_NONCE_PENDING (public, time-only; expiry measured monotonically)
+     -> INVALID / TIMEOUT / REBOOT -> SECURITY_TIME_UNKNOWN
+     -> SIGNATURE + BINDING + DEADLINE VALID
+        -> ATOMIC_ANCHOR_COMMIT
+           -> failure -> SECURITY_TIME_UNKNOWN
+           -> success -> SECURITY_TIME_BOUNDED
+              -> secure JWT PoP / claim checks, only if [L,U] wholly valid
+              -> confidence expired / rollback / reboot -> SECURITY_TIME_UNKNOWN
+~~~
+
 The physical claim gate from ADR 0013 remains required. Signing backend time does not itself register a node, issue BLE credentials, read observations, or authorize any session. Authenticated time initialization and authenticated observation transfer are **separate** transitions.
 
 ### Proposed interop payloads and installation evidence
@@ -170,7 +192,8 @@ NodeTimeChallengeV1:
   bootCounter: u32
   challengeNonce: 32 bytes from board CSPRNG
   challengeUptimeMs: u64
-  devicePublicKeyFingerprint: SHA-256(65-byte uncompressed P-256 key)
+  devicePublicKey: 65-byte uncompressed P-256 public key (0x04 || x || y)
+  devicePublicKeyFingerprint: SHA-256(devicePublicKey)
   deviceChallengeSignature: 64-byte ES256/P1363
   version: 1
 
@@ -194,12 +217,55 @@ NodeTimeAcceptanceV1 (device-signed separate from token):
 ~~~
 
 The device challenge signature uses a **dedicated domain** different from
-normal offline-auth, claim and session signatures. Sign canonical binary
-field encoding (fixed-width LE for counters, raw UUID/nonce/key digest)
-under a documented prefix such as **MM-NODE-TIME-CHALLENGE-v1**; acceptance
-uses **MM-NODE-TIME-ACCEPT-v1**. No generic signature of free text and
-no accidental cross-protocol signature reuse. Exact canonical byte vectors
-must be in checked-in golden fixtures before #129/#130 are merged.
+normal offline-auth, claim and session signatures. To prevent cross-language
+ambiguity, define the canonical **signed message bytes** below; signature
+encoding is 64-byte IEEE P1363 `r||s` for ECDSA P-256/SHA-256:
+
+~~~text
+NodeChallengeSigningInput =
+  UTF8("MM-NODE-TIME-CHALLENGE-v1\n")
+  || u16le(version) || raw16(nodeId) || raw16(incarnation)
+  || u32le(bootCounter) || u64le(challengeUptimeMs)
+  || raw32(challengeNonce) || raw65(devicePublicKey)
+
+NodeAcceptanceSigningInput =
+  UTF8("MM-NODE-TIME-ACCEPT-v1\n")
+  || u16le(version) || raw16(nodeId) || raw16(incarnation)
+  || u32le(bootCounter) || SHA256(raw32(challengeNonce))
+  || SHA256(exact UTF8 compact signed backend JWS)
+  || u64le(acceptedUptimeMs) || raw16(anchorId)
+~~~
+
+No lengths are variable in these signable messages. UUIDs are **binary RFC
+4122 bytes**, never UTF-8 UUID spellings; unsigned integers are explicitly
+little-endian. Validate that the provided uncompressed P-256 point is
+well-formed and calculate its fingerprint from the **same** point covered
+by NodeChallengeSigningInput. For claimed Nodes it must equal the backend
+registered key. For unclaimed Nodes the presented public key establishes
+**only** possession, not ownership; require existing #18 physical-mode
+claim to bind it to an organization.
+
+This does **not** expose a generic pre-auth signing oracle: add explicit
+rate-limited, purpose-scoped Node sign operations, retaining physical-mode
+restrictions for the existing claim advertisement and disallowing attacker
+chosen arbitrary messages.
+
+BackendTimeProofV1 is standard signed compact JWS ES256 with a restricted
+`alg=ES256` protected header and `kid` matching the independently pinned
+key. Check a single allowed issuer, fixed `kind`, `ver`, nonce, device
+fingerprint, Node IDs and signed UTC. Reject unsupported `alg`, unknown
+key, noncanonical/duplicate JSON fields, malformed base64url and inflated
+payloads. Format all `utc_ms` as integer UTC milliseconds, not local
+time strings. The compact JWS bytes are retained unchanged for the
+acceptance signature, so the backend can verify the precise proof the
+Node says it installed.
+
+The actual **BLE opcode numbers**, capability bit, GATT characteristic and
+bounded fragmentation are selected in #131, while this v1 message signing
+contract is fixed by #127. Add checked-in cross-language golden vectors
+for canonical message bytes, JWS and signatures **before** #129/#130
+are merged. No generic signature of free text or accidental
+cross-protocol reuse.
 
 For a **claimed** device the backend verifies the challenge signature
 against its registered Node public key and verifies ACTIVE membership in
@@ -290,7 +356,18 @@ Hardware RTC (#4) is optional. Reader/antenna validation (#3) and powerbank runt
 
 **TV4 – replay/reset.** Proof signed for boot 11/nonce N cannot initialize boot 12, an already consumed nonce, another Node, or a new session with mismatching key/issuer.
 
-**TV5 – latency/expiry.** A signed token received after monotonic challenge deadline is rejected. If JWT expires within the clock's uncertainty interval, authorization fails closed; tampered phone date never helps.
+**TV5 – latency/expiry.** With Node challenge uptime 1,000 ms,
+acceptance uptime 1,300 ms, backend signed issuance
+S=2026-10-11T20:00:00.000Z and server uncertainty 100 ms, D=300 ms
+gives **acceptance UTC interval [19:59:59.900Z, 20:00:00.400Z]**.
+For a read at uptime 900 ms and zero illustrative drift, the projected
+read interval is **[19:59:59.500Z, 20:00:00.000Z]**. (Production tests add
+measured drift/sampling budgets.) A credential with exp=20:00:00.000Z
+is rejected because U >= exp; one with iat=19:59:59.000Z and
+exp=20:00:01.000Z can be accepted, assuming all other security checks.
+A signed token received after the monotonic challenge deadline is
+rejected. Modified phone date has no effect. A newly issued JWT with
+iat > clock lower bound waits/retries, never uses an iat grace window.
 
 **TV6 – site ambiguity.** The node moved between X and Y while its absolute time was uncertain. No derived site unless the *entire* defensible time interval belongs to one deployment.
 
