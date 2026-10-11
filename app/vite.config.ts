@@ -6,7 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 const backend = { target: process.env.MIEZMERKER_BACKEND_URL ?? 'http://127.0.0.1:8080', changeOrigin: false };
 // Proxy and Workbox match URLs including query strings, including bare /admin?… .
 // Server-rendered Admin owns this namespace in development and preview too.
-const proxy = { '/api': backend, '^/admin(?:/|\\?|$)': backend };
+const proxy = { '/api': backend, '^/admin(?:/|\\?|$)': backend,
+  '^/(?:admin-shared-care\\.js|shared-care\\.(?:js|css))$': backend };
 export default defineConfig({
   build: { assetsInlineLimit: 0 }, // Replaceable artwork stays external and precached, including small SVGs.
   plugins: [react(), VitePWA({

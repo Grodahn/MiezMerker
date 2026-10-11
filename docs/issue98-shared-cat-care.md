@@ -40,6 +40,8 @@ live DOM. It does not write to Dexie, IndexedDB, Web Storage or Cache Storage.
 The existing PWA worker has no runtime business-data cache and excludes API and
 Admin navigation from its fallback. Static presenter code/CSS can be cached;
 foreign data cannot.
+Vite development and preview proxy the three Admin presenter resource URLs to
+Spring explicitly, retaining the backend session gate and correct script MIME.
 
 Refresh and pagination immediately erase prior projections. Abort controllers,
 request identity and departure guards discard late responses. Offline, blur,
@@ -83,5 +85,7 @@ queries, no-store responses, PWA worker, session/context invalidation, Admin
 return path, pagination, safe text rendering, responsive and keyboard semantics.
 Review correction: preserve table roles in the mobile card layout and restore
 focus after pagination. Visual verification also corrected caption layout when
-tables become mobile cards. No policy engine, sharing settings (#93), firmware,
+tables become mobile cards. Final delivery checks also added explicit Admin
+static-resource proxy routes and a session-gate browser regression. No policy
+engine, sharing settings (#93), firmware,
 BLE synchronization, demo seeding or media infrastructure (#95) changes.
