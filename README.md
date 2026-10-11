@@ -5,6 +5,9 @@
 Hinweise zu gezielten Testbefehlen, kompakten Testprotokollen und der dreistufigen
 Teststrategie stehen unter [Tests](docs/testing.md).
 
+Ein explizites lokales Setup mit fünf benannten Katzen, einer Futterstelle und
+Demo-SYSADMIN bietet [DEMO ONLY (#111)](docs/dev-demo.md).
+
 **MiezMerker ist eine quelloffene Hardware- und Softwareplattform für Tierheime,
 Tierschutzgruppen und Organisationen, die Streunerkatzen versorgen.** Mithilfe
 kostengünstiger RFID-/ESP32-NapfNodes sollen Katzen an Futterstellen anhand ihres

@@ -25,6 +25,14 @@ class BootstrapTest {
     @Autowired PasswordEncoder passwords;
     @Autowired TestDatabaseCleaner cleaner;
     @Autowired jakarta.validation.Validator validator;
+    @Autowired org.springframework.context.ApplicationContext context;
+
+    @Test
+    void normalStartupNeverImportsTheDemoSetup() {
+        assertTrue(context.getBeansOfType(org.miezmerker.backend.bootstrap.DemoSeedService.class).isEmpty());
+        assertFalse(context.containsBean("demoDataSource"));
+        assertFalse(context.containsBean("demoPasswordEncoder"));
+    }
 
     @Test
     void bootstrapCreatesFirstOrgAndAdminOnce() {
