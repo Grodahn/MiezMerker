@@ -240,6 +240,15 @@ class NodeClaimTest {
         // Foreign user: public owner hint works without login.
         cookies = new CookieManager();
         client = HttpClient.newBuilder().cookieHandler(cookies).build();
+        var hidden = get("/api/v1/nodes/" + n.nodeId() + "/owner");
+        assertEquals(200, hidden.statusCode(), hidden.body());
+        assertEquals("CLAIMED", mapper.readTree(hidden.body()).get("state").asText());
+        assertTrue(mapper.readTree(hidden.body()).get("organizationId").isNull());
+        assertTrue(mapper.readTree(hidden.body()).get("publicContact").isNull());
+        assertFalse(hidden.body().contains("Org A"));
+        // Public owner metadata is deliberate only for discoverable owners.
+        s.orgA().setDiscoverable(true);
+        organizations.save(s.orgA());
         var owner = get("/api/v1/nodes/" + n.nodeId() + "/owner");
         assertEquals(200, owner.statusCode(), owner.body());
         var body = mapper.readTree(owner.body());

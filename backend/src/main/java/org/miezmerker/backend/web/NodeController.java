@@ -15,6 +15,7 @@ import org.miezmerker.backend.crypto.EcKeyUtils;
 import org.miezmerker.backend.crypto.NodeClaimVerifier;
 import org.miezmerker.backend.domain.NodeDevice;
 import org.miezmerker.backend.domain.NodeState;
+import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.security.AppUserDetails;
@@ -108,8 +109,9 @@ public class NodeController {
     }
 
     @Schema(name = "NodeOwnerView")
-    public record NodeOwnerView(UUID nodeId, String state, String organizationId,
-            String organizationSlug, String organizationName, String publicContact) {}
+    public record NodeOwnerView(UUID nodeId, String state, @Schema(nullable = true) String organizationId,
+            @Schema(nullable = true) String organizationSlug, @Schema(nullable = true) String organizationName,
+            @Schema(nullable = true) String publicContact) {}
 
     private static NodeView toView(NodeDevice n) {
         return new NodeView(n.getNodeId(),
@@ -248,7 +250,7 @@ public class NodeController {
 
     @GetMapping(value = "/{nodeId}/owner", produces = "application/json")
     @Operation(operationId = "getNodeOwner",
-            summary = "Public owner hint for a claimed node; no observations/chip data")
+            summary = "Public claimed-node hint; owner metadata only for active discoverable organizations")
     @Transactional(readOnly = true)
     public NodeOwnerView owner(@PathVariable UUID nodeId) {
         NodeDevice node = nodes.findById(nodeId)
@@ -257,6 +259,11 @@ public class NodeController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         var org = node.getOrganization();
+        // ADR 0016 compatibility gate: retain the claimed-node recovery hint,
+        // but do not turn provisioning into a hidden-organization directory.
+        if (!org.isDiscoverable() || org.getStatus() != OrganizationStatus.ACTIVE) {
+            return new NodeOwnerView(node.getNodeId(), node.getState().name(), null, null, null, null);
+        }
         return new NodeOwnerView(node.getNodeId(), node.getState().name(), org.getId().toString(),
                 org.getSlug(), org.getDisplayName(), org.getPublicContact());
     }

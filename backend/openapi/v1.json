@@ -712,16 +712,28 @@
             "type": "string"
           },
           "organizationId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "organizationName": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "organizationSlug": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "publicContact": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "state": {
             "type": "string"
@@ -988,6 +1000,31 @@
         ],
         "type": "object"
       },
+      "ResolveSharedCareRequest": {
+        "properties": {
+          "limit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "offset": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ownObservationRefs": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ownObservationRefs"
+        ],
+        "type": "object"
+      },
       "RevokeSharePolicyResponse": {
         "properties": {
           "revoked": {
@@ -1021,6 +1058,119 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "SharedCareProfile": {
+        "properties": {
+          "catDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chipId": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SharedCareSource"
+          }
+        },
+        "type": "object"
+      },
+      "SharedCareProfilePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SharedCareProfile"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SharedCareSource": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SharedCareVisit": {
+        "properties": {
+          "endAt": {
+            "type": "string"
+          },
+          "siteDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/SharedCareSource"
+          },
+          "startAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SharedCareVisitPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SharedCareVisit"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SharedCareVisitsRequest": {
+        "properties": {
+          "limit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "newestFirst": {
+            "type": "boolean"
+          },
+          "offset": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ownObservationRef": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceOrganizationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownObservationRef",
+          "sourceOrganizationId"
+        ],
         "type": "object"
       },
       "UpdateCatRequest": {
@@ -1669,7 +1819,7 @@
             "description": "OK"
           }
         },
-        "summary": "Public owner hint for a claimed node; no observations/chip data",
+        "summary": "Public claimed-node hint; owner metadata only for active discoverable organizations",
         "tags": [
           "node-controller"
         ]
@@ -3019,6 +3169,90 @@
         "summary": "ADMIN creates or replaces one outgoing policy; scope in path, audience in body",
         "tags": [
           "share-policy-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/shared-care/resolve": {
+      "post": {
+        "operationId": "resolveSharedCare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveSharedCareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedCareProfilePage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Resolve CARE projections using owned persisted observations",
+        "tags": [
+          "shared-care-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/shared-care/visits": {
+      "post": {
+        "operationId": "listSharedCareVisits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedCareVisitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedCareVisitPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Page explicitly shared visit summaries with fresh observation proof",
+        "tags": [
+          "shared-care-controller"
         ]
       }
     },

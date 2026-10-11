@@ -54,6 +54,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class SharePolicyService {
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entities;
     private final OrganizationRepository organizations;
     private final AppUserRepository users;
     private final SharePolicyRepository policies;
@@ -312,34 +314,47 @@ public class SharePolicyService {
      */
     @Transactional(readOnly = true)
     public Set<ShareScope> resolveEffectiveScopes(UUID recipientOrgId, UUID ownerOrgId) {
-        if (recipientOrgId.equals(ownerOrgId)) {
-            return Set.of();
-        }
-        Organization owner = organizations.findById(ownerOrgId).orElse(null);
-        if (owner == null || !owner.isDiscoverable() || owner.getStatus() != OrganizationStatus.ACTIVE) {
-            return Set.of();
-        }
-        Organization recipient = organizations.findById(recipientOrgId).orElse(null);
-        if (recipient == null || !recipient.isDiscoverable()
-                || recipient.getStatus() != OrganizationStatus.ACTIVE) {
-            return Set.of();
-        }
         Set<ShareScope> granted = EnumSet.noneOf(ShareScope.class);
-        for (OrganizationSharePolicy policy : policies.findByOrganizationIdWithRecipients(ownerOrgId)) {
-            switch (policy.getAudience()) {
-                case PRIVATE -> {
-                }
-                case ALL_DISCOVERABLE -> granted.add(policy.getScope());
-                case ALLOWLIST -> {
-                    boolean listed = policy.getRecipients().stream()
-                            .anyMatch(r -> r.getOrganization().getId().equals(recipientOrgId));
-                    if (listed) {
-                        granted.add(policy.getScope());
-                    }
-                }
-            }
-        }
+        granted.addAll(entities.createQuery("select p.scope from OrganizationSharePolicy p where "
+                + eligibleOwner("p.organization") + " and " + audienceMatches("p"), ShareScope.class)
+                .setParameter("recipient", recipientOrgId).setParameter("owner", ownerOrgId)
+                .getResultList());
         return effectiveClosure(granted);
+    }
+
+    /* Central query-time predicates, shared by single-owner resolution and bounded
+     * projections. Paths are code constants, never request input. :recipient is
+     * always the authenticated recipient context. No grant is a bearer token. */
+    private static String audienceMatches(String policy) {
+        return "(" + policy + ".audience = 'ALL_DISCOVERABLE' or ("
+                + policy + ".audience = 'ALLOWLIST' and exists (select r.id from "
+                + "OrganizationShareRecipient r where r.policy = " + policy
+                + " and r.organization.id = :recipient)))";
+    }
+
+    private static String eligibleOwner(String owner) {
+        return owner + ".id = :owner and " + eligibleSource(owner);
+    }
+
+    private static String eligibleSource(String owner) {
+        return owner + ".id <> :recipient and " + owner + ".discoverable = true and "
+                + owner + ".status = 'ACTIVE' and exists (select recipient.id from Organization recipient "
+                + "where recipient.id = :recipient and recipient.discoverable = true "
+                + "and recipient.status = 'ACTIVE')";
+    }
+
+    static String effectiveScopePredicate(String owner, ShareScope scope) {
+        String result = eligibleSource(owner) + " and " + scopePredicate(owner, ShareScope.CARE);
+        if (scope == ShareScope.VISITS || scope == ShareScope.SITE_LABEL)
+            result += " and " + scopePredicate(owner, ShareScope.VISITS);
+        if (scope == ShareScope.SITE_LABEL || scope == ShareScope.PHOTO)
+            result += " and " + scopePredicate(owner, scope);
+        return "(" + result + ")";
+    }
+
+    private static String scopePredicate(String owner, ShareScope scope) {
+        return "exists (select p.id from OrganizationSharePolicy p where p.organization = "
+                + owner + " and p.scope = '" + scope.name() + "' and " + audienceMatches("p") + ")";
     }
 
     @Transactional(readOnly = true)

@@ -13,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Shared #9/#11 cat maintenance; callers retain their stricter route authorization. */
 @Service
 public class CatService {
+    @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entities;
     private final CatRepository cats;
     private final OrganizationRepository organizations;
     private final TenantService tenants;
@@ -43,6 +44,19 @@ public class CatService {
         if (notes != null) cat.setNotes(blankToNull(notes));
         return save(cat);
     }
+    /** Called only after SharedCareService verifies every observation reference. */
+    java.util.List<SharedCareViews.Profile> sharedProfiles(UUID recipient, java.util.Set<String> chips,
+            int offset, int limit) {
+        return entities.createQuery("select c.chipId, owner.id, owner.displayName, c.name "
+                + "from Cat c join c.organization owner where c.chipId in :chips and "
+                + SharePolicyService.effectiveScopePredicate("owner", org.miezmerker.backend.domain.ShareScope.CARE)
+                + " order by c.chipId, owner.id", Object[].class)
+                .setParameter("recipient", recipient).setParameter("chips", chips)
+                .setFirstResult(offset).setMaxResults(limit).getResultList().stream()
+                .map(r -> new SharedCareViews.Profile((String) r[0],
+                        new SharedCareViews.Source((UUID) r[1], (String) r[2]), (String) r[3])).toList();
+    }
+
     private String validChip(String value) {
         String chip = Cat.normalizeChipId(value);
         if (chip == null || chip.isEmpty() || chip.length() > 64)
