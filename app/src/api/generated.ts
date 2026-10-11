@@ -213,7 +213,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Public owner hint for a claimed node; no observations/chip data */
+        /** Public claimed-node hint; owner metadata only for active discoverable organizations */
         get: operations["getNodeOwner"];
         put?: never;
         post?: never;
@@ -578,6 +578,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/shared-care/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve CARE projections using owned persisted observations */
+        post: operations["resolveSharedCare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/shared-care/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Page explicitly shared visit summaries with fresh observation proof */
+        post: operations["listSharedCareVisits"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}/visibility": {
         parameters: {
             query?: never;
@@ -933,10 +967,10 @@ export interface components {
         NodeOwnerView: {
             /** Format: uuid */
             nodeId?: string;
-            organizationId?: string;
-            organizationName?: string;
-            organizationSlug?: string;
-            publicContact?: string;
+            organizationId?: string | null;
+            organizationName?: string | null;
+            organizationSlug?: string | null;
+            publicContact?: string | null;
             state?: string;
         };
         NodeView: {
@@ -1030,6 +1064,13 @@ export interface components {
             publicKeyX: string;
             publicKeyY: string;
         };
+        ResolveSharedCareRequest: {
+            /** Format: int32 */
+            limit?: number;
+            /** Format: int32 */
+            offset?: number;
+            ownObservationRefs: string[];
+        };
         RevokeSharePolicyResponse: {
             revoked?: boolean;
             scope?: string;
@@ -1040,6 +1081,43 @@ export interface components {
             memberships?: components["schemas"]["MembershipView"][];
             /** Format: uuid */
             userId?: string;
+        };
+        SharedCareProfile: {
+            catDisplayName?: string | null;
+            chipId?: string;
+            source?: components["schemas"]["SharedCareSource"];
+        };
+        SharedCareProfilePage: {
+            items?: components["schemas"]["SharedCareProfile"][];
+            /** Format: int32 */
+            nextOffset?: number | null;
+        };
+        SharedCareSource: {
+            displayName?: string;
+            /** Format: uuid */
+            organizationId?: string;
+        };
+        SharedCareVisit: {
+            endAt?: string;
+            siteDisplayName?: string | null;
+            source?: components["schemas"]["SharedCareSource"];
+            startAt?: string;
+        };
+        SharedCareVisitPage: {
+            items?: components["schemas"]["SharedCareVisit"][];
+            /** Format: int32 */
+            nextOffset?: number | null;
+        };
+        SharedCareVisitsRequest: {
+            /** Format: int32 */
+            limit?: number;
+            newestFirst?: boolean;
+            /** Format: int32 */
+            offset?: number;
+            /** Format: uuid */
+            ownObservationRef: string;
+            /** Format: uuid */
+            sourceOrganizationId: string;
         };
         UpdateCatRequest: {
             chipId?: string;
@@ -2208,6 +2286,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevokeSharePolicyResponse"];
+                };
+            };
+        };
+    };
+    resolveSharedCare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveSharedCareRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedCareProfilePage"];
+                };
+            };
+        };
+    };
+    listSharedCareVisits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedCareVisitsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedCareVisitPage"];
                 };
             };
         };

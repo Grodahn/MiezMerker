@@ -152,6 +152,44 @@ public class ObservationVisitQueryService {
                 .toList();
     }
 
+    /** Server-persisted proof from a Node belonging to the recipient; no Cat lookup. */
+    java.util.Map<UUID, String> ownObservationChips(UUID org, java.util.Set<UUID> refs) {
+        var rows = entities.createQuery("select o.id, o.chipId from RawObservation o join o.node n "
+                + "where o.organization.id = :org and n.organization.id = :org "
+                + "and n.state = 'CLAIMED' and o.id in :refs", Object[].class)
+                .setParameter("org", org).setParameter("refs", refs).getResultList();
+        java.util.Map<UUID, String> result = new java.util.HashMap<>();
+        for (Object[] row : rows) result.put((UUID) row[0], (String) row[1]);
+        return result;
+    }
+
+    /** Narrow scalar projection; grants filter BEFORE ordering/limit/lookahead.
+     * Uses persisted visits and their frozen historical site, never receivedAt. */
+    java.util.List<SharedCareViews.Visit> sharedVisits(UUID recipient, UUID ownerId, String chip,
+            int offset, int limit, boolean newestFirst) {
+        String labels = SharePolicyService.effectiveScopePredicate("owner",
+                org.miezmerker.backend.domain.ShareScope.SITE_LABEL);
+        String direction = newestFirst ? " desc" : " asc";
+        return entities.createQuery("select owner.id, owner.displayName, v.startAt, v.endAt, "
+                + "case when " + labels + " then s.name else null end "
+                + "from DerivedVisit v join v.organization owner join v.feedingSite s "
+                + "join v.firstObservation firstObs join v.lastObservation lastObs "
+                + "where owner.id = :owner and v.chipId = :chip and s.organization = owner and "
+                + "firstObs.organization = owner and lastObs.organization = owner and "
+                + "firstObs.chipId = v.chipId and lastObs.chipId = v.chipId and "
+                + "firstObs.feedingSite = s and lastObs.feedingSite = s and "
+                + ChipActivityService.reliableCondition("firstObs") + " and "
+                + ChipActivityService.reliableCondition("lastObs") + " and "
+                + SharePolicyService.effectiveScopePredicate("owner",
+                        org.miezmerker.backend.domain.ShareScope.VISITS)
+                + " order by v.startAt" + direction + ", v.id" + direction, Object[].class)
+                .setParameter("recipient", recipient).setParameter("owner", ownerId)
+                .setParameter("chip", chip).setFirstResult(offset).setMaxResults(limit)
+                .getResultList().stream().map(r -> new SharedCareViews.Visit(
+                        new SharedCareViews.Source((UUID) r[0], (String) r[1]),
+                        ((Instant) r[2]).toString(), ((Instant) r[3]).toString(), (String) r[4])).toList();
+    }
+
     private void rejectForeignNodeFilter(UUID nodeId, UUID organizationId) {
         if (nodeId == null) {
             return;
