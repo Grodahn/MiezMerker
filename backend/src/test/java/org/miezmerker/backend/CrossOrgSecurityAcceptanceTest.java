@@ -39,7 +39,6 @@ import org.miezmerker.backend.domain.RawObservation;
 import org.miezmerker.backend.domain.ShareAudience;
 import org.miezmerker.backend.domain.ShareScope;
 import org.miezmerker.backend.domain.UserStatus;
-import org.miezmerker.backend.domain.UserStatus;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.CatRepository;
 import org.miezmerker.backend.repo.DerivedVisitRepository;
@@ -556,6 +555,8 @@ class CrossOrgSecurityAcceptanceTest {
         assertEquals(401, get(catsPath(orgA)).statusCode());
 
         // Organization switching uses the selected context; A->B->A never leaks B into A.
+        // (Per-test isolation comes from cleaner.clean() in seed(); no ordering
+        // assumption between tests is made here.)
         login(memberA);
         memberships.save(new OrganizationMembership(orgB, memberA, MembershipRole.MEMBER, MembershipStatus.ACTIVE));
         assertEquals(1, json.readTree(get(catsPath(orgA)).body()).size());

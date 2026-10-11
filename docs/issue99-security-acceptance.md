@@ -52,8 +52,8 @@ npm run test:e2e -- e2e/shared-care.spec.ts
 - Hidden owners are indistinguishable from ungranted ones (empty resolve,
   empty visit pages, uniform 404 media).
 - Error bodies disclose no foreign names, notes, coordinates or private
-  contacts. The default Spring error echoes the requested path only, which
-  the requester already supplied.
+contacts. The default Spring error echoes only the requested path, status
+and message — no tenant data — and the requester already supplied that path.
 
 ## Sharing-scope matrix — PASS
 

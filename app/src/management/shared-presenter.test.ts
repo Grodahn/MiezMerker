@@ -108,9 +108,13 @@ test('logout then login as another organization revokes the old photo and never 
   vi.mocked(api.resolve).mockResolvedValue({ items: [] });
   vi.mocked(api.photo).mockResolvedValue(null);
   const callsBefore = vi.mocked(api.observations).mock.calls.length;
+  const photoCallsBefore = vi.mocked(api.photo).mock.calls.length;
   dispose = mountSharedCare(root, { organizationId: 'org-c', chipId: 'CHIP', api });
   await waitFor(() => expect(vi.mocked(api.observations).mock.calls.length).toBe(callsBefore + 1));
   expect(vi.mocked(api.observations)).toHaveBeenLastCalledWith('org-c', 'CHIP', expect.any(AbortSignal));
+  await waitFor(() => expect(root.textContent).toContain('Keine freigegebene Betreuung'));
+  // No granted profile means no visit or photo request for the new context.
+  expect(vi.mocked(api.photo).mock.calls.length).toBe(photoCallsBefore);
   await waitFor(() => expect(root.textContent).toContain('Keine freigegebene Betreuung'));
   expect(root.querySelector('img')).toBeNull();
   expect(root.textContent).not.toContain('B-Name');
