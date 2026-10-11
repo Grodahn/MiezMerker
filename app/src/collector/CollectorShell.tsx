@@ -27,6 +27,7 @@ import {
 } from './batch-sync';
 import { Status } from '../ui/Status';
 import { bluetoothErrorMessage, errorStatus, statusMessages, syncHelp } from '../ui/status-messages';
+import './sync.css';
 
 // Single shared MiezMerker PWA under /app. No second collector application.
 // Issue #76: one user-initiated "Futterstelle auslesen" sequentially
@@ -146,6 +147,7 @@ export function CollectorShell(props: {
   useEffect(() => {
     let active = true;
     const generation = ++credentialCheckGeneration.current;
+    setCredential('Offline-Credential wird geprüft …');
     (async () => {
       const state = getAuthState();
       if (!state.user || !state.activeOrganizationId) {
@@ -464,10 +466,10 @@ export function CollectorShell(props: {
         return [...previous, { id, name, device }];
       });
       if (batchController.current) {
-        setFreigebenMessage(`„${name}“ freigegeben und für den nächsten Sammel-Sync vorgemerkt.`);
+        setFreigebenMessage('Napf für diesen Browser freigegeben und für den nächsten Auslesevorgang vorgemerkt.');
         return;
       }
-      setFreigebenMessage(`„${name}“ freigegeben. Starte Sync ohne weiteren Chooser …`);
+      setFreigebenMessage('Napf für diesen Browser freigegeben. Auslesen startet …');
       void startBatch([{ device, browserId: id, browserLabel: name }]);
     }).catch((e: unknown) => {
       if (stillActive()) setFreigebenMessage(bluetoothErrorMessage(e, 'selection'));
@@ -530,57 +532,50 @@ export function CollectorShell(props: {
     devices.map(entry => ({ device: entry.device, browserId: entry.id, browserLabel: entry.name })),
     batchResults,
   ).length;
-  const canStart = !batchRunning && !claimBusy && !freigebenBusy && capability === 'supported' && Boolean(auth.user && auth.activeOrganizationId);
+  const storageBlocked = storage === 'Lokaler Speicher nicht verfügbar';
+  const authorizationBlocked = !navigator.onLine && credential.startsWith('Kein gültiges Offline-Credential');
+  const canStart = !batchRunning && !claimBusy && !freigebenBusy && !storageBlocked && !authorizationBlocked && capability === 'supported' && Boolean(auth.user && auth.activeOrganizationId);
 
-  return <section aria-label="Vor-Ort-Sync"><h1 className="title-with-icon"><Graphic src={assets.illustrations.sync} alt="" className="app-icon"/>Vor-Ort-Sync</h1>
-    <Status kind={storage.includes('wird') ? 'loading' : storage.includes('nicht') ? 'error' : 'info'} title={storage}/>
-    <p>{auth.user
-      ? `Angemeldet als ${auth.user.email}${auth.activeOrganizationId ? ` · Organisation: ${activeMembership?.organizationName ?? auth.activeOrganizationId} (${activeMembership?.role ?? '?'})` : ' · keine Organisation gewählt'}`
-      : 'Nicht angemeldet.'}</p>
-    <Status kind={credential.startsWith('Offline-Credential wird geprüft') ? 'loading' : 'info'} title="Offline-Berechtigung" message={credential}/>
+  return <section className="sync-screen" aria-label="Vor-Ort-Sync"><h1>Vor-Ort-Sync</h1>
+    {storageBlocked && <Status kind="error" title="Auslesen nicht möglich" message="Der lokale Speicher ist nicht verfügbar. Bitte die App neu öffnen und den Browserspeicher prüfen."/>}
+    {authorizationBlocked && <Status kind="error" title="Berechtigung fehlt" message="Bitte einmal mit Internet anmelden, damit Sie Näpfe auch offline sicher auslesen können."/>}
+    {(!auth.user || !auth.activeOrganizationId) && <Status kind="error" title="Bitte anmelden und Organisation wählen"/>}
     {capability !== 'supported' && <Status {...errorStatus('Dieser Browser unterstützt kein Web Bluetooth. Bitte aktuelles Chrome/Chromium auf Android verwenden.')}/>}
-    {!navigator.onLine && <Status {...statusMessages.offline}/>}
 
-    <p>Ein bewusster Klick liest alle auf dieser Browserinstallation freigegebenen, aktuell erreichbaren Näpfe der aktiven Organisation nacheinander aus. Mehrere Näpfe an einer Futterstelle sind normal; Näpfe unterschiedlicher Futterstellen werden korrekt zugeordnet. Neue Näpfe brauchen je eine einmalige explizite Freigabe.</p>
-    {devicesSupport === 'supported' && devices.length > 0 && <p>{devices.length === 1
-      ? '1 Napf auf dieser Browserinstallation freigegeben (Erreichbarkeit wird beim Sync geprüft).'
-      : `${devices.length} Näpfe auf dieser Browserinstallation freigegeben (Erreichbarkeit wird beim Sync geprüft).`} <button type="button" disabled={batchRunning} onClick={() => void refreshDevices().catch(() => {})}>Liste aktualisieren</button></p>}
+    <div className="sync-primary">
+      <button className="sync-button button--primary" type="button" disabled={!canStart} onClick={() => void startBatch()}
+        aria-label={batchRunning ? 'Näpfe werden ausgelesen …' : 'Näpfe auslesen'} aria-describedby="sync-help">
+        <Graphic src={assets.illustrations.sync} alt="" className="app-icon"/>
+        <span>{batchRunning ? 'Näpfe werden ausgelesen …' : 'Näpfe auslesen'}</span>
+      </button>
+      <p id="sync-help">Bereits freigegebene Näpfe auslesen</p>
+      <button className="sync-secondary" type="button" disabled={freigebenBusy || claimBusy || storageBlocked || authorizationBlocked || capability !== 'supported' || !auth.user || !auth.activeOrganizationId} onClick={releaseAdditionalBowl}>
+        {freigebenBusy ? 'Freigabe läuft …' : 'Weiteren Napf hinzufügen'}
+      </button>
+    </div>
     {devicesError && <Status kind="error" title="Geräteliste nicht verfügbar" message={devicesError}/>}
     {!devicesError && devicesSupport === 'supported' && devices.length === 0 && !batchRunning && !batchResults.length && <Status kind="info" title="Noch kein Napf freigegeben" message={getDevicesFallbackMessage('supported')}/>}
     {devicesSupport === 'unsupported' && capability === 'supported' && <Status kind="info" title="Automatisches Wiederfinden nicht verfügbar" message={getDevicesFallbackMessage('unsupported')}/>}
 
-    <div className="actions">
-      <button type="button" disabled={!canStart} onClick={() => void startBatch()}>
-        {batchRunning ? 'Synchronisiere …' : 'Futterstelle auslesen'}
-      </button>
-      <button type="button" disabled={freigebenBusy || claimBusy || capability !== 'supported' || !auth.user || !auth.activeOrganizationId} onClick={releaseAdditionalBowl}>
-        {freigebenBusy ? 'Freigabe läuft …' : 'Weiteren Napf freigeben'}
-      </button>
-      {batchRunning && <button type="button" onClick={cancelBatch}>Abbrechen</button>}
-    </div>
+    {batchRunning && <button type="button" onClick={cancelBatch}>Abbrechen</button>}
     {freigebenMessage && <Status kind="info" title="Browser-Freigabe" message={freigebenMessage}/>}
 
-    {batchProgress && <Status kind="loading" title={`Sammel-Sync läuft (${batchProgress.done} von ${batchProgress.total})`}
+    {batchProgress && <Status kind="loading" title="Näpfe werden ausgelesen …"
       scope="Vor-Ort-Sync" graphic="bluetooth" progress={{ value: batchProgress.done, max: batchProgress.total }}
       longWaitMessage="Das dauert länger. Bitte Näpfe eingeschaltet lassen, Smartphone näher heranhalten und Bluetooth prüfen. Die Navigation bleibt verfügbar."
-      message={batchProgress.current ? `Aktuell: „${batchProgress.current}“ (Browser-Hinweis, nicht verifiziert) — ${batchProgress.detail}` : batchProgress.detail}/>}
-    {batchNotice && !batchRunning && <Status kind="info" title="Sammel-Sync" message={batchNotice}/>}
+      message={`${batchProgress.done} von ${batchProgress.total} Näpfen verarbeitet`}/>}
+    {batchNotice && !batchRunning && batchNotice !== getDevicesFallbackMessage(devicesSupport) &&
+      <Status kind="info" title="Auslesen nicht abgeschlossen" message={batchNotice}/>}
 
     {!batchRunning && batchResults.length > 0 && <>
       <BatchSummary results={batchResults}/>
-      <BatchNodeList results={batchResults} contexts={batchContexts} contextsLoading={contextsLoading}
-        isAdmin={isAdmin} claimBusy={claimBusy} onClaim={claimUnclaimedNode}/>
       {retryableCount > 0 && <button type="button" disabled={!canStart} onClick={retryFailed}>
         {`Offene Näpfe erneut versuchen (${retryableCount})`}
       </button>}
-      <button type="button" disabled={!canStart} onClick={() => void startBatch()}>
-        Alle erneut auslesen
-      </button>
     </>}
 
     {claimTarget && claimMessage && <Status kind={claimMessage === 'Napf registriert!' ? 'success' : 'error'} title="Napf registrieren" message={claimMessage}/>}
     {!claimTarget && claimMessage && <Status kind="info" title="Napf registrieren" message={claimMessage}/>}
-    {claimReceipt && <p>Gespeichertes Receipt vorhanden; ein abgebrochener Claim wird sicher erneut zugestellt.</p>}
 
     {isAdmin && auth.activeOrganizationId && setupNodeId && setupOrgId === auth.activeOrganizationId && <div>
       <NodeSetupWizard organizationId={auth.activeOrganizationId} nodeId={setupNodeId} onComplete={() => {
@@ -597,10 +592,24 @@ export function CollectorShell(props: {
       </button>
     </div>}
 
-    <UploadStatus view={uploadViewState} retry={retryUpload} disabled={batchRunning}/>
+    {(batchResults.length > 0 || uploadView.backendState === 'failed' || uploadView.pendingUploads > 0) &&
+      <UploadStatus view={uploadViewState} retry={retryUpload} disabled={batchRunning} compact/>}
 
-    <details><summary>Hinweise zu Fehlerfällen</summary><ul>
-      {syncHelp.map(message => <li key={message}>{message}</li>)}
-    </ul></details>
+    <details className="sync-technical"><summary>Technische Infos zur Entwicklung</summary>
+      <Status kind={storage.includes('wird') ? 'loading' : storage.includes('nicht') ? 'error' : 'info'} title={storage}/>
+      <p>{auth.user
+        ? `Angemeldet als ${auth.user.email}${auth.activeOrganizationId ? ` · Organisation: ${activeMembership?.organizationName ?? auth.activeOrganizationId} (${activeMembership?.role ?? '?'})` : ' · keine Organisation gewählt'}`
+        : 'Nicht angemeldet.'}</p>
+      <Status kind={credential.startsWith('Offline-Credential wird geprüft') ? 'loading' : 'info'} title="Offline-Berechtigung" message={credential}/>
+      {!navigator.onLine && <Status {...statusMessages.offline}/>}
+      <p>Nur bereits in diesem Browser freigegebene Näpfe werden versucht. Erreichbarkeit und Berechtigung werden beim Verbindungsversuch geprüft.</p>
+      <p>{devices.length} Näpfe in diesem Browser freigegeben. <button type="button" disabled={batchRunning} onClick={() => void refreshDevices().catch(() => {})}>Liste aktualisieren</button></p>
+      {batchProgress && <p>Bluetooth: {batchProgress.current ? `„${batchProgress.current}“ (unverifizierter Browser-Hinweis) — ` : ''}{batchProgress.detail}</p>}
+      {claimReceipt && <p>Gespeichertes Receipt vorhanden; ein abgebrochener Claim wird sicher erneut zugestellt.</p>}
+      <BatchNodeList results={batchResults} contexts={batchContexts} contextsLoading={contextsLoading}
+        isAdmin={isAdmin} claimBusy={claimBusy} onClaim={claimUnclaimedNode}/>
+      <UploadStatus view={uploadViewState} retry={retryUpload} disabled={batchRunning}/>
+      <h2>Hinweise zu Fehlerfällen</h2><ul>{syncHelp.map(message => <li key={message}>{message}</li>)}</ul>
+    </details>
   </section>;
 }

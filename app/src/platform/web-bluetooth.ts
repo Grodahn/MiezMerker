@@ -33,7 +33,7 @@ export type BluetoothCapability =
 
 export function bluetoothCapability(): BluetoothCapability {
   if (typeof navigator === 'undefined') return 'unknown';
-  return 'bluetooth' in navigator ? 'supported' : 'unsupported';
+  return typeof bluetooth()?.requestDevice === 'function' ? 'supported' : 'unsupported';
 }
 
 export function bluetoothSupportMessage(capability: BluetoothCapability): string {
@@ -155,12 +155,11 @@ export function browserDeviceLabel(device: any, fallback: string): string {
 
 export function getDevicesFallbackMessage(support: GetDevicesSupport): string {
   if (support === 'unsupported') {
-    return 'Dieser Browser listet freigegebene Näpfe nicht automatisch (kein getDevices). ' +
-      'Bitte „Weiteren Napf freigeben“ nutzen, um einen Napf für diese Browserinstallation freizugeben. ' +
-      'Der ausgewählte Napf wird direkt ausgelesen. Ohne getDevices muss er für weitere Versuche erneut manuell ausgewählt werden.';
+    return 'Dieser Browser kann freigegebene Näpfe nicht automatisch wiederfinden. ' +
+      'Bitte „Weiteren Napf hinzufügen“ nutzen. Der ausgewählte Napf wird direkt ausgelesen; ' +
+      'für weitere Versuche muss er erneut ausgewählt werden.';
   }
-  return 'Noch kein Napf für diese Browserinstallation freigegeben oder Berechtigung gelöscht (neues Smartphone, Browser-Reset). ' +
-    'Bitte „Weiteren Napf freigeben“ nutzen, um Näpfe einmalig pro Gerät freizugeben.';
+  return 'Über „Weiteren Napf hinzufügen“ einen Napf einmalig für diesen Browser freigeben.';
 }
 
 export interface GattOperations {

@@ -57,3 +57,17 @@ test('an upload error does not claim that a failed local read succeeded', () => 
   expect(screen.queryByText(/Der lokale Vor-Ort-Sync bleibt gültig/)).toBeNull();
   expect(screen.queryByText(/Ausstehend: 0/)).toBeNull();
 });
+
+
+test('compact server state preserves session recovery and partial-upload counts', () => {
+  const { rerender } = render(<UploadStatus compact view={{ ...initialCollectorView, backendState: 'failed',
+    backendMessage: 'Backend-Upload abgelehnt (HTTP 401)' }} retry={retry} disabled={false}/>);
+  expect(screen.getByText('Bitte erneut anmelden')).toBeTruthy();
+  expect(screen.queryByRole('button')).toBeNull();
+  rerender(<UploadStatus compact view={{ ...initialCollectorView, backendState: 'complete',
+    pendingUploads: 2, uploadedCount: 5 }} retry={retry} disabled={false}/>);
+  expect(screen.getByText('Zuletzt geprüft: 2 ausstehend · 5 an Server übertragen')).toBeTruthy();
+  expect(screen.getByText(/Neue Übernahmen werden separat geprüft/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Serverübertragung erneut versuchen' })).toBeTruthy();
+  expect(screen.queryByText('Daten an Server übertragen')).toBeNull();
+});

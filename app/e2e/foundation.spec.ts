@@ -6,6 +6,7 @@ test('fresh browser without identity sees only login', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Bereiche' })).not.toBeVisible();
     await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
+    await expect(page.locator('.sync-screen')).toHaveCount(0);
     await expect(page.getByText('Futterstellen')).not.toBeVisible();
     expect(new URL(page.url()).pathname).toBe(path === '/' ? '/' : path);
   }
@@ -15,6 +16,7 @@ test('collector reloads offline with durable IndexedDB outbox', async ({ page, c
   await page.goto('/sync');
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
   await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
+  await expect(page.locator('.sync-screen')).toHaveCount(0);
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
   await page.reload();
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
@@ -62,6 +64,7 @@ test('collector reloads offline with durable IndexedDB outbox', async ({ page, c
   await page.reload();
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
   await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
+  await expect(page.locator('.sync-screen')).toHaveCount(0);
   const persisted = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>(resolve => {
       const request = indexedDB.open('miezmerker-collector'); request.onsuccess = () => resolve(request.result);

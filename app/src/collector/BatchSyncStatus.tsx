@@ -46,22 +46,35 @@ export function BatchSummary({ results }: { results: BatchNodeResult[] }) {
   const interrupted = results.some(r => r.kind === 'cancelled' || r.kind === 'skipped');
   const total = results.length;
   const message = batchSummaryMessage(results);
+  const records = results.filter(r => r.kind === 'success').reduce((sum, r) => sum + r.recordsReceived, 0);
+  const transfer = `${records} Beobachtungen sicher gespeichert und am Napf bestätigt (einschließlich möglicher Wiederholungen).`;
+  const recovery: Partial<Record<BatchNodeResult['kind'], string>> = {
+    unreachable: 'Napf einschalten, Smartphone näher heranhalten und Bluetooth prüfen.',
+    unauthorized: 'Mit Internet anmelden und die Offline-Berechtigung erneuern.',
+    foreign: 'Dieser Napf kann in der aktiven Organisation nicht ausgelesen werden.',
+    unclaimed: 'Die Registrierung benötigt eine zuständige Person mit Admin-Rechten.',
+    failed: 'Übernahme nicht vollständig bestätigt. Bitte erneut versuchen; Details in den technischen Infos.',
+    cancelled: 'Bestätigte Übernahmen bleiben gespeichert. Offene Näpfe können erneut versucht werden.',
+    skipped: 'Noch nicht ausgelesen. Offene Näpfe können erneut versucht werden.',
+  };
+  const failures = <ul>{Object.entries(recovery).map(([kind, help]) => {
+    const count = results.filter(r => r.kind === kind).length;
+    return count > 0 ? <li key={kind}><strong>{kindStatus(kind as BatchNodeResult['kind']).title}</strong> ({count}): {help}</li> : null;
+  })}</ul>;
   if (succeeded === total) {
-    const records = results.reduce((sum, r) => sum + r.recordsReceived, 0);
     return <Status kind="success" title={message} scope="Vor-Ort-Sync"
-      message={`Fertig — ${records} Beobachtungen sicher übernommen und quittiert (einschließlich möglicher Wiederholungen). Der Backend-Upload wird separat angezeigt.`}
+      message={transfer}
       graphic="success"/>;
   }
   if (succeeded === 0) {
     return <Status kind={interrupted ? 'info' : 'error'} title={message} scope="Vor-Ort-Sync"
-      message={interrupted ? 'Sammel-Sync unterbrochen. Für keinen Napf wurde eine vollständige lokale Übernahme bestätigt. Offene Näpfe können gezielt erneut versucht werden.'
-        : 'Kein Napf konnte ausgelesen werden. Details je Napf unten; bereits abgeschlossene Näpfe bleiben bei Retry erhalten.'}
-      graphic={interrupted ? 'info' : 'error'}/>;
+      message={interrupted ? 'Sammel-Sync unterbrochen. Keine vollständige lokale Übernahme bestätigt.'
+        : 'Kein Napf konnte vollständig ausgelesen werden.'}
+      graphic={interrupted ? 'info' : 'error'}>{failures}</Status>;
   }
   return <Status kind="info" title={message} scope="Vor-Ort-Sync"
-    message={interrupted ? 'Sammel-Sync unterbrochen. Bestätigte Übernahmen bleiben gültig. Offene Näpfe können gezielt erneut versucht werden, ohne erfolgreiche zu wiederholen.'
-      : 'Teilerfolg: übrige Näpfe wurden weiter bearbeitet. Fehlgeschlagene Näpfe können gezielt erneut versucht werden, ohne erfolgreiche zu wiederholen.'}
-    graphic="info"/>;
+    message={`${interrupted ? 'Sammel-Sync unterbrochen.' : 'Teilerfolg.'} ${transfer}`}
+    graphic="info">{failures}</Status>;
 }
 
 export function BatchNodeCard({ result, context, contextLoading, isAdmin, claimBusy, onClaim }: {

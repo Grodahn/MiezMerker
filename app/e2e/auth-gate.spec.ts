@@ -5,6 +5,12 @@ const user = { userId: 'gate-user', email: 'gate@example.org', memberships: [
     role: 'MEMBER', status: 'ACTIVE' },
 ] };
 
+async function expectCollectorReady(page: Page) {
+  await expect(page.getByRole('heading', { name: 'Vor-Ort-Sync', exact: true })).toBeVisible();
+  await page.locator('.sync-technical > summary').click();
+  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+}
+
 async function backend(page: Page) {
   const state = { expired: false, sessionHold: Promise.resolve(), logoutHold: Promise.resolve() };
   await page.route('**/api/v1/**', async route => {
@@ -63,17 +69,18 @@ test('logout clears the shell while its server request is pending', async ({ pag
 test('collector account and content are cleared before history freezes the document', async ({ page }) => {
   await backend(page);
   await page.goto('/sync');
-  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+  await expectCollectorReady(page);
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
   await expect(page.getByRole('navigation')).not.toBeVisible();
   await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
+  await expect(page.locator('.sync-screen')).toHaveCount(0);
   await expect(page.getByText(/Angemeldet als/)).not.toBeVisible();
 });
 
 test('cold offline reload allows only sync until the bound credential expires', async ({ page, context }) => {
   await backend(page);
   await page.goto('/sync');
-  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+  await expectCollectorReady(page);
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
   await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
@@ -95,13 +102,13 @@ test('cold offline reload allows only sync until the bound credential expires', 
   });
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+  await expectCollectorReady(page);
   await expect(page.getByRole('link', { name: 'Futterstellen' })).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Anmelden' })).not.toBeVisible();
   // Installed launch enters Home's URL, but may only redirect to authorized Sync.
   await page.goto('/');
   await expect(page).toHaveURL(/\/sync$/);
-  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+  await expectCollectorReady(page);
   await expect(page.getByRole('navigation')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Hallo!' })).toHaveCount(0);
   for (const path of ['/feeding-sites', '/cats', '/nodes']) {
@@ -109,10 +116,12 @@ test('cold offline reload allows only sync until the bound credential expires', 
     await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
     await expect(page.getByRole('navigation')).toHaveCount(0);
     await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
+    await expect(page.locator('.sync-screen')).toHaveCount(0);
   }
   await page.goto('/sync');
-  await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+  await expectCollectorReady(page);
   await page.clock.fastForward(61_000);
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
   await expect(page.getByText('Lokaler Speicher bereit')).not.toBeVisible();
+  await expect(page.locator('.sync-screen')).toHaveCount(0);
 });
