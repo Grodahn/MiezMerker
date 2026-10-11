@@ -11,6 +11,19 @@
 #include "psa/crypto.h"
 #include "nvs_flash.h"
 #include "freertos/task.h"
+#if CONFIG_MM_DEV_GPIO_RFID
+#include "miezmerker/dev_button_reader.hpp"
+namespace {
+constexpr auto mock_pin = static_cast<gpio_num_t>(CONFIG_MM_DEV_GPIO_RFID_PIN);
+static_assert(CONFIG_MM_DEV_GPIO_RFID_PIN >= 0 && CONFIG_MM_DEV_GPIO_RFID_PIN <= 10
+    && CONFIG_MM_DEV_GPIO_RFID_PIN != 2 && CONFIG_MM_DEV_GPIO_RFID_PIN != 8
+    && CONFIG_MM_DEV_GPIO_RFID_PIN != 9, "Mock pin conflicts with board reserved pins");
+class GpioButton final : public miezmerker::esp32::ButtonInput {
+public:
+    bool high() const override { return gpio_get_level(mock_pin) != 0; }
+};
+}
+#endif
 #include <charconv>
 #include <cstdio>
 
@@ -112,6 +125,18 @@ extern "C" void app_main() {
     ESP_LOGW(tag, "DEVELOPMENT synthetic input enabled: status | synthetic 1..16 | crypto-test | reboot");
     std::string line; bool overflow = false;
 #endif
+#if CONFIG_MM_DEV_GPIO_RFID
+    gpio_config_t mock_button{};
+    mock_button.pin_bit_mask = 1ULL << mock_pin;
+    mock_button.mode = GPIO_MODE_INPUT;
+    mock_button.pull_up_en = GPIO_PULLUP_ENABLE;
+    mock_button.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    mock_button.intr_type = GPIO_INTR_DISABLE;
+    ESP_ERROR_CHECK(gpio_config(&mock_button));
+    GpioButton mock_input;
+    DevButtonReader mock_reader(mock_input, clock, random);
+    ESP_LOGW(tag, "DEVELOPMENT RFID GPIO%d active LOW, pull-up, 50ms debounce; reads are not confirmed visits", mock_pin);
+#endif
     std::uint64_t pressed_at = 0, reset_armed_until = 0, heartbeat = 0;
     bool released_once = false, old_claim = false;
     for (;;) {
@@ -134,6 +159,12 @@ extern "C" void app_main() {
                 physical.activate(); ESP_LOGI(tag, "physical claim window opened (120s); trusted UTC still required");
             } else reset_armed_until = 0;
         }
+#if CONFIG_MM_DEV_GPIO_RFID
+        if (const auto result = core.poll_reader(mock_reader)) {
+            ESP_LOGI(tag, "demo chip=%s capture=%s claimed=%s clock=UNKNOWN attribution=UNCONFIRMED",
+                mock_reader.selected_chip().c_str(), to_string(*result).data(), identity.claimed() ? "yes" : "no");
+        }
+#endif
         const bool claim = identity.in_claim_mode();
         if (old_claim != claim) { peripheral.refresh_advertisement(); old_claim = claim; }
 #if CONFIG_MM_DEV_SYNTHETIC_INPUT

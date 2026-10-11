@@ -1,2 +1,4 @@
 # Explicit opt-in: idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.dev" build
 CONFIG_MM_DEV_SYNTHETIC_INPUT=y
+CONFIG_MM_DEV_GPIO_RFID=y
+CONFIG_MM_DEV_GPIO_RFID_PIN=3

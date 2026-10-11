@@ -15,3 +15,13 @@ if(CONFIG_MM_DEV_SYNTHETIC_INPUT)
     target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
     target_sources(${COMPONENT_LIB} PRIVATE crypto_selftest.cpp)
 endif()
+
+# Build profile is independent of sdkconfig so stale development caches fail closed.
+option(MM_DEVELOPMENT_BUILD "Explicit development firmware (never release)" OFF)
+if((CONFIG_MM_DEV_GPIO_RFID OR CONFIG_MM_DEV_SYNTHETIC_INPUT) AND NOT MM_DEVELOPMENT_BUILD)
+    message(FATAL_ERROR "Development inputs forbidden in release: use a separate build with -DMM_DEVELOPMENT_BUILD=ON")
+endif()
+if(CONFIG_MM_DEV_GPIO_RFID)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE MM_DEV_GPIO_RFID=1)
+    target_sources(${COMPONENT_LIB} PRIVATE "../../src/dev_button_reader.cpp")
+endif()

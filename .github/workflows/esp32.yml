@@ -25,16 +25,31 @@ jobs:
           . /opt/esp/idf/export.sh > /dev/null
           python -m unittest discover -s firmware-esp32/tools -p 'test_*.py'
           defaults=sdkconfig.defaults
-          if [ "$VARIANT" = dev ]; then defaults="$defaults;sdkconfig.dev"; fi
+          development=OFF
+          if [ "$VARIANT" = dev ]; then defaults="$defaults;sdkconfig.dev"; development=ON; fi
           idf.py -C firmware-esp32/idf -B "$GITHUB_WORKSPACE/firmware-esp32/idf/build-ci-$VARIANT" \
             -D "SDKCONFIG=sdkconfig.local-ci-$VARIANT" \
-            -D "SDKCONFIG_DEFAULTS=$defaults" build size
+            -D "SDKCONFIG_DEFAULTS=$defaults" -D "MM_DEVELOPMENT_BUILD=$development" build size
           python - "$VARIANT" <<'PY'
-          import json, pathlib, sys
+          import json, pathlib, subprocess, sys
           variant = sys.argv[1]
           config = json.loads(pathlib.Path(f'firmware-esp32/idf/build-ci-{variant}/config/sdkconfig.json').read_text())
           assert config['IDF_TARGET'] == 'esp32c3'
           assert bool(config.get('MM_DEV_SYNTHETIC_INPUT')) == (variant == 'dev')
+          assert bool(config.get('MM_DEV_GPIO_RFID')) == (variant == 'dev')
+          elf = f'firmware-esp32/idf/build-ci-{variant}/miezmerker-node.elf'
+          symbols = subprocess.check_output(['riscv32-esp-elf-nm', '-C', elf], text=True)
+          assert ('DevButtonReader::poll' in symbols) == (variant == 'dev')
+          if variant == 'dev':
+              result = subprocess.run(['idf.py', '-C', 'firmware-esp32/idf',
+                  '-B', str(pathlib.Path('firmware-esp32/idf/build-ci-release-reject').resolve()),
+                  '-D', 'SDKCONFIG=sdkconfig.local-ci-release-reject',
+                  '-D', 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.dev',
+                  '-D', 'MM_DEVELOPMENT_BUILD=OFF', 'reconfigure'],
+                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+              pathlib.Path('firmware-esp32/idf/build-ci-release-reject/release-guard.log').write_text(result.stdout)
+              assert result.returncode != 0 and 'Development inputs forbidden in release' in result.stdout
+              print('PASS release profile rejects development sdkconfig')
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
