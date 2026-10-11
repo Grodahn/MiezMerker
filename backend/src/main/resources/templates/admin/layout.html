@@ -53,6 +53,7 @@ a.cardlink{text-decoration:none;color:inherit}
 <a th:href="@{/admin/cats}" th:classappend="${active == 'cats'} ? ' active' : ''">Katzen</a>
 <a th:href="@{/admin/observations}" th:classappend="${active == 'observations'} ? ' active' : ''">Rohbeobachtungen</a>
 <a th:href="@{/admin/visits}" th:classappend="${active == 'visits'} ? ' active' : ''">Besuche</a>
+<a th:href="@{/admin/organization/settings}" th:classappend="${active == 'organization'} ? ' active' : ''">Organisation</a>
 <span class="orgswitch" th:if="${adminOrgs != null and #lists.size(adminOrgs) > 1}">
 <form th:action="@{/admin/org}" method="post" style="display:flex;gap:.5rem;align-items:center">
 <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>

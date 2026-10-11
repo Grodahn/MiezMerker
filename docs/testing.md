@@ -57,13 +57,15 @@ Backend tags cover all existing test classes:
 | auth | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, OfflineCredentialTest, IssuerConfigurationTest, InteropVectorTest, TenancyAuthTest, CookieSecurityTest, BootstrapTest, DisplayNameTest, FoundationTest, AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, NodeProvisionSetupTest, OrganizationSharingTest |
 | ingest | Issue9IngestTest, AdminObservationsVisitsTest |
 | visits | Issue10VisitsTest, Issue100CatVisitsTest, FeedingSiteCatActivityTest, AdminCatsTest, AdminObservationsVisitsTest, AdminObservationsVisitsControllerTest |
-| admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, AdminObservationsVisitsControllerTest |
+| admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, AdminObservationsVisitsControllerTest, AdminOrganizationSettingsTest |
 | schema | DatabaseSchemaTest, DisplayNameTest, NodeDisplayNameTest, SystemPrivilegeTest, SystemRoleMigrationTest |
 | system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |
 
 `SystemPrivilegeTest` also belongs to the `auth` domain.
 `DevDemoTest` and `DevDemoCommandTest` belong to `auth`, `system`, and `schema` and cover the explicit
 local demo fixture, ownership collisions, login/API access and replay safety.
+`AdminOrganizationSettingsTest` also belongs to the `auth` domain and covers the rendered sharing settings,
+CSRF, organization switching, recipient privacy and concurrent revocation.
 `SystemRoleMaintenanceTest` belongs to `auth` and covers failure cleanup of
 operator transactions.
 

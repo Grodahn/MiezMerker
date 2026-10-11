@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Organisationseinstellungen')}"></head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<div th:replace="~{admin/layout :: nav('organization')}"></div>
+<main>
+<h1>Organisationseinstellungen</h1>
+<p>Aktive Organisation: <strong th:text="${activeOrg.displayName}">Organisation</strong></p>
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}"></div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}"></div>
+<form id="organization-settings" method="post" th:action="@{/admin/organization/settings}">
+<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<input type="hidden" name="formOrganizationId" th:value="${activeOrg.id}"/>
+<input type="hidden" name="version" th:value="${settings.version}"/>
+<section class="card">
+<h2>Sichtbarkeit</h2>
+<label><input id="hidden" type="checkbox" name="hidden" value="true" th:checked="${settings.hidden}" aria-describedby="visibility-help"/> Andere sollen meine Organisation nicht sehen können</label>
+<p id="visibility-help">Sichtbarkeit macht die Organisation im Verzeichnis auswählbar. Sie gibt allein keine Katzen oder Besuche frei.
+Beim Verstecken werden alle ausgehenden Freigaben widerrufen und die Organisation aus Empfängerlisten entfernt.
+Erneutes Sichtbarmachen stellt diese Freigaben nicht wieder her.</p>
+</section>
+<section id="sharing" class="card">
+<h2>Datenfreigaben</h2>
+<p>Jede Informationsart hat eigene Empfänger. Freigaben gelten nur lesend für aktive, sichtbare Organisationen dieser Installation,
+mit berechtigtem Organisationskontext. Keine öffentliche Internetfreigabe.</p>
+<p id="hidden-help">Solange die Organisation versteckt bleibt, sind keine ausgehenden Freigaben wirksam.
+Zum Konfigurieren zuerst die Checkbox zur Unsichtbarkeit deaktivieren.</p>
+<fieldset th:each="scope : ${scopes}" th:attr="data-scope=${scope}" style="margin:1rem 0;min-width:0">
+<legend th:text="${scope.name() == 'CARE' ? 'Betreuungs- und Profilinformationen' : (scope.name() == 'VISITS' ? 'Besuche und Zeiten' : 'Futterstellennamen')}"></legend>
+<p th:if="${scope.name() == 'CARE'}">Begrenzter Hinweis auf die betreuende Organisation und erlaubte Katzen-Anzeigenamen. Keine Besuche, Orte oder Fotos.</p>
+<p th:if="${scope.name() == 'VISITS'}">Begrenzte Besuchszusammenfassungen mit Beginn/Ende bzw. verlässlichen Zeiten und Herkunftsorganisation. Benötigt Betreuung für dieselben Empfänger.</p>
+<p th:if="${scope.name() == 'SITE_LABEL'}">Nur der Anzeigename der Futterstelle auf erlaubten Besuchen. Benötigt Betreuung und Besuche für dieselben Empfänger; keine Koordinaten oder Adressen.</p>
+<label><input type="radio" th:name="${scope}" value="PRIVATE" th:checked="${settings.choices.get(scope).audience.name() == 'PRIVATE'}"/> Katzen und ihre Aufzeichnungen nur innerhalb unserer Organisation</label>
+<label><input type="radio" th:name="${scope}" value="ALL_DISCOVERABLE" th:checked="${settings.choices.get(scope).audience.name() == 'ALL_DISCOVERABLE'}"/> Für alle berechtigten sichtbaren Organisationen freigeben</label>
+<label><input type="radio" th:name="${scope}" value="ALLOWLIST" th:checked="${settings.choices.get(scope).audience.name() == 'ALLOWLIST'}"/> Nur für ausgewählte Organisationen freigeben</label>
+<div data-recipients>
+<p th:if="${#lists.isEmpty(settings.recipients)}">Keine geeigneten Empfänger verfügbar. Es werden nur andere aktive, sichtbare Organisationen angeboten.</p>
+<label th:each="recipient : ${settings.recipients}">
+<input type="checkbox" th:name="${scope.name() + 'Recipients'}" th:value="${recipient.id}" th:checked="${settings.choices.get(scope).recipients.contains(recipient.id)}"/>
+<span th:text="${recipient.displayName}">Empfänger</span></label>
+</div>
+</fieldset>
+<h3>Fotos (PHOTO)</h3>
+<p>Foto-Freigaben benötigen einen gesondert autorisierten Medienzugriff (#95). Dieser ist noch nicht verfügbar;
+hier können keine neuen Foto-Freigaben aktiviert werden. Betreuung, Besuche und Futterstellennamen geben keine Bilder frei.</p>
+<p th:if="${settings.choices.get(T(org.miezmerker.backend.domain.ShareScope).PHOTO).audience.name() == 'PRIVATE'}">Keine Foto-Freigabe konfiguriert.</p>
+<label th:if="${settings.choices.get(T(org.miezmerker.backend.domain.ShareScope).PHOTO).audience.name() != 'PRIVATE'}">
+<input type="checkbox" name="revokePhoto" value="true"/> Bestehende Foto-Policy widerrufen (derzeit kein Medienzugriff verfügbar)</label>
+<p>Bei einer Erweiterung der Betreuungsfreigabe oder wenn ihre bisherige Foto-Policy nicht mehr gedeckt ist,
+wird die Foto-Policy ebenfalls widerrufen. Fotos werden dadurch niemals stillschweigend zusätzlich freigegeben.</p>
+<p>Rohbeobachtungen, private Notizen, präzise Koordinaten, Adressen, Kontaktdaten und interne Organisationsdaten werden niemals durch diese Einstellungen freigegeben.</p>
+</section>
+<section class="card">
+<p>Widerrufe gelten unmittelbar für nachfolgende Backend-Abfragen. Bereits heruntergeladene, exportierte oder offline gespeicherte Informationen können nicht unbedingt zurückgerufen werden.</p>
+<label><input type="checkbox" name="confirmed" value="true"/> Ich bestätige die Erweiterung der Sichtbarkeit bzw. der ausdrücklich gewählten Datenfreigaben und Empfänger.</label>
+<p>Diese Bestätigung ist nur für Erweiterungen erforderlich. Einschränkungen und Widerrufe benötigen sie nicht.</p>
+<button id="save-settings" class="btn" type="submit">Einstellungen speichern</button>
+<span id="save-status" role="status" aria-live="polite"></span>
+</section>
+</form>
+<noscript><p>Alle Optionen sind ohne JavaScript bedienbar. Auswahl von Empfängern wird nur bei „Nur für ausgewählte Organisationen“ gespeichert. Verstecken widerruft alle Freigaben.</p></noscript>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+<script defer th:src="@{/admin-organization-settings.js}"></script>
+</body>
+</html>
