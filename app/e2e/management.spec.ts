@@ -135,6 +135,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       await expect(page.getByRole('button', { name: 'Futterstelle anlegen' })).toHaveCount(0);
     }
     await page.goto('/sync');
+    await page.locator('.sync-technical > summary').click();
     await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
     expect(state.requests.filter(r => r.path.endsWith('/deployments/move'))).toHaveLength(0);
     expect(state.requests.some(r => r.path.endsWith('/members') || r.path.endsWith('/visits/recompute'))).toBe(false);
