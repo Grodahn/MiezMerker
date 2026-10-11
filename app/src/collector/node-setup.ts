@@ -13,7 +13,7 @@
 // for UX and relies on backend 403/404 for authority.
 
 import { api } from '../api/client';
-import { fetchCsrfToken, getAuthState, markSessionExpired } from '../platform/auth';
+import { fetchCsrfToken, getAuthState, markSessionExpired, subscribeAuth } from '../platform/auth';
 import type { components } from '../api/generated';
 
 export type SetupFailureKind =
@@ -65,6 +65,21 @@ export function assertAdminMayProvision(organizationId: string): void {
   if (membership.role !== 'ADMIN') {
     throw new SetupError('forbidden-role', 'Nur ADMIN kann einen Napf einrichten. MEMBER hat keinen Zugriff.');
   }
+}
+
+function setupContext(organizationId: string) {
+  const userId = getAuthState().user?.userId;
+  let cancelled = false;
+  const matches = () => getAuthState().user?.userId === userId && getAuthState().activeOrganizationId === organizationId
+    && getAuthState().user?.memberships.some(m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN');
+  const unsubscribe = subscribeAuth(() => { if (!matches()) cancelled = true; });
+  const assertContext = () => {
+    assertAdminMayProvision(organizationId);
+    if (cancelled || !matches()) {
+      throw new SetupError('unauthorized', 'Benutzer oder Organisation geändert. Einrichtung bitte erneut öffnen.');
+    }
+  };
+  return Object.assign(assertContext, { close: unsubscribe });
 }
 
 function requireOnline(): void {
@@ -135,62 +150,71 @@ export async function fetchNodeSetupState(
   nodeId: string,
   options: { signal?: AbortSignal } = {},
 ): Promise<NodeSetupState> {
-  assertAdminMayProvision(organizationId);
-  requireOnline();
-  const signal = options.signal ?? AbortSignal.timeout(10_000);
-  // Destructure (like platform/node-identity.ts): openapi-fetch returns a
-  // discriminated union where property access on the narrowed object can
-  // collapse to never; destructured bindings stay accessible in both branches.
-  const nodeRes = await api.GET('/api/v1/nodes/{nodeId}', {
-    signal,
-    params: { path: { nodeId } },
-  });
-  const { data: nodeData, error: nodeError, response: nodeResponse } = nodeRes;
-  if (nodeError || !nodeData) {
-    throw toSetupError((nodeResponse as Response | undefined)?.status,
-      'Napf-Status konnte nicht geladen werden. Bitte erneut versuchen.', { nodeId });
-  }
-  const node = nodeData;
-  if (node.organizationId && node.organizationId !== organizationId) {
-    throw new SetupError('foreign', `Node ${nodeId} gehört einer anderen Organisation.`);
-  }
-  const depRes = await api.GET('/api/v1/organizations/{organizationId}/deployments', {
-    signal,
-    params: { path: { organizationId }, query: { nodeId } },
-  });
-  const { data: depData, error: depError, response: depResponse } = depRes;
-  if (depError || !depData) {
-    throw toSetupError((depResponse as Response | undefined)?.status,
-      'Zuordnungen konnten nicht geladen werden. Bitte erneut versuchen.', { nodeId });
-  }
-  const all = depData ?? [];
-  const active = all.find(d => !d.validUntil) ?? null;
-  return {
-    nodeId,
-    organizationId,
-    claimed: node.state === 'CLAIMED',
-    displayName: node.displayName ?? null,
-    activeDeployment: active,
-    deploymentCount: all.length,
-  };
+  const assertContext = setupContext(organizationId);
+  try {
+    assertContext();
+    requireOnline();
+    const signal = options.signal ?? AbortSignal.timeout(10_000);
+    // Destructure (like platform/node-identity.ts): openapi-fetch returns a
+    // discriminated union where property access on the narrowed object can
+    // collapse to never; destructured bindings stay accessible in both branches.
+    const nodeRes = await api.GET('/api/v1/nodes/{nodeId}', {
+      signal,
+      params: { path: { nodeId } },
+    });
+    const { data: nodeData, error: nodeError, response: nodeResponse } = nodeRes;
+    assertContext();
+    if (nodeError || !nodeData) {
+      throw toSetupError((nodeResponse as Response | undefined)?.status,
+        'Napf-Status konnte nicht geladen werden. Bitte erneut versuchen.', { nodeId });
+    }
+    const node = nodeData;
+    if (node.organizationId && node.organizationId !== organizationId) {
+      throw new SetupError('foreign', `Node ${nodeId} gehört einer anderen Organisation.`);
+    }
+    const depRes = await api.GET('/api/v1/organizations/{organizationId}/deployments', {
+      signal,
+      params: { path: { organizationId }, query: { nodeId } },
+    });
+    const { data: depData, error: depError, response: depResponse } = depRes;
+    assertContext();
+    if (depError || !depData) {
+      throw toSetupError((depResponse as Response | undefined)?.status,
+        'Zuordnungen konnten nicht geladen werden. Bitte erneut versuchen.', { nodeId });
+    }
+    const all = depData ?? [];
+    const active = all.find(d => !d.validUntil) ?? null;
+    return {
+      nodeId,
+      organizationId,
+      claimed: node.state === 'CLAIMED',
+      displayName: node.displayName ?? null,
+      activeDeployment: active,
+      deploymentCount: all.length,
+    };
+  } finally { assertContext.close(); }
 }
 
 export async function listFeedingSiteOptions(
   organizationId: string,
   options: { signal?: AbortSignal } = {},
 ): Promise<FeedingSiteView[]> {
-  assertAdminMayProvision(organizationId);
-  requireOnline();
-  const siteRes = await api.GET('/api/v1/organizations/{organizationId}/feeding-sites', {
-    signal: options.signal ?? AbortSignal.timeout(10_000),
-    params: { path: { organizationId } },
-  });
-  const { data: siteData, error: siteError, response: siteResponse } = siteRes;
-  if (siteError || !siteData) {
-    throw toSetupError((siteResponse as Response | undefined)?.status,
-      'Futterstellen konnten nicht geladen werden. Bitte erneut versuchen.');
-  }
-  return siteData ?? [];
+  const assertContext = setupContext(organizationId);
+  try {
+    assertContext();
+    requireOnline();
+    const siteRes = await api.GET('/api/v1/organizations/{organizationId}/feeding-sites', {
+      signal: options.signal ?? AbortSignal.timeout(10_000),
+      params: { path: { organizationId } },
+    });
+    const { data: siteData, error: siteError, response: siteResponse } = siteRes;
+    assertContext();
+    if (siteError || !siteData) {
+      throw toSetupError((siteResponse as Response | undefined)?.status,
+        'Futterstellen konnten nicht geladen werden. Bitte erneut versuchen.');
+    }
+    return (siteData ?? []).filter(site => !site.organizationId || site.organizationId === organizationId);
+  } finally { assertContext.close(); }
 }
 
 // Saves the human-readable bowl label via the existing #50 PATCH.
@@ -202,23 +226,28 @@ export async function saveBowlName(
   nodeId: string,
   displayName: string,
 ): Promise<string> {
-  assertAdminMayProvision(organizationId);
-  requireOnline();
-  const normalized = validateBowlName(displayName);
-  const headers = await csrfHeaders();
-  const patchRes = await api.PATCH('/api/v1/nodes/{nodeId}', {
-    signal: AbortSignal.timeout(10_000),
-    params: { path: { nodeId } },
-    headers,
-    body: { displayName: normalized },
-  });
-  const { data: patchData, error: patchError, response: patchResponse } = patchRes;
-  if (patchError || !patchData) {
-    throw toSetupError((patchResponse as Response | undefined)?.status,
-      'Napf-Name konnte nicht gespeichert werden. Claim bleibt gültig; bitte erneut versuchen.',
-      { nodeId });
-  }
-  return patchData.displayName ?? normalized;
+  const assertContext = setupContext(organizationId);
+  try {
+    assertContext();
+    requireOnline();
+    const normalized = validateBowlName(displayName);
+    const headers = await csrfHeaders();
+    assertContext();
+    const patchRes = await api.PATCH('/api/v1/nodes/{nodeId}', {
+      signal: AbortSignal.timeout(10_000),
+      params: { path: { nodeId } },
+      headers,
+      body: { displayName: normalized },
+    });
+    const { data: patchData, error: patchError, response: patchResponse } = patchRes;
+    assertContext();
+    if (patchError || !patchData) {
+      throw toSetupError((patchResponse as Response | undefined)?.status,
+        'Napf-Name konnte nicht gespeichert werden. Claim bleibt gültig; bitte erneut versuchen.',
+        { nodeId });
+    }
+    return patchData.displayName ?? normalized;
+  } finally { assertContext.close(); }
 }
 
 export interface InitialDeploymentOutcome {
@@ -236,59 +265,67 @@ export async function ensureInitialDeployment(
   feedingSiteId: string,
   options: { validFrom?: string } = {},
 ): Promise<InitialDeploymentOutcome> {
-  assertAdminMayProvision(organizationId);
-  requireOnline();
-  if (!feedingSiteId) {
-    throw new SetupError('validation', 'Bitte eine vorhandene Futterstelle auswählen.');
-  }
-  const headers = await csrfHeaders();
-  const listOnce = async (): Promise<DeploymentView[]> => {
-    const listRes = await api.GET('/api/v1/organizations/{organizationId}/deployments', {
+  const assertContext = setupContext(organizationId);
+  try {
+    assertContext();
+    requireOnline();
+    if (!feedingSiteId) {
+      throw new SetupError('validation', 'Bitte eine vorhandene Futterstelle auswählen.');
+    }
+    const headers = await csrfHeaders();
+    assertContext();
+    const listOnce = async (): Promise<DeploymentView[]> => {
+      const listRes = await api.GET('/api/v1/organizations/{organizationId}/deployments', {
+        signal: AbortSignal.timeout(10_000),
+        params: { path: { organizationId }, query: { nodeId } },
+      });
+      const { data: listData, error: listError, response: listResponse } = listRes;
+      assertContext();
+      if (listError || !listData) {
+        throw toSetupError((listResponse as Response | undefined)?.status,
+          'Zuordnungen konnten nicht geprüft werden. Bitte erneut versuchen.', { nodeId });
+      }
+      return listData ?? [];
+    };
+    // Frontend pre-check (not concurrency-safe alone): avoids the POST when an
+    // open assignment is already visible.
+    const before = await listOnce();
+    const openBefore = before.find(d => !d.validUntil) ?? null;
+    if (openBefore) {
+      return { deployment: openBefore, created: false, alreadyAssigned: true };
+    }
+    if (before.length > 0) throw new SetupError('conflict-existing', 'Dieser Napf hat bereits eine Zuordnungshistorie. Spätere Umzüge erfolgen im Admin-Backend.');
+    assertContext();
+    const validFrom = options.validFrom ?? new Date().toISOString();
+    const createRes = await api.POST('/api/v1/organizations/{organizationId}/deployments', {
       signal: AbortSignal.timeout(10_000),
-      params: { path: { organizationId }, query: { nodeId } },
+      params: { path: { organizationId } },
+      headers,
+      body: { nodeId, feedingSiteId, validFrom },
     });
-    const { data: listData, error: listError, response: listResponse } = listRes;
-    if (listError || !listData) {
-      throw toSetupError((listResponse as Response | undefined)?.status,
-        'Zuordnungen konnten nicht geprüft werden. Bitte erneut versuchen.', { nodeId });
+    const { data: createData, error: createError, response: createResponse } = createRes;
+    assertContext();
+    if (!createError && createData) {
+      return { deployment: createData, created: true, alreadyAssigned: false };
     }
-    return listData ?? [];
-  };
-  // Frontend pre-check (not concurrency-safe alone): avoids the POST when an
-  // open assignment is already visible.
-  const before = await listOnce();
-  const openBefore = before.find(d => !d.validUntil) ?? null;
-  if (openBefore) {
-    return { deployment: openBefore, created: false, alreadyAssigned: true };
-  }
-  const validFrom = options.validFrom ?? new Date().toISOString();
-  const createRes = await api.POST('/api/v1/organizations/{organizationId}/deployments', {
-    signal: AbortSignal.timeout(10_000),
-    params: { path: { organizationId } },
-    headers,
-    body: { nodeId, feedingSiteId, validFrom },
-  });
-  const { data: createData, error: createError, response: createResponse } = createRes;
-  if (!createError && createData) {
-    return { deployment: createData, created: true, alreadyAssigned: false };
-  }
-  const status = (createResponse as Response | undefined)?.status;
-  if (status === 409) {
-    // Lost response (Scenario C) or concurrent ADMIN: the backend invariant
-    // rejected the overlap. Surface the persisted state, never blind-retry.
-    const after = await listOnce();
-    const openAfter = after.find(d => !d.validUntil) ?? null;
-    if (openAfter) {
-      return { deployment: openAfter, created: false, alreadyAssigned: true };
+    const status = (createResponse as Response | undefined)?.status;
+    if (status === 409) {
+      // Lost response (Scenario C) or concurrent ADMIN: the backend invariant
+      // rejected the overlap. Surface the persisted state, never blind-retry.
+      const after = await listOnce();
+      const openAfter = after.find(d => !d.validUntil) ?? null;
+      if (openAfter) {
+        return { deployment: openAfter, created: false, alreadyAssigned: true };
+      }
+      throw new SetupError('conflict-existing',
+        'Zuordnung steht im Konflikt mit der Historie. Aktuellen Stand prüfen und ggf. im Admin-Backend umziehen.');
     }
-    throw new SetupError('conflict-existing',
-      'Zuordnung steht im Konflikt mit der Historie. Aktuellen Stand prüfen und ggf. im Admin-Backend umziehen.');
-  }
-  throw toSetupError(status,
-    'Erstzuordnung konnte nicht gespeichert werden. Name bleibt gespeichert; bitte erneut versuchen.',
-    { nodeId });
+    throw toSetupError(status,
+      'Erstzuordnung konnte nicht gespeichert werden. Name bleibt gespeichert; bitte erneut versuchen.',
+      { nodeId });
+  } finally { assertContext.close(); }
 }
 
 export function isSetupComplete(state: Pick<NodeSetupState, 'displayName' | 'activeDeployment'>): boolean {
-  return Boolean(state.displayName) && state.activeDeployment !== null;
+  return state.activeDeployment !== null;
 }

@@ -30,6 +30,27 @@ const ORG = '22222222-2222-4222-8222-222222222222';
 const NODE = '44444444-4444-4444-8444-444444444444';
 const SITE = '66666666-6666-4666-8666-666666666666';
 
+test('guided setup saves optional name before deployment in one action', async () => {
+  saveMock.mockResolvedValue('Der Grüne');
+  deployMock.mockResolvedValue({ created: true, alreadyAssigned: false, deployment: { id: 'dep', feedingSiteId: SITE } as never });
+  render(<NodeSetupWizard guided organizationId={ORG} nodeId={NODE}/>);
+  await screen.findByLabelText('Futterstelle auswählen');
+  fireEvent.change(screen.getByPlaceholderText('Der Grüne'), { target: { value: 'Der Grüne' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Einrichtung abschließen' }));
+  await vi.waitFor(() => expect(deployMock).toHaveBeenCalledWith(ORG, NODE, SITE));
+  expect(saveMock.mock.invocationCallOrder[0]).toBeLessThan(deployMock.mock.invocationCallOrder[0]);
+  expect(screen.queryByText(NODE)).toBeNull();
+});
+
+test('guided setup accepts an omitted name', async () => {
+  deployMock.mockResolvedValue({ created: true, alreadyAssigned: false, deployment: { id: 'dep', feedingSiteId: SITE } as never });
+  render(<NodeSetupWizard guided organizationId={ORG} nodeId={NODE}/>);
+  await screen.findByLabelText('Futterstelle auswählen');
+  fireEvent.click(screen.getByRole('button', { name: 'Einrichtung abschließen' }));
+  await vi.waitFor(() => expect(deployMock).toHaveBeenCalled());
+  expect(saveMock).not.toHaveBeenCalled();
+});
+
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();

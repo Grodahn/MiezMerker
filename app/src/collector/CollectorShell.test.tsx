@@ -38,9 +38,23 @@ vi.mock('./batch-sync', async importOriginal => ({
 }));
 vi.mock('./batch-context', () => ({ resolveBatchContexts: resolveContexts }));
 import { CollectorShell } from './CollectorShell';
+import { verifyRegistrationCandidate } from './registration-probe';
+import { provisionNode } from './provision-node';
+import { fetchNodeSetupState } from './node-setup';
+vi.mock('./registration-probe', () => ({ verifyRegistrationCandidate: vi.fn() }));
+vi.mock('./provision-node', () => ({ provisionNode: vi.fn() }));
+vi.mock('./node-setup', async original => ({ ...await original<typeof import('./node-setup')>(), fetchNodeSetupState: vi.fn() }));
 
 afterEach(cleanup);
 beforeEach(() => {
+  Object.assign(HTMLDialogElement.prototype, {
+    showModal(this: HTMLDialogElement) { this.open = true; }, close(this: HTMLDialogElement) { this.open = false; },
+  });
+  session.user.memberships = [];
+  localStorage.clear();
+  vi.mocked(verifyRegistrationCandidate).mockReset();
+  vi.mocked(provisionNode).mockReset();
+  vi.mocked(fetchNodeSetupState).mockReset();
   session.activeOrganizationId = 'org'; requestDevice.mockReset(); runBatch.mockReset(); upload.mockReset();
   resolveContexts.mockReset(); resolveContexts.mockResolvedValue(new Map());
   cachedCredential.mockReset(); cachedCredential.mockResolvedValue('credential');
@@ -48,6 +62,99 @@ beforeEach(() => {
   authorized.value = [];
   browser.capability = 'supported'; browser.devices = 'supported'; storageOpen.mockReset(); storageOpen.mockResolvedValue(undefined);
   Object.assign(stats, { pending: 0, uploaded: 1, failed: 0 });
+});
+
+function adminMembership() {
+  session.user.memberships = [{ organizationId: 'org', status: 'ACTIVE', role: 'ADMIN' }] as never;
+}
+
+async function selectUnclaimed() {
+  requestDevice.mockResolvedValue({ id: 'new' });
+  runBatch.mockResolvedValue([{ ...successResult('new', 'node-new'), kind: 'unclaimed', unclaimed: true }]);
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Weiteren Napf hinzufügen' }));
+}
+
+test('verified unclaimed candidate requires Ja, Nein performs no claim or setup', async () => {
+  adminMembership();
+  await selectUnclaimed();
+  await screen.findByText('Neuer Napf gefunden. Registrieren?');
+  expect(verifyRegistrationCandidate).toHaveBeenCalledTimes(1);
+  expect(provisionNode).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button', { name: 'Nein' }));
+  expect(provisionNode).not.toHaveBeenCalled();
+  expect(fetchNodeSetupState).not.toHaveBeenCalled();
+});
+
+test('Ja uses existing provisioning and opens resumable setup only after confirmation', async () => {
+  adminMembership();
+  vi.mocked(provisionNode).mockResolvedValue();
+  vi.mocked(fetchNodeSetupState).mockResolvedValue({ claimed: true, nodeId: 'node-new', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 });
+  await selectUnclaimed();
+  fireEvent.click(await screen.findByRole('button', { name: 'Ja' }));
+  await vi.waitFor(() => expect(provisionNode).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(localStorage.getItem('miezmerker-last-setup-node')).toContain('node-new'));
+  expect(await screen.findByRole('dialog', { name: 'Napf registrieren' })).toBeTruthy();
+});
+
+test.each(['MEMBER', 'SYSADMIN'])('%s has no organization ADMIN claim path', async role => {
+  if (role === 'MEMBER') session.user.memberships = [{ organizationId: 'org', status: 'ACTIVE', role }] as never;
+  else Object.assign(session.user, { systemRole: 'SYSADMIN' });
+  await selectUnclaimed();
+  await screen.findByText('Ein Organisationsadmin muss diesen Napf registrieren.');
+  expect(verifyRegistrationCandidate).not.toHaveBeenCalled();
+  expect(provisionNode).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Ja' })).toBeNull();
+});
+
+test('missing security prerequisites never display registration confirmation', async () => {
+  adminMembership();
+  vi.mocked(verifyRegistrationCandidate).mockRejectedValue(new Error('Vertrauenswürdige UTC fehlt.'));
+  await selectUnclaimed();
+  await screen.findByText('Vertrauenswürdige UTC fehlt.');
+  expect(screen.queryByRole('button', { name: 'Ja' })).toBeNull();
+  expect(provisionNode).not.toHaveBeenCalled();
+});
+
+test('an organization switch discards a late signed preflight response', async () => {
+  adminMembership();
+  let finish!: () => void;
+  vi.mocked(verifyRegistrationCandidate).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await selectUnclaimed();
+  await vi.waitFor(() => expect(verifyRegistrationCandidate).toHaveBeenCalled());
+  act(() => { session.activeOrganizationId = 'org-b'; listeners.forEach(listener => listener()); });
+  await act(async () => finish());
+  expect(screen.queryByRole('button', { name: 'Ja' })).toBeNull();
+  expect(provisionNode).not.toHaveBeenCalled();
+});
+
+test('same organization bowl resumes setup without claiming and remains browser-permitted', async () => {
+  adminMembership();
+  requestDevice.mockResolvedValue({ id: 'new' });
+  runBatch.mockResolvedValue([successResult('new', 'node-new')]);
+  vi.mocked(fetchNodeSetupState).mockResolvedValue({ claimed: true, nodeId: 'node-new', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 });
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Weiteren Napf hinzufügen' }));
+  await screen.findByText('Dieser Napf gehört bereits zu deiner Organisation.');
+  await screen.findByRole('dialog');
+  expect(provisionNode).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Einrichtung schließen' }));
+  authorized.value = [{ id: 'new' }];
+  fireEvent.click(screen.getByRole('button', { name: 'Näpfe auslesen' }));
+  await vi.waitFor(() => expect(runBatch).toHaveBeenCalledTimes(2));
+  expect(requestDevice).toHaveBeenCalledTimes(1);
+});
+
+test('foreign registration selection exposes no organization metadata or claim action', async () => {
+  adminMembership();
+  requestDevice.mockResolvedValue({ id: 'foreign' });
+  runBatch.mockResolvedValue([{ ...successResult('foreign', 'node-foreign'), kind: 'foreign', foreignOrganizationName: 'Private org', message: 'Private org' }]);
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Weiteren Napf hinzufügen' }));
+  await screen.findByText('Dieser Napf ist für deine Organisation nicht verfügbar.');
+  await vi.waitFor(() => expect(runBatch).toHaveBeenCalled());
+  expect(screen.queryByText(/Private org/)).toBeNull();
+  expect(provisionNode).not.toHaveBeenCalled();
 });
 
 function successResult(browserId: string, nodeId: string) {

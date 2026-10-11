@@ -8,3 +8,7 @@
 .sync-technical summary { cursor: pointer; min-block-size: var(--touch-target); color: var(--color-muted); }
 .sync-screen .status-card { padding: var(--space-4); gap: var(--space-3); }
 .sync-screen .status-graphic { inline-size: 2rem; block-size: 2rem; }
+
+.registration-dialog { inline-size: min(38rem, calc(100vw - 2rem)); max-block-size: calc(100dvh - 2rem); overflow-y: auto; border: var(--border); border-radius: var(--radius-card); padding: var(--space-4); }
+.registration-dialog::backdrop { background: #0008; }
+.registration-dialog input, .registration-dialog select { max-inline-size: 100%; }

@@ -13,6 +13,8 @@ import { initialCollectorView } from './collector-sync';
 import type { BackendSyncState } from './backend-upload';
 import { ClaimError } from './claim-node';
 import { provisionNode } from './provision-node';
+import { verifyRegistrationCandidate } from './registration-probe';
+import { fetchNodeSetupState } from './node-setup';
 import { assets } from '../assets';
 import { Graphic } from '../ui/Graphic';
 import { NodeSetupWizard } from './NodeSetupWizard';
@@ -68,6 +70,10 @@ export function CollectorShell(props: {
   const contextGeneration = useRef(0);
   const mounted = useRef(true);
   const credentialCheckGeneration = useRef(0);
+  const [registrationCandidate, setRegistrationCandidate] = useState<BatchNodeResult | null>(null);
+  const registrationDialog = useRef<HTMLDialogElement>(null);
+  const declineButton = useRef<HTMLButtonElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
   const [claimReceipt, setClaimReceipt] = useState('');
@@ -79,7 +85,11 @@ export function CollectorShell(props: {
   const permissionRequest = useRef(false);
 
   const auth = getAuthState();
-  const contextKey = () => `${getAuthState().user?.userId ?? ''}/${getAuthState().activeOrganizationId ?? ''}`;
+  const contextKey = () => {
+    const state = getAuthState();
+    const membership = state.user?.memberships.find(m => m.organizationId === state.activeOrganizationId);
+    return `${state.user?.userId ?? ''}/${state.activeOrganizationId ?? ''}/${membership?.role ?? ''}/${membership?.status ?? ''}`;
+  };
 
   useEffect(() => {
     const database = new CollectorDatabase();
@@ -100,6 +110,7 @@ export function CollectorShell(props: {
         contextGeneration.current++;
         batchController.current?.abort(); batchController.current = null;
         setBatchRunning(false); setBatchProgress(null); setBatchResults([]); setBatchNotice('');
+        setRegistrationCandidate(null); setSetupNodeId(null); setSetupOrgId(null);
         setBatchContexts(new Map()); setClaimBusy(false); setClaimMessage(''); setClaimTarget(null);
         setContextsLoading(false);
         setUploadView({ backendState: 'idle', backendMessage: '', pendingUploads: 0, uploadedCount: 0 });
@@ -107,7 +118,7 @@ export function CollectorShell(props: {
       }
       setAuthVersion(v => v + 1);
     });
-    return () => { mounted.current = false; contextGeneration.current++; unsubscribe(); };
+    return () => { mounted.current = false; contextGeneration.current++; batchController.current?.abort(); unsubscribe(); };
   }, []);
   useEffect(() => {
     setBatchResults([]); setBatchNotice(''); setBatchContexts(new Map()); setClaimMessage(''); setClaimTarget(null);
@@ -259,7 +270,7 @@ export function CollectorShell(props: {
     }
   }, []);
 
-  const startBatch = useCallback(async (explicitInputs?: BatchNodeInput[]) => {
+  const startBatch = useCallback(async (explicitInputs?: BatchNodeInput[], registration = false) => {
     if (batchController.current || batchRunning || claimBusy) return;
     const state = getAuthState();
     if (!state.user || !state.activeOrganizationId) {
@@ -281,6 +292,7 @@ export function CollectorShell(props: {
     const stillActive = () => mounted.current && batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
     const orgStillActive = () => mounted.current && batchController.current === operation && contextKey() === startedContext;
     const organizationId = state.activeOrganizationId;
+    let verifiedCandidate: BatchNodeResult | null = null;
     try {
       // Fresh permission snapshot: getDevices() may include powered-off or
       // removed devices; only actual connection attempts prove reachability.
@@ -304,7 +316,7 @@ export function CollectorShell(props: {
       }
       setBatchProgress({ done: 0, total: inputs.length, current: '', detail: 'Starte Sammel-Sync …' });
       credentialCheckGeneration.current++;
-      const results = await runBatchSync(inputs, {
+      let results = await runBatchSync(inputs, {
         signal: operation.signal,
         trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
         createTransport: device => new WebBluetoothTransport(device as never),
@@ -324,8 +336,34 @@ export function CollectorShell(props: {
       // Cancellation keeps completed nodes valid: show partial results even
       // when the user aborted. Only an organization change discards them.
       if (!orgStillActive()) return;
+      if (registration) results = results.map(result => result.kind === 'foreign'
+        ? { ...result, foreignOrganizationName: null, message: 'Dieser Napf ist für deine Organisation nicht verfügbar.' } : result);
       setBatchResults(results);
       setBatchProgress(null);
+      if (registration && results[0]?.kind === 'foreign') {
+        setFreigebenMessage('Dieser Napf ist für deine Organisation nicht verfügbar.');
+      }
+      const activeAdmin = getAuthState().user?.memberships.some(m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN');
+      const candidate = results.find(result => result.kind === 'unclaimed' && result.nodeId);
+      if (candidate && !operation.signal.aborted) {
+        if (!activeAdmin) setFreigebenMessage('Ein Organisationsadmin muss diesen Napf registrieren.');
+        else {
+          const input = inputs.find(input => input.browserId === candidate.browserId);
+          if (input) {
+            setFreigebenMessage('Napf verbunden. Physischer Claim-Nachweis wird geprüft …');
+            await verifyRegistrationCandidate(new WebBluetoothTransport(input.device as never), candidate.nodeId!, organizationId, operation.signal);
+            if (stillActive()) { setFreigebenMessage(''); verifiedCandidate = candidate; }
+          }
+        }
+      } else if (registration && results[0]?.kind === 'success') {
+        setFreigebenMessage('Dieser Napf gehört bereits zu deiner Organisation.');
+        if (activeAdmin && results[0].nodeId) {
+          const setup = await fetchNodeSetupState(organizationId, results[0].nodeId, { signal: operation.signal });
+          if (stillActive() && !setup.activeDeployment && setup.deploymentCount === 0) {
+            setSetupNodeId(setup.nodeId); setSetupOrgId(organizationId);
+          }
+        }
+      }
       // Feeding-site/cat context only after confirmed local sync, and only
       // when reliably resolvable. Offline or backend failures keep the local
       // success valid with an honest "not available" note.
@@ -364,6 +402,7 @@ export function CollectorShell(props: {
         batchController.current = null;
         setBatchRunning(false);
         setBatchProgress(null);
+        if (verifiedCandidate && !operation.signal.aborted && contextKey() === startedContext) setRegistrationCandidate(verifiedCandidate);
       }
     }
   }, [batchRunning, claimBusy, devicesSupport, refreshDevices, loadContextsFor, props]);
@@ -440,7 +479,7 @@ export function CollectorShell(props: {
   // another chooser (or in the next batch while one is running).
   const releaseAdditionalBowl = useCallback(() => {
     const state = getAuthState();
-    if (permissionRequest.current) return;
+    if (permissionRequest.current || claimBusy || registrationCandidate || setupNodeId) return;
     if (!state.user || !state.activeOrganizationId) {
       setFreigebenMessage('Bitte anmelden und Organisation wählen.');
       return;
@@ -470,11 +509,11 @@ export function CollectorShell(props: {
         return;
       }
       setFreigebenMessage('Napf für diesen Browser freigegeben. Auslesen startet …');
-      void startBatch([{ device, browserId: id, browserLabel: name }]);
+      void startBatch([{ device, browserId: id, browserLabel: name }], true);
     }).catch((e: unknown) => {
       if (stillActive()) setFreigebenMessage(bluetoothErrorMessage(e, 'selection'));
     }).finally(() => { permissionRequest.current = false; if (mounted.current) setFreigebenBusy(false); });
-  }, [freigebenBusy, batchRunning, claimBusy, startBatch]);
+  }, [freigebenBusy, batchRunning, claimBusy, registrationCandidate, setupNodeId, startBatch]);
 
   const claimUnclaimedNode = useCallback((result: BatchNodeResult) => {
     const state = getAuthState();
@@ -482,17 +521,20 @@ export function CollectorShell(props: {
     const nodeId = result.nodeId;
     const entry = devices.find(d => d.id === result.browserId);
     if (!nodeId || !organizationId || !entry || batchController.current || claimBusy || batchRunning) return;
+    setRegistrationCandidate(null);
     const operation = new AbortController();
     batchController.current = operation;
     setClaimBusy(true);
     setClaimMessage('');
     setClaimTarget({ browserId: result.browserId, nodeId });
     const startedContext = contextKey();
-    const stillActive = () => batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
+    const stillActive = () => mounted.current && batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
     const transport = new WebBluetoothTransport(entry.device as never);
     void provisionNode(transport, nodeId, organizationId, operation.signal).then(() => {
       if (!stillActive()) return;
       setClaimMessage('Napf registriert!');
+      setBatchResults(previous => previous.filter(result => result.browserId !== entry.id));
+      setFreigebenMessage('');
       setSetupNodeId(nodeId);
       setSetupOrgId(organizationId);
       try {
@@ -517,6 +559,21 @@ export function CollectorShell(props: {
     return () => { active = false; };
   }, [batchResults, auth.activeOrganizationId]);
 
+  useEffect(() => {
+    const dialog = registrationDialog.current;
+    if (!dialog) return;
+    if (registrationCandidate || setupNodeId || claimBusy) {
+      if (!dialog.open) dialog.showModal();
+      if (registrationCandidate) declineButton.current?.focus();
+    } else if (dialog.open) { dialog.close(); addButton.current?.focus(); }
+  }, [registrationCandidate, setupNodeId, claimBusy]);
+
+  const closeRegistration = () => {
+    batchController.current?.abort();
+    setRegistrationCandidate(null); setSetupNodeId(null); setSetupOrgId(null);
+    setClaimMessage('');
+  };
+
   const capability = bluetoothCapability();
   const memberships = auth.user?.memberships.filter(m => m.status === 'ACTIVE') ?? [];
   const activeMembership = memberships.find(m => m.organizationId === auth.activeOrganizationId);
@@ -534,7 +591,7 @@ export function CollectorShell(props: {
   ).length;
   const storageBlocked = storage === 'Lokaler Speicher nicht verfügbar';
   const authorizationBlocked = !navigator.onLine && credential.startsWith('Kein gültiges Offline-Credential');
-  const canStart = !batchRunning && !claimBusy && !freigebenBusy && !storageBlocked && !authorizationBlocked && capability === 'supported' && Boolean(auth.user && auth.activeOrganizationId);
+  const canStart = !batchRunning && !claimBusy && !freigebenBusy && !registrationCandidate && !setupNodeId && !storageBlocked && !authorizationBlocked && capability === 'supported' && Boolean(auth.user && auth.activeOrganizationId);
 
   return <section className="sync-screen" aria-label="Vor-Ort-Sync"><h1>Vor-Ort-Sync</h1>
     {storageBlocked && <Status kind="error" title="Auslesen nicht möglich" message="Der lokale Speicher ist nicht verfügbar. Bitte die App neu öffnen und den Browserspeicher prüfen."/>}
@@ -549,7 +606,7 @@ export function CollectorShell(props: {
         <span>{batchRunning ? 'Näpfe werden ausgelesen …' : 'Näpfe auslesen'}</span>
       </button>
       <p id="sync-help">Bereits freigegebene Näpfe auslesen</p>
-      <button className="sync-secondary" type="button" disabled={freigebenBusy || claimBusy || storageBlocked || authorizationBlocked || capability !== 'supported' || !auth.user || !auth.activeOrganizationId} onClick={releaseAdditionalBowl}>
+      <button ref={addButton} className="sync-secondary" type="button" disabled={freigebenBusy || claimBusy || Boolean(registrationCandidate || setupNodeId) || storageBlocked || authorizationBlocked || capability !== 'supported' || !auth.user || !auth.activeOrganizationId} onClick={releaseAdditionalBowl}>
         {freigebenBusy ? 'Freigabe läuft …' : 'Weiteren Napf hinzufügen'}
       </button>
     </div>
@@ -577,16 +634,25 @@ export function CollectorShell(props: {
     {claimTarget && claimMessage && <Status kind={claimMessage === 'Napf registriert!' ? 'success' : 'error'} title="Napf registrieren" message={claimMessage}/>}
     {!claimTarget && claimMessage && <Status kind="info" title="Napf registrieren" message={claimMessage}/>}
 
-    {isAdmin && auth.activeOrganizationId && setupNodeId && setupOrgId === auth.activeOrganizationId && <div>
-      <NodeSetupWizard organizationId={auth.activeOrganizationId} nodeId={setupNodeId} onComplete={() => {
-        try { localStorage.removeItem('miezmerker-last-setup-node'); } catch { /* best-effort */ }
-        setResumeCandidate(null);
-      }} />
-      <button type="button" onClick={() => { setSetupNodeId(null); setSetupOrgId(null); }}>Einrichtung schließen</button>
-    </div>}
+    <dialog ref={registrationDialog} className="registration-dialog" aria-label="Napf registrieren"
+      onCancel={event => { event.preventDefault(); closeRegistration(); }}>
+      {registrationCandidate && <>
+        <h2>Neuer Napf gefunden. Registrieren?</h2>
+        <p>Bitte den physischen Claim-Modus am Napf aktiv lassen. Die Registrierung benötigt Internet.</p>
+        <button type="button" onClick={() => claimUnclaimedNode(registrationCandidate)}>Ja</button>
+        <button ref={declineButton} type="button" onClick={closeRegistration}>Nein</button>
+      </>}
+      {claimBusy && <Status kind="loading" title="Napf wird sicher registriert …"/>}
+      {isAdmin && auth.activeOrganizationId && setupNodeId && setupOrgId === auth.activeOrganizationId &&
+        <NodeSetupWizard key={`${setupOrgId}/${setupNodeId}`} guided organizationId={auth.activeOrganizationId} nodeId={setupNodeId} onComplete={() => {
+          try { localStorage.removeItem('miezmerker-last-setup-node'); } catch { /* best-effort */ }
+          setResumeCandidate(null);
+        }}/> }
+      {!registrationCandidate && <button type="button" onClick={closeRegistration}>Einrichtung schließen</button>}
+    </dialog>
 
     {isAdmin && auth.activeOrganizationId && !setupNodeId && resumeCandidate && <div>
-      <Status kind="info" title="Einrichtung noch offen" message={`Unvollständige Napf-Einrichtung gefunden (${resumeCandidate.nodeId}). Der Claim bleibt gültig und kann ohne erneutes kryptografisches Claiming fortgesetzt werden.`}/>
+      <Status kind="info" title="Einrichtung noch offen" message={`Unvollständige Napf-Einrichtung gefunden. Der Claim bleibt gültig und kann ohne erneutes kryptografisches Claiming fortgesetzt werden.`}/>
       <button type="button" onClick={() => { setSetupNodeId(resumeCandidate.nodeId); setSetupOrgId(resumeCandidate.organizationId); }}>
         Einrichtung fortsetzen
       </button>
@@ -607,7 +673,7 @@ export function CollectorShell(props: {
       {batchProgress && <p>Bluetooth: {batchProgress.current ? `„${batchProgress.current}“ (unverifizierter Browser-Hinweis) — ` : ''}{batchProgress.detail}</p>}
       {claimReceipt && <p>Gespeichertes Receipt vorhanden; ein abgebrochener Claim wird sicher erneut zugestellt.</p>}
       <BatchNodeList results={batchResults} contexts={batchContexts} contextsLoading={contextsLoading}
-        isAdmin={isAdmin} claimBusy={claimBusy} onClaim={claimUnclaimedNode}/>
+        isAdmin={isAdmin} claimBusy={claimBusy}/>
       <UploadStatus view={uploadViewState} retry={retryUpload} disabled={batchRunning}/>
       <h2>Hinweise zu Fehlerfällen</h2><ul>{syncHelp.map(message => <li key={message}>{message}</li>)}</ul>
     </details>

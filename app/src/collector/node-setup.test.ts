@@ -5,11 +5,13 @@ const get = vi.hoisted(() => vi.fn());
 const post = vi.hoisted(() => vi.fn());
 const patch = vi.hoisted(() => vi.fn());
 const authState = vi.hoisted(() => vi.fn());
+const authListeners = vi.hoisted(() => new Set<() => void>());
 vi.mock('../api/client', () => ({ api: { GET: get, POST: post, PATCH: patch } }));
 vi.mock('../platform/auth', () => ({
   getAuthState: authState,
   fetchCsrfToken: async () => 'csrf',
   markSessionExpired: vi.fn(),
+  subscribeAuth: (listener: () => void) => { authListeners.add(listener); return () => authListeners.delete(listener); },
 }));
 
 import {
@@ -23,10 +25,53 @@ import {
   SetupError,
   validateBowlName,
 } from './node-setup';
+import { markSessionExpired } from '../platform/auth';
 
 const ORG = '22222222-2222-4222-8222-222222222222';
 const NODE = '44444444-4444-4444-8444-444444444444';
 const SITE = '66666666-6666-4666-8666-666666666666';
+
+test('optional name is not required for deployment completion', () => {
+  expect(isSetupComplete({ displayName: null, activeDeployment: { id: 'dep' } as never })).toBe(true);
+});
+
+test('initial setup never reopens a closed deployment history', async () => {
+  adminAuth();
+  get.mockResolvedValue({ data: [{ id: 'past', validUntil: '2026-01-01' }], response: { ok: true } });
+  await expect(ensureInitialDeployment(ORG, NODE, SITE)).rejects.toThrow('Zuordnungshistorie');
+  expect(post).not.toHaveBeenCalled();
+});
+
+test('organization switch during deployment precheck cannot POST', async () => {
+  adminAuth();
+  get.mockImplementation(async () => {
+    authState.mockReturnValue({ user: { userId: 'admin', memberships: [{ organizationId: ORG, status: 'ACTIVE', role: 'ADMIN' }] }, activeOrganizationId: 'other' });
+    return { data: [], response: { ok: true } };
+  });
+  await expect(ensureInitialDeployment(ORG, NODE, SITE)).rejects.toThrow('Organisation geändert');
+  expect(post).not.toHaveBeenCalled();
+});
+
+test('site options exclude a foreign organization response', async () => {
+  adminAuth();
+  get.mockResolvedValue({ data: [{ id: SITE, organizationId: ORG }, { id: 'foreign', organizationId: 'other' }], response: { ok: true } });
+  expect(await listFeedingSiteOptions(ORG)).toEqual([{ id: SITE, organizationId: ORG }]);
+});
+
+test('organization switch away and back permanently cancels pending initial assignment', async () => {
+  adminAuth();
+  get.mockImplementation(async () => {
+    const original = authState();
+    authState.mockReturnValue({ ...original, activeOrganizationId: 'other' });
+    authListeners.forEach(listener => listener());
+    authState.mockReturnValue(original);
+    authListeners.forEach(listener => listener());
+    return { data: [], response: { ok: true } };
+  });
+  await expect(ensureInitialDeployment(ORG, NODE, SITE)).rejects.toThrow('Organisation geändert');
+  expect(post).not.toHaveBeenCalled();
+  expect(authListeners.size).toBe(0);
+});
 
 function adminAuth() {
   authState.mockReturnValue({
@@ -49,12 +94,46 @@ function memberAuth() {
 }
 
 beforeEach(() => {
+  vi.mocked(markSessionExpired).mockClear();
   get.mockReset();
   post.mockReset();
   patch.mockReset();
   authState.mockReset();
   adminAuth();
   Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+});
+
+test.each(['node', 'setup deployments', 'sites', 'name', 'initial deployment'])('stale 401 from %s cannot expire a newer login', async stage => {
+  const staleResponse = async () => {
+    const original = authState();
+    authState.mockReturnValue({ ...original, user: null });
+    authListeners.forEach(listener => listener());
+    authState.mockReturnValue(original);
+    authListeners.forEach(listener => listener());
+    return { error: {}, response: { status: 401 } };
+  };
+  get.mockImplementation(async (path: string) => {
+    if (stage === 'setup deployments' && path === '/api/v1/nodes/{nodeId}') {
+      return { data: { nodeId: NODE, organizationId: ORG, state: 'CLAIMED' } };
+    }
+    return staleResponse();
+  });
+  patch.mockImplementation(staleResponse);
+  const request = stage === 'sites' ? listFeedingSiteOptions(ORG)
+    : stage === 'name' ? saveBowlName(ORG, NODE, 'Der Grüne')
+    : stage === 'initial deployment' ? ensureInitialDeployment(ORG, NODE, SITE)
+    : fetchNodeSetupState(ORG, NODE);
+  await expect(request).rejects.toThrow('Benutzer oder Organisation geändert');
+  expect(markSessionExpired).not.toHaveBeenCalled();
+  expect(post).not.toHaveBeenCalled();
+  expect(authListeners.size).toBe(0);
+});
+
+test('a current-context 401 still expires the session', async () => {
+  get.mockResolvedValue({ error: {}, response: { status: 401 } });
+  await expect(fetchNodeSetupState(ORG, NODE)).rejects.toThrow('Sitzung abgelaufen');
+  expect(markSessionExpired).toHaveBeenCalledTimes(1);
+  expect(authListeners.size).toBe(0);
 });
 
 describe('bowl name normalization (#50 rules reused)', () => {

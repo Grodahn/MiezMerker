@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Status } from '../ui/Status';
 import { errorStatus, statusMessages } from '../ui/status-messages';
 import {
@@ -9,7 +9,7 @@ import {
 // Simple functional setup UI for #53 (visual refinement belongs to #67).
 // Claim success and business setup stay visibly separate; no generic success
 // is shown before the relevant backend confirmation arrives.
-export function NodeSetupWizard(props: { organizationId: string; nodeId: string; onComplete?: () => void }) {
+export function NodeSetupWizard(props: { organizationId: string; nodeId: string; onComplete?: () => void; guided?: boolean }) {
   const { organizationId, nodeId } = props;
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -28,7 +28,9 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
   const [deployError, setDeployError] = useState('');
   const [complete, setComplete] = useState(false);
 
+  const revision = useRef(0);
   const reload = async () => {
+    const current = ++revision.current;
     setLoading(true);
     setLoadError('');
     setNameMessage('');
@@ -40,9 +42,11 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     // only for selection. A site-list failure must not hide an otherwise
     // resumable name/deployment state (offline name saving stays possible).
     const state = await fetchNodeSetupState(organizationId, nodeId).catch((e: unknown) => {
+      if (current !== revision.current) return null;
       setLoadError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Laden fehlgeschlagen.');
       return null;
     });
+    if (current !== revision.current) return;
     if (!state) {
       setLoading(false);
       return;
@@ -53,19 +57,22 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     // prefill it so a retry never discards it.
     setNameInput(state.displayName ?? '');
     setDeployment(state.activeDeployment);
-    if (isSetupComplete(state)) setComplete(true);
+    setComplete(isSetupComplete(state));
+    if (isSetupComplete(state)) props.onComplete?.();
     try {
       const options = await listFeedingSiteOptions(organizationId);
+      if (current !== revision.current) return;
       setSites(options);
       setSitesError('');
       if (!state.activeDeployment && !selectedSite && options.length > 0) {
         setSelectedSite(options[0]?.id ?? '');
       }
     } catch (e) {
+      if (current !== revision.current) return;
       setSites([]);
       setSitesError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Futterstellen konnten nicht geladen werden.');
     } finally {
-      setLoading(false);
+      if (current === revision.current) setLoading(false);
     }
   };
 
@@ -84,16 +91,19 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     setSites([]);
     setSelectedSite('');
     void reload();
+    return () => { revision.current++; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId, nodeId]);
 
   const submitName = async () => {
     if (nameBusy || deployBusy) return;
+    const current = revision.current;
     setNameBusy(true);
     setNameError('');
     setNameMessage('');
     try {
       const saved = await saveBowlName(organizationId, nodeId, nameInput);
+      if (current !== revision.current) return;
       setSavedName(saved);
       setNameInput(saved);
       setNameMessage(`Napf-Name gespeichert: ${saved}`);
@@ -101,6 +111,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       // refresh failure must not mask it as an error.
       try {
         const state = await fetchNodeSetupState(organizationId, nodeId);
+        if (current !== revision.current) return;
         setDeployment(state.activeDeployment);
         if (isSetupComplete({ displayName: saved, activeDeployment: state.activeDeployment })) {
           setComplete(true);
@@ -118,11 +129,18 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
 
   const submitDeployment = async () => {
     if (nameBusy || deployBusy) return;
+    const current = revision.current;
     setDeployBusy(true);
     setDeployError('');
     setDeployMessage('');
     try {
+      if (props.guided && nameInput.trim() && nameInput.trim() !== savedName) {
+        const saved = await saveBowlName(organizationId, nodeId, nameInput);
+        if (current !== revision.current) return;
+        setSavedName(saved); setNameInput(saved);
+      }
       const outcome = await ensureInitialDeployment(organizationId, nodeId, selectedSite);
+      if (current !== revision.current) return;
       setDeployment(outcome.deployment);
       if (outcome.alreadyAssigned && !outcome.created) {
         setDeployMessage('Napf ist bereits einer Futterstelle zugeordnet. Bestehende Zuordnung wird angezeigt und nicht überschrieben.');
@@ -133,6 +151,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       // (created or deduplicated to the persisted state).
       try {
         const state = await fetchNodeSetupState(organizationId, nodeId);
+        if (current !== revision.current) return;
         setSavedName(state.displayName);
         if (state.displayName) setNameInput(state.displayName);
         setDeployment(state.activeDeployment);
@@ -158,27 +177,31 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
   if (loadError) return <div aria-label="Napf-Einrichtung">
     <Status {...loadFailure} action={loadFailure.retry ? { label: 'Erneut versuchen', onClick: () => void reload() } : undefined}/>
   </div>;
+  if (props.guided && complete) return <div aria-label="Napf-Einrichtung">
+    <Status kind="success" title="Einrichtung abgeschlossen!"
+      message={`${savedName ? `Napf „${savedName}“` : 'Der Napf'} ist einer Futterstelle zugeordnet und kann beim nächsten Auslesen mitmachen.`}/>
+  </div>;
 
   return <div aria-label="Napf-Einrichtung">
     <h2>Napf-Einrichtung</h2>
-    <p>Node <code>{nodeId}</code></p>
+    {!props.guided && <p>Node <code>{nodeId}</code></p>}
     {claimed
-      ? <Status kind="success" title="Napf registriert!" message="Kryptografisches Claiming ist bestätigt."/>
+      ? <Status kind="success" title="Napf registriert!" message="Der Napf wurde sicher registriert."/>
       : <Status kind="error" title="Napf noch nicht registriert" message="Node ist noch nicht als CLAIMED bestätigt. Bitte zuerst claimen; diese Einrichtung wiederholt kein Claiming."/>}
     {!complete && claimed && <Status kind="info" title="Einrichtung noch offen" message="Dieser Napf wurde registriert, aber noch nicht vollständig eingerichtet."/>}
     {complete
       ? <Status kind="success" title="Einrichtung abgeschlossen!" message={`${savedName ? `Napf „${savedName}“` : 'Napf'}${deployment ? ' ist einer Futterstelle zugeordnet.' : '.'}`}/>
-      : <p>Schritte: Name eingeben → Futterstelle wählen → Einrichtung abschließen.</p>}
+      : <p>Optional einen Namen eingeben, Futterstelle wählen und Einrichtung abschließen.</p>}
 
     <div>
       <h3>1. Napf-Name</h3>
-      {savedName && <p>Gespeicherter Name: <strong>{savedName}</strong> (UUID bleibt technische Identität)</p>}
+      {savedName && <p>Gespeicherter Name: <strong>{savedName}</strong></p>}
       <label>Napf-Bezeichnung (z. B. „Der Grüne“)
-        <input maxLength={100} value={nameInput} onChange={e => setNameInput(e.target.value)} placeholder="Der Grüne" />
+        <input autoFocus={props.guided} disabled={nameBusy || deployBusy} maxLength={100} value={nameInput} onChange={e => setNameInput(e.target.value)} placeholder="Der Grüne" />
       </label>
-      <button type="button" disabled={nameBusy || deployBusy} onClick={() => void submitName()}>
+      {!props.guided && <button type="button" disabled={nameBusy || deployBusy} onClick={() => void submitName()}>
         {nameBusy ? 'Speichere …' : 'Name speichern'}
-      </button>
+      </button>}
       {nameBusy && <Status kind="loading" title="Name wird gespeichert …"/>}
       {nameMessage && <Status kind="success" title="Name gespeichert" message={nameMessage}/>}
       {nameError && <Status {...errorStatus(nameError)}/>}
@@ -192,8 +215,8 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
           ? <Status {...sitesFailure} action={sitesFailure.retry ? { label: 'Erneut versuchen', onClick: () => void reload(), disabled: deployBusy || nameBusy } : undefined}/>
           : sites.length === 0
             ? <Status {...statusMessages.emptySites}/>
-            : <><label>Bestehende Futterstelle wählen
-              <select value={selectedSite} onChange={e => setSelectedSite(e.target.value)}>
+            : <><label>Futterstelle auswählen
+              <select disabled={deployBusy || nameBusy} value={selectedSite} onChange={e => setSelectedSite(e.target.value)}>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </label>
@@ -208,6 +231,6 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
       } : undefined}/>}
     </div>
 
-    <button type="button" onClick={() => void reload()}>Status neu laden</button>
+    <button type="button" disabled={deployBusy || nameBusy} onClick={() => void reload()}>Status neu laden</button>
   </div>;
 }
