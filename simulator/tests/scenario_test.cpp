@@ -118,6 +118,7 @@ name: simple
 version: 1
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 assert observations 1
@@ -142,6 +143,7 @@ name: reboot-test
 version: 1
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 reboot
@@ -169,10 +171,12 @@ name: factory-reset-test
 version: 1
 
 boot
+capture_claim_fixture
 read CHIP-001
 read CHIP-002
 assert observations 2
 factory_reset
+capture_claim_fixture
 assert observations 0
 assert next_sequence 1
 assert node_id changed
@@ -198,6 +202,7 @@ version: 1
 debounce_ms: 2000
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 assert last_result RECORDED
@@ -227,6 +232,7 @@ name: invalid-rtc
 version: 1
 
 boot
+capture_claim_fixture
 rtc UNKNOWN
 read CHIP-001
 assert last_result RECORDED
@@ -255,6 +261,7 @@ name: rtc-correction
 version: 1
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 assert observation 0 epoch_ms 1700000000000
@@ -281,6 +288,7 @@ name: power-loss-obs
 version: 1
 
 boot
+capture_claim_fixture
 read CHIP-001
 crash_append 1
 read CHIP-002
@@ -309,6 +317,7 @@ name: power-loss-seq
 version: 1
 
 boot
+capture_claim_fixture
 read CHIP-001
 crash_identity_store 1
 read CHIP-002
@@ -339,6 +348,7 @@ version: 1
 capacity: 4
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read C1
 read C2
@@ -374,6 +384,7 @@ version: 1
 capacity: 10
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 repeat 9
   read CHIP
@@ -402,6 +413,7 @@ version: 1
 capacity: 10
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 repeat 5
   read CHIP
@@ -441,6 +453,7 @@ version: 1
 capacity: 10000
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 repeat 5000
   advance_ms 3000
@@ -469,6 +482,7 @@ name: multiple-chips
 version: 1
 
 boot
+capture_claim_fixture
 read CHIP-A
 read CHIP-B
 read CHIP-C
@@ -494,6 +508,7 @@ name: fail-load
 version: 1
 
 boot
+capture_claim_fixture
 read CHIP-001
 reboot
 fail_load_next
@@ -516,6 +531,7 @@ name: fail-identity-store
 version: 1
 
 boot
+capture_claim_fixture
 read CHIP-001
 fail_identity_store 1
 read CHIP-002
@@ -540,6 +556,7 @@ name: fail-append
 version: 1
 
 boot
+capture_claim_fixture
 read CHIP-001
 fail_append 1
 read CHIP-002
@@ -564,6 +581,7 @@ name: invalid-chip
 version: 1
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read ""
 assert last_result REJECTED_INVALID
@@ -587,6 +605,7 @@ name: fault-never-triggered
 version: 1
 
 boot
+capture_claim_fixture
 crash_identity_store 1
 # no read/factory_reset to consume it
 )";
@@ -608,6 +627,7 @@ seed: 0x2A
 capacity: 0x64
 
 boot
+capture_claim_fixture
 )";
     miezmerker::sim::Scenario sc;
     auto err = miezmerker::sim::parse_scenario(text, sc);
@@ -636,6 +656,7 @@ name: rtc-invalid-event
 version: 1
 
 boot
+capture_claim_fixture
 rtc_invalid
 read CHIP-001
 assert observation 0 clock_status UNKNOWN
@@ -707,6 +728,7 @@ name: ack-watermark-unit
 version: 1
 
 boot
+capture_claim_fixture
 read A
 read B
 read C
@@ -736,6 +758,7 @@ name: fail-never-triggered
 version: 1
 
 boot
+capture_claim_fixture
 fail_append 1
 # no read to consume it
 )";
@@ -752,6 +775,7 @@ name: clear-faults-unit
 version: 1
 
 boot
+capture_claim_fixture
 read A
 read B
 fail_clear_next
@@ -759,6 +783,7 @@ factory_reset
 assert not_ready
 assert observations 2
 factory_reset
+capture_claim_fixture
 assert ready
 assert observations 0
 read C
@@ -781,6 +806,7 @@ name: misc-events-unit
 version: 1
 
 boot
+capture_claim_fixture
 rtc_invalid
 set_ms 5000
 read A

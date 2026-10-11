@@ -4,6 +4,7 @@ version: 1
 description: Power loss during factory reset; reboot resumes and completes reset.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 crash_identity_store 1
@@ -13,6 +14,7 @@ assert node_id changed
 assert incarnation changed
 assert observations 0
 assert next_sequence 1
+capture_claim_fixture
 read CHIP-002
 assert observations 1
 assert next_sequence 2

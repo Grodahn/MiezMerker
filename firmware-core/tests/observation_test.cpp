@@ -1,3 +1,4 @@
+#include "claim_fixture.hpp"
 // Deterministic firmware-core tests for issue #5.
 //
 // No hardware, no randomness, no wall-clock dependency: ManualClock,
@@ -70,6 +71,7 @@ void test_first_read() {
     sync_clock(f.clock, 1000, miezmerker::ClockStatus::SYNCED, 1700000000000ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->ready());
     CHECK(core->next_sequence() == miezmerker::kFirstSequence);
     const auto r = core->record_chip_read("chip-A");
@@ -96,6 +98,7 @@ void test_many_reads_same_chip_debounced() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 1000ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     int recorded = 0;
     int debounced = 0;
     for (int i = 0; i < 10; ++i) {
@@ -121,6 +124,7 @@ void test_dedup_semantics() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 5000ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-X") == miezmerker::RecordResult::RECORDED);
     // Same chip inside window: suppressed, store untouched, sequence untouched.
     f.clock.advance_monotonic_ms(500);
@@ -151,6 +155,7 @@ void test_dedup_disabled_with_zero_interval() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 7ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     for (int i = 0; i < 3; ++i) {
         CHECK(core->record_chip_read("chip-Z") == miezmerker::RecordResult::RECORDED);
     }
@@ -164,6 +169,7 @@ void test_different_chips() {
     sync_clock(f.clock, 10, miezmerker::ClockStatus::SYNCED, 9000ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-1") == miezmerker::RecordResult::RECORDED);
     CHECK(core->record_chip_read("chip-2") == miezmerker::RecordResult::RECORDED);
     CHECK(core->record_chip_read("chip-3") == miezmerker::RecordResult::RECORDED);
@@ -179,6 +185,7 @@ void test_invalid_chip_rejected() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 1ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("") == miezmerker::RecordResult::REJECTED_INVALID);
     CHECK(core->record_chip_read(std::string(65, 'a')) == miezmerker::RecordResult::REJECTED_INVALID);
     CHECK(core->observation_count() == 0u);
@@ -192,6 +199,7 @@ void test_reboot_between_reads() {
     sync_clock(f.clock, 100, miezmerker::ClockStatus::SYNCED, 100000ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     const auto node_before = core->node_id();
     const auto incarn_before = core->incarnation();
     const auto boot_before = core->boot_counter();
@@ -220,6 +228,7 @@ void test_sequence_persistence_across_reboot() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 42ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     for (int i = 0; i < 5; ++i) {
         f.clock.advance_monotonic_ms(10);
         CHECK(core->record_chip_read("chip-" + std::to_string(i)) ==
@@ -245,6 +254,7 @@ void test_unknown_rtc() {
     sync_clock(f.clock, 50, miezmerker::ClockStatus::UNKNOWN, std::nullopt);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-t") == miezmerker::RecordResult::RECORDED);
     const auto all = core->load_observations();
     CHECK(all.size() == 1u);
@@ -268,6 +278,7 @@ void test_rtc_correction_future_only() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::RTC_ONLY, 1000ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-1") == miezmerker::RecordResult::RECORDED);
     // App-Sync corrects the RTC for future reads.
     f.clock.set_wall_clock(miezmerker::ClockStatus::SYNCED, 1700000000000ULL);
@@ -299,6 +310,7 @@ void test_power_loss_during_append_keeps_store_intact() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 11ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-1") == miezmerker::RecordResult::RECORDED);
     CHECK(core->observation_count() == 1u);
     // Next append dies mid-write: nothing committed, earlier records intact.
@@ -335,6 +347,7 @@ void test_power_loss_around_sequence_allocation() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 22ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-1") == miezmerker::RecordResult::RECORDED);
     // Identity write dies before the observation exists: no record, no gap.
     f.identity.set_fail_next_store(true);
@@ -342,7 +355,9 @@ void test_power_loss_around_sequence_allocation() {
     CHECK(core->record_chip_read("chip-2") == miezmerker::RecordResult::IO_ERROR);
     CHECK(core->observation_count() == 1u);
     CHECK(core->next_sequence() == 2ULL);
-    // Retry reuses the same sequence safely (nothing was persisted for it).
+    // Ambiguous reservation failure latches capture until a durable reload.
+    CHECK(core->record_chip_read("chip-2") == miezmerker::RecordResult::NOT_READY);
+    CHECK(core->initialize());
     f.clock.advance_monotonic_ms(10);
     CHECK(core->record_chip_read("chip-2") == miezmerker::RecordResult::RECORDED);
     const auto all = core->load_observations();
@@ -358,6 +373,7 @@ void test_pending_observations_survive_reboot() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 33ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-1") == miezmerker::RecordResult::RECORDED);
     CHECK(core->record_chip_read("chip-2") == miezmerker::RecordResult::RECORDED);
     CHECK(core->set_ack_watermark(1));  // first synced, second still pending
@@ -383,6 +399,7 @@ void test_store_nearly_full_and_full() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 44ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->store_status() == miezmerker::StoreStatus::OK);
     for (int i = 0; i < 8; ++i) {
         f.clock.advance_monotonic_ms(1);
@@ -421,6 +438,7 @@ void test_no_silent_deletion() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::RTC_ONLY, 55ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-a") == miezmerker::RecordResult::RECORDED);
     CHECK(core->record_chip_read("chip-b") == miezmerker::RecordResult::RECORDED);
     const auto before = core->load_observations();
@@ -444,6 +462,7 @@ void test_factory_reset_new_identity() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 66ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-1") == miezmerker::RecordResult::RECORDED);
     CHECK(core->record_chip_read("chip-2") == miezmerker::RecordResult::RECORDED);
     const auto old_node = core->node_id();
@@ -455,6 +474,7 @@ void test_factory_reset_new_identity() {
     CHECK(core->observation_count() == 0u);  // old lifetime does not leak into the new one
     CHECK(core->ack_watermark() == 0ULL);
     f.clock.advance_monotonic_ms(10);
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("chip-new") == miezmerker::RecordResult::RECORDED);
     const auto all = core->load_observations();
     CHECK(all.size() == 1u);
@@ -469,6 +489,7 @@ void test_normal_reboot_keeps_identity() {
     sync_clock(f.clock, 5, miezmerker::ClockStatus::SYNCED, 77ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     const auto node = core->node_id();
     const auto incarnation = core->incarnation();
     for (int i = 0; i < 3; ++i) {
@@ -497,6 +518,7 @@ void test_poll_reader() {
     sync_clock(f.clock, 0, miezmerker::ClockStatus::SYNCED, 88ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     QueueReader reader;
     CHECK(!core->poll_reader(reader).has_value());  // no tag present
     reader.queue.push_back("chip-poll");
@@ -513,6 +535,7 @@ void test_protocol_view_mapping() {
     sync_clock(f.clock, 12, miezmerker::ClockStatus::SYNCED, 123456789ULL);
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("276098106000001") == miezmerker::RecordResult::RECORDED);
     f.clock.set_wall_clock(miezmerker::ClockStatus::RTC_ONLY, 999ULL);
     f.clock.advance_monotonic_ms(5);

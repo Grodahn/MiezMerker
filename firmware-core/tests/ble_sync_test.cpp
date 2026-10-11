@@ -1,3 +1,4 @@
+#include "claim_fixture.hpp"
 // BLE sync v1 codec + domain tests (issue #6).
 //
 // Host verification of transport-independent encoding and the portable sync
@@ -213,6 +214,7 @@ void sync_gating_and_transfers() {
     auto core = f.make_core();
     f.clock.set_wall_clock(miezmerker::ClockStatus::SYNCED, 1790899200000ULL);
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     // Claim the node for sync tests (core placeholder; GATT overlays org strings).
     CHECK(core->record_chip_read("276098106000001") == miezmerker::RecordResult::RECORDED);
     CHECK(core->record_chip_read("276098106000002") == miezmerker::RecordResult::RECORDED);
@@ -335,6 +337,7 @@ void zero_rtc_is_unknown() {
     Fixture f;
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     for (const auto status : {miezmerker::ClockStatus::RTC_ONLY, miezmerker::ClockStatus::SYNCED}) {
         f.clock.set_wall_clock(status, 0);
         CHECK(core->wall_clock().status == miezmerker::ClockStatus::UNKNOWN);

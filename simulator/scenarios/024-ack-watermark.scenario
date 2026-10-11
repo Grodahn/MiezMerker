@@ -4,6 +4,7 @@ version: 1
 description: Ack watermark set persists across reboot; injected and out-of-range acks fail without moving the cursor.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 read CHIP-002

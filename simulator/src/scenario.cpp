@@ -71,7 +71,7 @@ static bool is_known_header_key(std::string_view key) {
 
 static bool is_known_event_type(std::string_view type) {
     static const std::string_view known[] = {
-        "boot", "reboot", "factory_reset",
+        "boot", "reboot", "factory_reset", "capture_claim_fixture",
         "advance_ms", "set_ms",
         "rtc", "rtc_invalid", "rtc_correct_ms",
         "read", "read_absent", "expect_read",
@@ -115,7 +115,7 @@ static bool is_known_event_type(std::string_view type) {
 }
 
 static bool validate_event_arity(std::string_view type, std::size_t argc, std::string& err) {
-    if (type == "boot" || type == "reboot" || type == "factory_reset" ||
+    if (type == "capture_claim_fixture" || type == "boot" || type == "reboot" || type == "factory_reset" ||
         type == "read_absent" || type == "fail_load_next" ||
         type == "fail_clear_next" || type == "crash_clear_next" ||
         type == "fail_watermark_next" || type == "fail_prune_next" ||

@@ -2,6 +2,7 @@ name: sync-prune-faults
 version: 1
 description: Failed compaction and power loss retain all unacknowledged data.
 boot
+capture_claim_fixture
 sync_claim
 rtc SYNCED 1700000000000
 read CHIP-001

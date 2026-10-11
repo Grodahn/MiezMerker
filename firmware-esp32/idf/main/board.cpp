@@ -2,6 +2,7 @@
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "esp_random.h"
 #include "nvs_flash.h"
 #include "psa/crypto.h"
@@ -19,15 +20,15 @@ bool NvsBlob::open() {
 BlobResult NvsBlob::read(Bytes& out) {
     if (!ready_) return BlobResult::error;
     std::size_t length = 0;
-    auto err = nvs_get_blob(handle_, "state_v1", nullptr, &length);
+    auto err = nvs_get_blob(handle_, key_, nullptr, &length);
     if (err == ESP_ERR_NVS_NOT_FOUND) return BlobResult::missing;
     if (err != ESP_OK || length < 8 || length > 20000) return BlobResult::error;
     out.resize(length);
-    return nvs_get_blob(handle_, "state_v1", out.data(), &length) == ESP_OK ? BlobResult::loaded : BlobResult::error;
+    return nvs_get_blob(handle_, key_, out.data(), &length) == ESP_OK ? BlobResult::loaded : BlobResult::error;
 }
 bool NvsBlob::replace(const Bytes& bytes) {
     if (!ready_ || bytes.size() > 20000) return false;
-    auto err = nvs_set_blob(handle_, "state_v1", bytes.data(), bytes.size());
+    auto err = nvs_set_blob(handle_, key_, bytes.data(), bytes.size());
     if (err == ESP_OK) err = nvs_commit(handle_);
     if (err != ESP_OK) {
         ready_ = false; // Ambiguous commit must not be followed by a stale mutation.
@@ -35,7 +36,13 @@ bool NvsBlob::replace(const Bytes& bytes) {
     }
     return err == ESP_OK;
 }
-std::uint64_t BoardClock::monotonic_ms() const { return static_cast<std::uint64_t>(esp_timer_get_time()) / 1000; }
+std::uint64_t BoardClock::monotonic_ms() const {
+    const auto now = esp_timer_get_time();
+    if (now < 0 || now < last_timer_us_) { timer_valid_ = false; return 0; }
+    last_timer_us_ = now;
+    return static_cast<std::uint64_t>(now) / 1000;
+}
+std::uint32_t BoardClock::reset_reason() const { return static_cast<std::uint32_t>(esp_reset_reason()); }
 void BoardRandom::fill_random(std::span<std::uint8_t> out) { esp_fill_random(out.data(), out.size()); }
 bool BoardRandom::fill(std::span<unsigned char> out) { esp_fill_random(out.data(), out.size()); return true; }
 namespace {

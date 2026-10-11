@@ -4,6 +4,7 @@ version: 1
 description: RTC correction from UNKNOWN to SYNCED does not rewrite past observations.
 
 boot
+capture_claim_fixture
 rtc UNKNOWN
 read CHIP-001
 assert observation 0 clock_status UNKNOWN

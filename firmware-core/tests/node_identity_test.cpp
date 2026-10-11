@@ -77,6 +77,17 @@ static void capture_uses_claimed_identity() {
     const auto first = node.identity();
     mode.enabled = true;
     crypto.claim = {first.node_id, first.public_key, "org-a", "Org A", "contact"};
+    // Backend reservation and even a valid receipt do not enable capture
+    // until its atomic owner write is durable. UTC does not grant ownership.
+    clock.set_wall_clock(ClockStatus::SYNCED, 123456);
+    assert(capture.record_chip_read("before-commit") == RecordResult::REJECTED_UNCLAIMED);
+    cell.fail_save = true;
+    assert(!node.apply_claim("receipt"));
+    cell.fail_save = false;
+    assert(capture.record_chip_read("failed-claim") == RecordResult::REJECTED_UNCLAIMED);
+    assert(capture.next_sequence() == 1 && log.size() == 0);
+    clock.set_wall_clock(ClockStatus::UNKNOWN, std::nullopt);
+    assert(node.initialize());
     assert(node.apply_claim("receipt"));
     assert(capture.record_chip_read("chip-a") == RecordResult::RECORDED);
     assert(node.identity().organization_id == "org-a"); // Sequence write preserves claim.
@@ -117,6 +128,10 @@ static void capture_uses_claimed_identity() {
     assert(reset_capture.initialize()); // Resumes journal and clears old log/cursor.
     assert(reset_boot.ready() && !reset_boot.claimed());
     assert(reset_capture.observation_count() == 0 && reset_capture.ack_watermark() == 0);
+    assert(reset_capture.record_chip_read("chip-c") == RecordResult::REJECTED_UNCLAIMED);
+    assert(reset_capture.next_sequence() == 1);
+    crypto.claim = {reset_boot.identity().node_id, reset_boot.identity().public_key, "org-a", "Org A", "contact"};
+    assert(reset_boot.apply_claim("new-receipt"));
     assert(reset_capture.record_chip_read("chip-c") == RecordResult::RECORDED);
     auto new_record = reset_capture.load_observations().front();
     assert(new_record.node_id != records[0].node_id && new_record.sequence == 1);
@@ -145,6 +160,9 @@ static void capture_uses_claimed_identity() {
     assert(second_capture.initialize());
     assert(node_first.identity().node_id == pre_capture.node_id
         && node_first.identity().public_key == pre_capture.public_key);
+    assert(second_capture.record_chip_read("chip") == RecordResult::REJECTED_UNCLAIMED);
+    crypto.claim = {node_first.identity().node_id, node_first.identity().public_key, "org-a", "Org A", "contact"};
+    assert(node_first.apply_claim("receipt"));
     assert(second_capture.record_chip_read("chip") == RecordResult::RECORDED);
     assert(second_capture.load_observations().front().sequence == 2);
 }

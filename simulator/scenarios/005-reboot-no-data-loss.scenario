@@ -4,6 +4,7 @@ version: 1
 description: Observations persist across reboot.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 read CHIP-002

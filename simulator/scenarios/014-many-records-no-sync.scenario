@@ -5,6 +5,7 @@ capacity: 10000
 description: Several thousand records without sync; sequences monotonic, no ack, store OK.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 repeat 5000
   advance_ms 3000

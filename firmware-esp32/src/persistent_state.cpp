@@ -22,8 +22,8 @@ struct Writer {
     template<class T> void array(const T& v) {
         for (auto b : v) bytes.push_back(static_cast<std::uint8_t>(b));
     }
-    void string(const std::string& v, std::size_t maximum) {
-        if (v.size() > maximum || v.find('\0') != std::string::npos) throw std::runtime_error("field size");
+    void string(const std::string& v, std::size_t maximum, bool opaque = false) {
+        if (v.size() > maximum || (!opaque && v.find('\0') != std::string::npos)) throw std::runtime_error("field size");
         number(v.size(), 2); array(v);
     }
     Bytes finish() { number(crc(bytes, bytes.size()), 4); return std::move(bytes); }
@@ -47,11 +47,11 @@ struct Reader {
     template<class T> void array(T& v) {
         for (auto& b : v) b = static_cast<std::remove_reference_t<decltype(b)>>(number(1));
     }
-    std::string string(std::size_t maximum) {
+    std::string string(std::size_t maximum, bool opaque = false) {
         const auto n = number(2);
         if (n > maximum || pos + n > end) throw std::runtime_error("field size");
         std::string out(bytes.begin() + pos, bytes.begin() + pos + n); pos += n;
-        if (out.find('\0') != std::string::npos) throw std::runtime_error("NUL field");
+        if (!opaque && out.find('\0') != std::string::npos) throw std::runtime_error("NUL field");
         return out;
     }
     void done() { if (pos != end) throw std::runtime_error("trailing state"); }
@@ -181,4 +181,104 @@ bool PersistentObservations::prune_acked() {
     return records.size() == records_.size() || commit(records, high_, ack_);
 }
 bool PersistentObservations::clear() { return commit({}, 0, 0); }
+
+namespace {
+constexpr std::uint32_t evidence_magic = 0x01544d4d;
+void write_boot(Writer& w, const BootEpochV1& b) {
+    w.number(b.format_version, 2); w.array(b.node_id.bytes); w.array(b.incarnation.bytes);
+    w.number(b.boot_counter, 4); w.number(b.reset_reason, 4);
+    w.number(b.started_uptime_ms, 8); w.number(b.first_possible_sequence, 8);
+}
+BootEpochV1 read_boot(Reader& r) {
+    BootEpochV1 b; b.format_version = static_cast<std::uint16_t>(r.number(2));
+    r.array(b.node_id.bytes); r.array(b.incarnation.bytes);
+    b.boot_counter = static_cast<std::uint32_t>(r.number(4)); b.reset_reason = static_cast<std::uint32_t>(r.number(4));
+    b.started_uptime_ms = r.number(8); b.first_possible_sequence = r.number(8); return b;
+}
+void write_anchor(Writer& w, const TimeAnchorV1& a) {
+    w.number(a.format_version, 2); w.array(a.anchor_id.bytes); w.array(a.node_id.bytes); w.array(a.incarnation.bytes);
+    w.number(a.boot_counter, 4); w.number(a.uptime_ms, 8); w.number(static_cast<std::uint64_t>(a.utc_ms), 8);
+    w.number(static_cast<unsigned>(a.source), 1); w.number(a.verified_security_time, 1);
+    w.number(a.uncertainty_minus_ms, 8); w.number(a.uncertainty_plus_ms, 8); w.number(a.drift_ppm_bound, 4);
+    w.string(a.proof_id_or_digest, 128); w.string(a.proof, 4096, true); w.string(a.acceptance, 512, true);
+}
+TimeAnchorV1 read_anchor(Reader& r) {
+    TimeAnchorV1 a; a.format_version = static_cast<std::uint16_t>(r.number(2));
+    r.array(a.anchor_id.bytes); r.array(a.node_id.bytes); r.array(a.incarnation.bytes);
+    a.boot_counter = static_cast<std::uint32_t>(r.number(4)); a.uptime_ms = r.number(8);
+    const auto utc = r.number(8);
+    if (utc > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) throw std::runtime_error("anchor UTC");
+    a.utc_ms = static_cast<std::int64_t>(utc); a.source = static_cast<AnchorSource>(r.number(1));
+    const auto verified = r.number(1);
+    if (verified > 1) throw std::runtime_error("anchor trust");
+    a.verified_security_time = verified != 0;
+    a.uncertainty_minus_ms = r.number(8); a.uncertainty_plus_ms = r.number(8);
+    a.drift_ppm_bound = static_cast<std::uint32_t>(r.number(4));
+    a.proof_id_or_digest = r.string(128); a.proof = r.string(4096, true); a.acceptance = r.string(512, true); return a;
+}
+bool same_boot(const BootEpochV1& b, const TimeAnchorV1& a) {
+    return b.node_id == a.node_id && b.incarnation == a.incarnation && b.boot_counter == a.boot_counter;
+}
+bool valid_evidence(const std::vector<BootEpochV1>& boots, const std::vector<TimeAnchorV1>& anchors) {
+    if (boots.size() > PersistentTimeEvidence::kMaxBoots || anchors.size() > PersistentTimeEvidence::kMaxAnchors) return false;
+    for (std::size_t i = 0; i < boots.size(); ++i) {
+        const auto& b = boots[i];
+        if (!b.valid()) return false;
+        if (i && (b.node_id != boots[0].node_id || b.incarnation != boots[0].incarnation
+            || b.boot_counter <= boots[i-1].boot_counter || b.first_possible_sequence < boots[i-1].first_possible_sequence)) return false;
+    }
+    for (std::size_t i = 0; i < anchors.size(); ++i) {
+        const auto& a = anchors[i];
+        if (!a.valid() || std::none_of(boots.begin(), boots.end(), [&](const auto& b) {
+            return same_boot(b, a) && a.uptime_ms >= b.started_uptime_ms;
+        })) return false;
+        for (std::size_t j = 0; j < i; ++j) if (a.anchor_id == anchors[j].anchor_id) return false;
+    }
+    return true;
+}
+}
+bool PersistentTimeEvidence::open() {
+    ready_ = false;
+    Bytes bytes; const auto result = blob_.read(bytes);
+    if (result == BlobResult::error) return false;
+    if (result == BlobResult::missing) { boots_.clear(); anchors_.clear(); ready_ = true; return true; }
+    if (bytes.size() > kMaxBytes) return false;
+    try {
+        Reader r(bytes); if (r.number(4) != evidence_magic) return false;
+        const auto nb = r.number(2), na = r.number(2);
+        if (nb > kMaxBoots || na > kMaxAnchors) return false;
+        std::vector<BootEpochV1> boots; std::vector<TimeAnchorV1> anchors;
+        for (std::uint64_t i = 0; i < nb; ++i) boots.push_back(read_boot(r));
+        for (std::uint64_t i = 0; i < na; ++i) anchors.push_back(read_anchor(r));
+        r.done(); if (!valid_evidence(boots, anchors)) return false;
+        boots_ = std::move(boots); anchors_ = std::move(anchors); ready_ = true; return true;
+    } catch (const std::exception&) { return false; }
+}
+PutResult PersistentTimeEvidence::commit(const std::vector<BootEpochV1>& boots, const std::vector<TimeAnchorV1>& anchors) {
+    if (!ready_ || !valid_evidence(boots, anchors)) return PutResult::IO_ERROR;
+    try {
+        Writer w; w.number(evidence_magic, 4); w.number(boots.size(), 2); w.number(anchors.size(), 2);
+        for (const auto& b : boots) write_boot(w, b);
+        for (const auto& a : anchors) write_anchor(w, a);
+        const auto bytes = w.finish(); if (bytes.size() > kMaxBytes) return PutResult::FULL;
+        if (!blob_.replace(bytes)) { ready_ = false; return PutResult::IO_ERROR; }
+        boots_ = boots; anchors_ = anchors; return PutResult::OK;
+    } catch (const std::exception&) { return PutResult::IO_ERROR; }
+}
+PutResult PersistentTimeEvidence::append_boot(const BootEpochV1& b) {
+    if (!ready_ || !b.valid()) return PutResult::IO_ERROR;
+    for (const auto& old : boots_) {
+        if (old.node_id == b.node_id && old.incarnation == b.incarnation && old.boot_counter == b.boot_counter)
+            return old == b ? PutResult::OK : PutResult::IO_ERROR;
+    }
+    if (boots_.size() == kMaxBoots) return PutResult::FULL;
+    auto boots = boots_; boots.push_back(b); return commit(boots, anchors_);
+}
+PutResult PersistentTimeEvidence::append_anchor(const TimeAnchorV1& a) {
+    if (!ready_ || !a.valid()) return PutResult::IO_ERROR;
+    for (const auto& old : anchors_) if (old.anchor_id == a.anchor_id) return old == a ? PutResult::OK : PutResult::IO_ERROR;
+    if (anchors_.size() == kMaxAnchors) return PutResult::FULL;
+    auto anchors = anchors_; anchors.push_back(a); return commit(boots_, anchors);
+}
+bool PersistentTimeEvidence::clear_for_factory_reset() { return commit({}, {}) == PutResult::OK; }
 } // namespace miezmerker::esp32

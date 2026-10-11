@@ -15,13 +15,11 @@ public:
     DevButtonReader(ButtonInput& input, Clock& clock, RandomSource& random)
         : input_(input), clock_(clock), random_(random) {}
     std::optional<std::string> poll() override;
-    const std::string& selected_chip() const { return selected_; }
 private:
     ButtonInput& input_;
     Clock& clock_;
     RandomSource& random_;
     bool initialized_{false}, candidate_high_{true}, armed_{false};
     std::uint64_t changed_at_{0};
-    std::string selected_;
 };
 } // namespace miezmerker::esp32

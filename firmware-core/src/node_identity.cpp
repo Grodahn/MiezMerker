@@ -208,6 +208,7 @@ bool NodeIdentityManager::store(const IdentityRecord& record) {
             && (candidate.public_key == previous.public_key || candidate.private_key == previous.private_key)) return false;
     } else {
         if (record.next_sequence - 1 < previous.sequence
+            || (previous.observations && record.boot_counter < previous.observations->boot_counter)
             || (previous.observations && record.incarnation != previous.observations->incarnation)) return false;
     }
     candidate.observations = record;

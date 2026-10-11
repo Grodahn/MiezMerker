@@ -9,21 +9,27 @@ namespace miezmerker::esp32 {
 bool crypto_selftest(class BoardCrypto& crypto, const NodeIdentity& identity);
 class NvsBlob final : public AtomicBlob {
 public:
-    explicit NvsBlob(const char* partition) : partition_(partition) {}
+    explicit NvsBlob(const char* partition, const char* key = "state_v1") : partition_(partition), key_(key) {}
     bool open();
     BlobResult read(Bytes& out) override;
     bool replace(const Bytes& bytes) override;
 private:
     const char* partition_;
+    const char* key_;
     nvs_handle_t handle_{};
     bool ready_{false};
 };
 class BoardClock final : public Clock, public ClaimClock, public ble::RtcControl {
 public:
     std::uint64_t monotonic_ms() const override;
+    bool monotonic_valid() const override { return timer_valid_; }
+    std::uint32_t reset_reason() const override;
     WallClockReading wall_clock() const override { return {}; }
     std::uint64_t epoch_ms() const override { return 0; }
     bool set_corrected_epoch_ms(std::uint64_t) override { return false; }
+private:
+    mutable bool timer_valid_{true};
+    mutable std::int64_t last_timer_us_{0};
 };
 class BoardRandom final : public RandomSource {
 public:

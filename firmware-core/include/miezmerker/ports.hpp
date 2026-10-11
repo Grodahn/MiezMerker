@@ -32,6 +32,10 @@ struct Clock {
     virtual ~Clock() = default;
     virtual std::uint64_t monotonic_ms() const = 0;
     virtual WallClockReading wall_clock() const = 0;
+    // Diagnostic only: never infer powered-off duration or trust from reset cause.
+    virtual std::uint32_t reset_reason() const { return 0; }
+    // Adapters latch detected timer discontinuity/overflow until a new boot.
+    virtual bool monotonic_valid() const { return true; }
 };
 
 /// Entropy for UUIDv4 node/incarnation generation. Injected so tests stay
@@ -100,6 +104,8 @@ struct ObservationStore {
 /// RFID reader input. Returns the canonical chip identifier of one discrete
 /// read, or nullopt when no tag is present. Reader-specific normalization
 /// (case, framing, parity) belongs to the adapter; the core validates.
+/// poll() consumes input even when capture is denied. Do not retain/queue chip
+/// identifiers or log them in ordinary diagnostics; ownership is checked by Core.
 struct RfidReader {
     virtual ~RfidReader() = default;
     virtual std::optional<std::string> poll() = 0;

@@ -1,0 +1,51 @@
+name: claimed-capture-epochs
+version: 1
+description: No pre-claim reads; real atomic signed claim enables UNKNOWN capture across two resets.
+debounce_ms: 0
+
+boot
+import_fixture_node sim-main
+rtc SYNCED 1790899200000
+expect_read PRIVATE-UNCLAIMED REJECTED_UNCLAIMED
+assert observations 0
+assert next_sequence 1
+claim_as admin
+assert last_claim fail
+expect_read RESERVED-ONLY REJECTED_UNCLAIMED
+claim_mode_enter
+fail_identity_store 1
+claim_as admin
+assert last_claim fail
+expect_read FAILED-COMMIT REJECTED_UNCLAIMED
+assert observations 0
+assert next_sequence 1
+claim_as admin
+assert last_claim ok
+rtc_invalid
+set_ms 100
+expect_read A RECORDED
+advance_ms 130
+expect_read B RECORDED
+assert observation 0 clock_status UNKNOWN
+assert observation 0 epoch_ms null
+assert observation 0 monotonic_ms 100
+assert observation 1 monotonic_ms 230
+assert observation 0 boot_counter 3
+set_ms 0
+reboot
+expect_read C RECORDED
+assert observation 2 boot_counter 4
+set_ms 0
+reboot
+expect_read D RECORDED
+assert observation 3 boot_counter 5
+assert observations 4
+assert sequences_unique
+assert sequences_monotonic
+rtc_correct_ms 1790899300000
+assert observation 0 clock_status UNKNOWN
+assert observation 0 epoch_ms null
+factory_reset
+expect_read AFTER-RESET REJECTED_UNCLAIMED
+assert observations 0
+assert next_sequence 1

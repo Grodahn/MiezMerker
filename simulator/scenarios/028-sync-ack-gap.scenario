@@ -4,6 +4,7 @@ version: 1
 description: Sync ACK enforces contiguous high-watermark; gaps block advance.
 
 boot
+capture_claim_fixture
 sync_claim
 rtc SYNCED 1700000000000
 read CHIP-001

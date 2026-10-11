@@ -4,6 +4,7 @@ version: 1
 description: Many reads of the same chip, each past the debounce window, all recorded.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 repeat 100
   advance_ms 3000

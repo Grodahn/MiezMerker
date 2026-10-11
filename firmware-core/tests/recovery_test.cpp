@@ -1,3 +1,4 @@
+#include "claim_fixture.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -92,6 +93,7 @@ struct Fixture {
     void seed() {
         auto core = make_core();
         CHECK(core.initialize());
+    claim_capture_fixture(core, identity);
         CHECK(core.record_chip_read("old") == miezmerker::RecordResult::RECORDED);
         CHECK(core.set_ack_watermark(1));
     }
@@ -153,6 +155,7 @@ void reset_write_failures() {
             CHECK(reboot.observation_count() == 0);
             CHECK(reboot.ack_watermark() == 0);
         }
+        claim_capture_fixture(reboot, f.identity);
         CHECK(reboot.record_chip_read("after") == miezmerker::RecordResult::RECORDED);
     }
     std::cout << "PASS reset_write_failures\n";
@@ -177,6 +180,7 @@ void reset_power_loss() {
         CHECK(reboot.next_sequence() == 1);
         CHECK(reboot.observation_count() == 0);
         CHECK(reboot.ack_watermark() == 0);
+        claim_capture_fixture(reboot, f.identity);
         CHECK(reboot.record_chip_read("after") == miezmerker::RecordResult::RECORDED);
         miezmerker::IdentityRecord durable;
         CHECK(f.identity.load(durable) == miezmerker::IdentityLoadResult::OK);
@@ -238,6 +242,7 @@ void capture_power_loss() {
         CHECK(reboot.observation_count() == (stage == 0 ? 1u : 2u));
         CHECK(reboot.next_sequence() == 3);
         CHECK(reboot.ack_watermark() == 1);
+        claim_capture_fixture(reboot, f.identity);
         CHECK(reboot.record_chip_read("after") == miezmerker::RecordResult::RECORDED);
         const auto all = reboot.load_observations();
         CHECK(all.front().sequence == 1);
@@ -273,6 +278,7 @@ void acknowledgement_bounds() {
     Fixture f;
     auto core = f.make_core();
     CHECK(core.initialize());
+    claim_capture_fixture(core, f.identity);
     CHECK(!core.set_ack_watermark(1));
     CHECK(!f.observations.cell.set_ack_watermark(1));
     CHECK(core.record_chip_read("first") == miezmerker::RecordResult::RECORDED);

@@ -29,12 +29,13 @@ struct Physical : ClaimMode { bool active() const override { return true; } };
 struct Time : ClaimClock { std::uint64_t epoch_ms() const override { return 0; } };
 struct FakeCrypto : NodeCrypto {
     unsigned counter{0};
+    VerifiedClaim claim;
     bool generate_keypair(std::span<std::byte, 65> pub, std::span<std::byte, 32> priv) override {
         std::fill(pub.begin(), pub.end(), static_cast<std::byte>(++counter)); pub[0] = std::byte{4};
         std::fill(priv.begin(), priv.end(), static_cast<std::byte>(counter)); return true;
     }
     bool sign(std::span<const std::byte, 32>, std::span<const std::byte>, std::span<std::byte, 64>) override { return false; }
-    bool verify_claim(const std::string&, VerifiedClaim&) override { return false; }
+    bool verify_claim(const std::string& receipt, VerifiedClaim& out) override { out = claim; return receipt == "fixture-receipt"; }
 };
 struct Boot {
     PersistentIdentity store;
@@ -44,11 +45,15 @@ struct Boot {
     Boot(Cell& id, Cell& log, ManualClock& clock, Physical& mode, FixedRandomSource& random, FakeCrypto& crypto, Time& time)
         : store(id), observations(log), identity(store, mode, random, crypto, time),
           core(clock, observations, observations, identity, random, CoreConfig{0}) {}
+    void claim(FakeCrypto& crypto) {
+        crypto.claim = {identity.identity().node_id, identity.identity().public_key, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Test", ""};
+        assert(identity.apply_claim("fixture-receipt"));
+    }
 };
 void persistence() {
     Cell id, log; ManualClock clock; Physical mode; Time time; FixedRandomSource random{42}; FakeCrypto crypto;
     Boot first(id, log, clock, mode, random, crypto, time);
-    assert(first.core.initialize());
+    assert(first.core.initialize()); first.claim(crypto);
     const auto node = first.core.node_id();
     const auto incarnation_node = first.identity.identity().node_id;
     const auto key = first.identity.identity().private_key;
@@ -88,7 +93,7 @@ void persistence() {
 void interruption() {
     for (bool identity_failure : {false, true}) for (bool committed : {false, true}) {
         Cell id, log; ManualClock clock; Physical mode; Time time; FixedRandomSource random{3}; FakeCrypto crypto;
-        Boot first(id, log, clock, mode, random, crypto, time); assert(first.core.initialize());
+        Boot first(id, log, clock, mode, random, crypto, time); assert(first.core.initialize()); first.claim(crypto);
         assert(first.core.record_chip_read("old") == RecordResult::RECORDED);
         auto& cell = identity_failure ? id : log;
         if (committed) cell.fail_after = true; else cell.fail_before = true;
@@ -103,7 +108,7 @@ void interruption() {
     }
     for (bool committed : {false, true}) {
         Cell id, log; ManualClock clock; Physical mode; Time time; FixedRandomSource random{9}; FakeCrypto crypto;
-        Boot first(id, log, clock, mode, random, crypto, time); assert(first.core.initialize());
+        Boot first(id, log, clock, mode, random, crypto, time); assert(first.core.initialize()); first.claim(crypto);
         assert(first.core.record_chip_read("one") == RecordResult::RECORDED);
         assert(first.core.record_chip_read("two") == RecordResult::RECORDED);
         if (committed) log.fail_after = true; else log.fail_before = true;
@@ -123,7 +128,7 @@ void interruption() {
 }
 void exhaustion() {
     Cell id, log; ManualClock clock; Physical mode; Time time; FixedRandomSource random{7}; FakeCrypto crypto;
-    Boot boot(id, log, clock, mode, random, crypto, time); assert(boot.core.initialize());
+    Boot boot(id, log, clock, mode, random, crypto, time); assert(boot.core.initialize()); boot.claim(crypto);
     for (unsigned i = 0; i < PersistentObservations::kCapacity; ++i)
         assert(boot.core.record_chip_read(std::to_string(i)) == RecordResult::RECORDED);
     const auto before = log.data;
@@ -148,7 +153,7 @@ struct Rtc : RtcControl { bool set_corrected_epoch_ms(std::uint64_t) override { 
 struct Signer : NodeSigner { bool sign_session(const std::array<std::uint8_t, 32>&, std::array<std::uint8_t, 64>&) override { return false; } };
 void endpoint() {
     Cell id, log; ManualClock clock; Physical mode; Time time; FixedRandomSource random{11}; FakeCrypto crypto;
-    Boot boot(id, log, clock, mode, random, crypto, time); assert(boot.core.initialize());
+    Boot boot(id, log, clock, mode, random, crypto, time); assert(boot.core.initialize()); boot.claim(crypto);
     NodeIdentity claimed = boot.identity.identity();
     claimed.organization_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     claimed.organization_name = std::string(255, 'n'); claimed.claim_receipt = "test-only";

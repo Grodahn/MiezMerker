@@ -21,7 +21,6 @@ std::optional<std::string> DevButtonReader::poll() {
     // Rejection sampling avoids modulo bias: 255 is not divisible into five.
     do { random_.fill_random(byte); } while (byte[0] == 255);
     constexpr std::array chips{"1", "2", "3", "4", "5"};
-    selected_ = chips[byte[0] % chips.size()];
-    return selected_;
+    return std::string(chips[byte[0] % chips.size()]);
 }
 } // namespace miezmerker::esp32

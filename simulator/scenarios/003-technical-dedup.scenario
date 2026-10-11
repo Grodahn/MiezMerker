@@ -4,6 +4,7 @@ version: 1
 description: Reads within debounce window are DEBOUNCED; reads after window are RECORDED. Cache lost on reboot.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 assert last_result RECORDED

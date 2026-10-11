@@ -59,9 +59,14 @@ Fields: `node_id`, `incarnation`, `sequence`, `chip_id`,
   invalid identity state stops capture without overwriting it. Automatic
   first-boot provisioning requires both an empty log and a zero ack cursor;
   orphaned observations require explicit recovery or factory reset.
-- `ClaimState` (`UNCLAIMED`/`CLAIMED`) is persisted as a minimal #18
-  placeholder; cryptographic device keys and organization claiming are #17/#18
-  work and intentionally absent here.
+- Capture re-reads and validates durable ownership before touching chip data.
+  `UNCLAIMED` returns `REJECTED_UNCLAIMED` without sequence reservation,
+  observation, debounce entry or deferred read. Only the atomic #18 claim
+  commit enables capture, including with UNKNOWN UTC or incomplete site setup.
+- Boot epochs reuse `(node_id, incarnation, boot_counter)`. Counter zero,
+  exhaustion, reservation failure and timer discontinuity fail closed.
+  Separate versioned `TimeEvidenceStore` records survive raw ACK/compaction.
+  See [issue #128 foundations](../docs/issue128-firmware-foundations.md).
 
 ## Clock / timestamp semantics
 

@@ -4,6 +4,7 @@ version: 1
 description: Empty or overlong chip IDs are rejected with REJECTED_INVALID.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read ""
 assert last_result REJECTED_INVALID

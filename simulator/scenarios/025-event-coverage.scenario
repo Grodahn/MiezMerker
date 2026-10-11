@@ -4,6 +4,7 @@ version: 1
 description: Covers rtc_invalid, set_ms, read_absent, expect_read and the storage availability gate.
 
 boot
+capture_claim_fixture
 rtc_invalid
 read CHIP-001
 assert last_result RECORDED
