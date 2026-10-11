@@ -6,9 +6,9 @@ Related: #3, #4, #5, #6, #7, #8, #10, #13, #17, #18, #76, #108, #121, #128–#13
 
 ## Decision
 
-An external battery-backed RTC is **optional**, not a requirement for a low-cost MiezMerker Node. The firmware already retains unique per-node sequences, a persistent boot counter and monotonic uptime. For every read we retain these immutable facts. Separately persisted UTC **time anchors** can reconstruct observation time within the **same boot epoch**. Across unanchored boot epochs we know event ordering and intra-boot elapsed time, but **cannot reconstruct unobserved powered-off durations**. We expose conservative possible intervals rather than invented exact timestamps.
+An external battery-backed RTC is **optional**, not a requirement for a low-cost MiezMerker Node. The firmware already retains unique per-node sequences, a persistent boot counter and monotonic uptime. **Only a successfully CLAIMED Node records RFID visits.** For every accepted read after claiming, we retain these immutable facts. Separately persisted UTC **time anchors** can reconstruct observation time within the **same boot epoch**. Across unanchored boot epochs we know event ordering and intra-boot elapsed time, but **cannot reconstruct unobserved powered-off durations**. We expose conservative possible intervals rather than invented exact timestamps.
 
-**Observation-time estimates and security-trusted UTC are separate trust domains.** Only a backend-signed, fresh, challenge-bound UTC proof, validated against an **independently pinned** issuer key, may initialize the time required for offline credential expiration and secure claiming. Phone time is untrusted. The current protected BLE TimeCorrect operation must remain protected. Without security-trusted UTC the node continues storing raw RFID events but does not authorize protected BLE reads, ACKs, time correction or claims.
+**Observation-time estimates and security-trusted UTC are separate trust domains.** Only a backend-signed, fresh, challenge-bound UTC proof, validated against an **independently pinned** issuer key, may initialize the time required for offline credential expiration and secure claiming. Phone time is untrusted. The current protected BLE TimeCorrect operation must remain protected. Without security-trusted UTC, a **CLAIMED** Node continues storing raw RFID events with UNKNOWN clock status, but does not authorize protected BLE reads, ACKs, time correction or new claims. An **UNCLAIMED** Node records no RFID visits regardless of its clock status.
 
 This ADR is the **reviewed design contract for later implementation**, not a claim of completed device functionality, independent third-party security certification or physical hardware validation.
 
@@ -20,7 +20,48 @@ This ADR is the **reviewed design contract for later implementation**, not a cla
 - ESP32-C3 internal RTC time can survive some resets and sleep but **not a power-on reset**. The high-resolution esp_timer_get_time is since initialization and resets after restart/Deep Sleep. The reset reason is a diagnostic, not a power-off duration sensor. See [Espressif System Time](https://docs.espressif.com/projects/esp-idf/en/v6.0-rc1/esp32c3/api-reference/system/system_time.html), [ESP Timer](https://docs.espressif.com/projects/esp-idf/en/v5.4.2/esp32c3/api-reference/system/esp_timer.html), and [reset reasons](https://github.com/espressif/esp-idf/blob/master/components/esp_system/include/esp_system.h).
 - RawObservation.java already persists bootCounter and monotonicMs with unique (node_id, sequence) identity; ObservationIngestService.samePayload rejects changes to an already-ingested raw payload.
 - ObservationIngestService **intentionally leaves feeding_site_id/deployment_id null** for UNKNOWN timestamps. VisitAggregationService visit-gap-v1 excludes UNKNOWN timestamps and unattributed sites. Reconstructing a time must NOT silently attribute the event to today's FeedingSite.
-- ADR 0012 (observations), ADR 0012 (offline credentials), ADR 0013 (node claiming), ADR 0015 (BLE) and ADR 0016 (tenant sharing) remain authoritative on identity, security and privacy.
+- ADR 0012 (observations), ADR 0012 (offline credentials), ADR 0013 (node claiming), ADR 0015 (BLE) and ADR 0016 (tenant sharing) remain authoritative on identity, security and privacy. **This ADR explicitly strengthens the capture precondition:** original capture paths that previously allowed UNCLAIMED local test observations must be gated in #128; accepted #112/#108 implementation history is not evidence that production behavior already enforces it.
+
+### Claim-state gate for observation capture (amendment, 2026-10-11)
+
+**Non-negotiable product rule: a Node that is not registered to an organization does not collect or persist cat visits.**
+
+| Persisted Node claim state | RFID input and capture | Clock/provisioning behavior |
+| --- | --- | --- |
+| `UNCLAIMED` | **Drop/ignore RFID input without producing any RawObservation, assigning a sequence, filling the observation log, or emitting chip IDs in normal diagnostics.** | Boot markers, monotonic timer, independently pinned issuer key, signed time bootstrap, public identity and physical claim mode may operate solely to enable secure registration. |
+| `CLAIMED` (owner committed atomically on the Node) | Allow ordinary RFID capture under existing Core persistence and deduplication rules, even if UTC is `UNKNOWN`. | Protected BLE sync still needs a valid offline credential, issuer trust and security UTC. |
+| Backend reserved ownership but Node claim receipt not yet committed | Still **UNCLAIMED** locally: **no** capture. | Deliver/retry the existing claim receipt; never infer successful registration from a request or browser permission. |
+| Factory reset / renewed unclaimed state | Stop capture immediately; existing reset procedure already rotates Node identity and clears the old observation log securely. | Allow new physical claiming only through #18; no old owner/data reuse. |
+
+**The state check belongs to the shared firmware-core capture path**, not
+merely the ESP32 GPIO3, UART or hardware adapter. Enforce it on
+`record_chip_read`, `poll_reader` and every development/synthetic entry
+point, preventing bypasses by a different source. Do not reserve a
+sequence, append storage, emit a chip-bearing event or queue a future
+observation for a rejected UNCLAIMED read. Keep diagnostics aggregate
+and non-identifying. Firmware re-reads the persisted claim state after
+the atomic #18 claim commit / power cycle; no BLE session grants capture
+rights by itself.
+
+**Claimed does not mean assigned to a FeedingSite.** A registered Node
+may be in the already supported intermediate `CLAIMED but setup
+incomplete` state from #53/#121; it may capture truthful raw reads, but
+the backend must not invent a site or `DerivedVisit` while attribution
+is unresolved. No additional online check is required for ongoing
+local capture: it must also work when there is no internet or trusted
+UTC after a power loss.
+
+Time-bootstrap evidence and boot markers created **before** claiming
+are technical registration artifacts only, not cat visits. If a valid
+pre-claim time anchor shares a boot epoch with post-claim observations,
+it may provide a time bound only if the independent security proof and
+device-acceptance evidence validate; it must never imply that RFID
+observations existed before the claim.
+
+**Implementation/acceptance** belongs to #128 and #134. In particular,
+development GPIO3 and synthetic reader paths from #112/#108 currently
+require an explicit regression test for this gate; this ADR change
+does not assert that those existing builds already comply.
 
 ## 2. Clocks and identity
 
@@ -305,7 +346,7 @@ bootstrap freshness mechanism.
 
 ### Explicit offline tradeoff
 
-After a full power loss and **without internet access on the phone**, there is no fresh backend-signed UTC proof. The node can still capture and durably retain RFID observations, but cannot complete authenticated BLE sync until a legitimate client reaches the backend for a fresh proof. Do **not** hide this limitation or switch to unsigned phone time to bypass it. Optional external RTC support (#4) is a separate future enhancement with its own trust/rollback rules.
+After a full power loss and **without internet access on the phone**, there is no fresh backend-signed UTC proof. A **CLAIMED** node can still capture and durably retain RFID observations with UNKNOWN time, but cannot complete authenticated BLE sync until a legitimate client reaches the backend for a fresh proof. An UNCLAIMED node never records RFID visits. Do **not** hide this limitation or switch to unsigned phone time to bypass it. Optional external RTC support (#4) is a separate future enhancement with its own trust/rollback rules.
 
 ## 6. BLE, durability and ACK semantics (#131)
 
@@ -375,6 +416,19 @@ iat > clock lower bound waits/retries, never uses an iat grace window.
 
 **TV8 – backward compatibility/tenant security.** Old v1 observations, conflicting RTC times, unknown timestamps, untrusted uploads, wrong-org data, forged node proof, timer wrap, unknown boot ID and site changes cannot become fictitiously precise or bypass authorization.
 
+**TV9 – claim-state capture gate.** Boot an UNCLAIMED ESP32,
+press GPIO3 / run synthetic capture and inject a reader-tag: observation
+count, reserved sequence and pending BLE data remain unchanged; no
+chip-bearing log is emitted, regardless of whether trusted UTC exists.
+Perform physical signed claiming, confirm the Node has durably
+committed `CLAIMED` before the next input, then capture a read with
+`clock=UNKNOWN`: exactly one immutable raw observation is stored.
+Interrupt registration after backend reservation but before Node receipt
+commit: still zero captured observations. Retry setup without reverting
+CLAIMED. Factory reset returns to zero new captures and clears previous
+identity/log without reusing event sequence IDs. All software, simulator
+and GPIO3 reader paths must honor the same core gate.
+
 ## 10. Acceptance for issue #127
 
 - [x] Review inspected existing boot counter semantics, core log, board clock, BLE auth, backend ingestion, visit aggregation, site attribution and trust contracts.
@@ -382,6 +436,7 @@ iat > clock lower bound waits/retries, never uses an iat grace window.
 - [x] All 0/1/2-powerloss and reset scenarios have falsifiable test vectors; unknown downtime stays unknown.
 - [x] Storage/wire identity, crash consistency, backward compatibility, separate raw/anchor ACK evidence and no raw rewrite are explicit.
 - [x] No silent historical FeedingSite reassignment and no guessed exact DerivedVisit from uncertain intervals.
+- [x] Product gate specified: only durably CLAIMED Nodes may persist RFID observations; no capture in UNCLAIMED state, regardless of whether UTC is initialized. Firmware/tests must implement this in #128/#134.
 - [x] Dedicated adversarial architecture/security **self-review requested by the maintainer**, followed by fixes and a separate final consistency pass. A third-party security audit remains recommended **before production deployment**; it is not claimed as completed.
 
 ### Review findings and resolutions (2026-10-11)
