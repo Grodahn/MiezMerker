@@ -60,6 +60,18 @@ public class SharePolicyService {
     private final ShareRecipientRepository recipients;
     private final ShareAuditRepository audit;
     private final TenantService tenants;
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    /** Serialize settings writes with API visibility/policy changes. Refresh
+     * previously read entities after waiting for a concurrent revocation. */
+    @Transactional
+    public void lockForSettings(UUID actorId, UUID ownerOrgId) {
+        tenants.requireAdmin(actorId, ownerOrgId);
+        Organization owner = organizations.lockById(ownerOrgId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "no membership"));
+        entityManager.refresh(owner);
+    }
 
     public SharePolicyService(OrganizationRepository organizations, AppUserRepository users,
             SharePolicyRepository policies, ShareRecipientRepository recipients,
@@ -91,6 +103,7 @@ public class SharePolicyService {
     private static PolicyView toView(OrganizationSharePolicy policy) {
         List<RecipientView> views = policy.getRecipients().stream()
                 .map(r -> r.getOrganization())
+                .filter(o -> o.isDiscoverable() && o.getStatus() == OrganizationStatus.ACTIVE)
                 .sorted(Comparator.comparing(Organization::getDisplayName, String.CASE_INSENSITIVE_ORDER))
                 .map(o -> new RecipientView(o.getId(), o.getSlug(), o.getDisplayName()))
                 .toList();
@@ -105,6 +118,7 @@ public class SharePolicyService {
     @Transactional
     public PolicyView upsert(UUID actorId, UUID ownerOrgId, ShareScope scope,
             ShareAudience audience, List<UUID> recipientIds) {
+        lockForSettings(actorId, ownerOrgId);
         tenants.requireAdmin(actorId, ownerOrgId);
         AppUser actor = users.findById(actorId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "no membership"));
@@ -132,8 +146,9 @@ public class SharePolicyService {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "owner cannot be its own recipient");
                 }
-                Organization recipient = organizations.findById(recipientId)
+                Organization recipient = organizations.lockById(recipientId)
                         .orElseThrow(() -> invalidRecipient());
+                entityManager.refresh(recipient);
                 if (recipient.getStatus() != OrganizationStatus.ACTIVE || !recipient.isDiscoverable()) {
                     throw invalidRecipient();
                 }
@@ -215,6 +230,7 @@ public class SharePolicyService {
      */
     @Transactional
     public void revoke(UUID actorId, UUID ownerOrgId, ShareScope scope) {
+        lockForSettings(actorId, ownerOrgId);
         tenants.requireAdmin(actorId, ownerOrgId);
         AppUser actor = users.findById(actorId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "no membership"));
@@ -241,6 +257,7 @@ public class SharePolicyService {
      */
     @Transactional
     public void setDiscoverable(UUID actorId, UUID organizationId, boolean discoverable) {
+        lockForSettings(actorId, organizationId);
         tenants.requireAdmin(actorId, organizationId);
         AppUser actor = users.findById(actorId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "no membership"));
