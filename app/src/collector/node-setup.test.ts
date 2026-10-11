@@ -25,6 +25,7 @@ import {
   SetupError,
   validateBowlName,
 } from './node-setup';
+import { markSessionExpired } from '../platform/auth';
 
 const ORG = '22222222-2222-4222-8222-222222222222';
 const NODE = '44444444-4444-4444-8444-444444444444';
@@ -93,12 +94,46 @@ function memberAuth() {
 }
 
 beforeEach(() => {
+  vi.mocked(markSessionExpired).mockClear();
   get.mockReset();
   post.mockReset();
   patch.mockReset();
   authState.mockReset();
   adminAuth();
   Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+});
+
+test.each(['node', 'setup deployments', 'sites', 'name', 'initial deployment'])('stale 401 from %s cannot expire a newer login', async stage => {
+  const staleResponse = async () => {
+    const original = authState();
+    authState.mockReturnValue({ ...original, user: null });
+    authListeners.forEach(listener => listener());
+    authState.mockReturnValue(original);
+    authListeners.forEach(listener => listener());
+    return { error: {}, response: { status: 401 } };
+  };
+  get.mockImplementation(async (path: string) => {
+    if (stage === 'setup deployments' && path === '/api/v1/nodes/{nodeId}') {
+      return { data: { nodeId: NODE, organizationId: ORG, state: 'CLAIMED' } };
+    }
+    return staleResponse();
+  });
+  patch.mockImplementation(staleResponse);
+  const request = stage === 'sites' ? listFeedingSiteOptions(ORG)
+    : stage === 'name' ? saveBowlName(ORG, NODE, 'Der Grüne')
+    : stage === 'initial deployment' ? ensureInitialDeployment(ORG, NODE, SITE)
+    : fetchNodeSetupState(ORG, NODE);
+  await expect(request).rejects.toThrow('Benutzer oder Organisation geändert');
+  expect(markSessionExpired).not.toHaveBeenCalled();
+  expect(post).not.toHaveBeenCalled();
+  expect(authListeners.size).toBe(0);
+});
+
+test('a current-context 401 still expires the session', async () => {
+  get.mockResolvedValue({ error: {}, response: { status: 401 } });
+  await expect(fetchNodeSetupState(ORG, NODE)).rejects.toThrow('Sitzung abgelaufen');
+  expect(markSessionExpired).toHaveBeenCalledTimes(1);
+  expect(authListeners.size).toBe(0);
 });
 
 describe('bowl name normalization (#50 rules reused)', () => {

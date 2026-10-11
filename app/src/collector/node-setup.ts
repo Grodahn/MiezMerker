@@ -163,11 +163,11 @@ export async function fetchNodeSetupState(
       params: { path: { nodeId } },
     });
     const { data: nodeData, error: nodeError, response: nodeResponse } = nodeRes;
+    assertContext();
     if (nodeError || !nodeData) {
       throw toSetupError((nodeResponse as Response | undefined)?.status,
         'Napf-Status konnte nicht geladen werden. Bitte erneut versuchen.', { nodeId });
     }
-    assertContext();
     const node = nodeData;
     if (node.organizationId && node.organizationId !== organizationId) {
       throw new SetupError('foreign', `Node ${nodeId} gehört einer anderen Organisation.`);
@@ -177,11 +177,11 @@ export async function fetchNodeSetupState(
       params: { path: { organizationId }, query: { nodeId } },
     });
     const { data: depData, error: depError, response: depResponse } = depRes;
+    assertContext();
     if (depError || !depData) {
       throw toSetupError((depResponse as Response | undefined)?.status,
         'Zuordnungen konnten nicht geladen werden. Bitte erneut versuchen.', { nodeId });
     }
-    assertContext();
     const all = depData ?? [];
     const active = all.find(d => !d.validUntil) ?? null;
     return {
@@ -208,11 +208,11 @@ export async function listFeedingSiteOptions(
       params: { path: { organizationId } },
     });
     const { data: siteData, error: siteError, response: siteResponse } = siteRes;
+    assertContext();
     if (siteError || !siteData) {
       throw toSetupError((siteResponse as Response | undefined)?.status,
         'Futterstellen konnten nicht geladen werden. Bitte erneut versuchen.');
     }
-    assertContext();
     return (siteData ?? []).filter(site => !site.organizationId || site.organizationId === organizationId);
   } finally { assertContext.close(); }
 }
@@ -240,12 +240,12 @@ export async function saveBowlName(
       body: { displayName: normalized },
     });
     const { data: patchData, error: patchError, response: patchResponse } = patchRes;
+    assertContext();
     if (patchError || !patchData) {
       throw toSetupError((patchResponse as Response | undefined)?.status,
         'Napf-Name konnte nicht gespeichert werden. Claim bleibt gültig; bitte erneut versuchen.',
         { nodeId });
     }
-    assertContext();
     return patchData.displayName ?? normalized;
   } finally { assertContext.close(); }
 }
@@ -280,11 +280,11 @@ export async function ensureInitialDeployment(
         params: { path: { organizationId }, query: { nodeId } },
       });
       const { data: listData, error: listError, response: listResponse } = listRes;
+      assertContext();
       if (listError || !listData) {
         throw toSetupError((listResponse as Response | undefined)?.status,
           'Zuordnungen konnten nicht geprüft werden. Bitte erneut versuchen.', { nodeId });
       }
-      assertContext();
       return listData ?? [];
     };
     // Frontend pre-check (not concurrency-safe alone): avoids the POST when an
