@@ -184,6 +184,15 @@ class AdminOrganizationSettingsTest {
         b.setDiscoverable(true); b.setStatus(OrganizationStatus.DISABLED); organizations.save(b);
         assertTrue(shares.listOutgoing(admin.getId(), a.getId()).getFirst().recipients().isEmpty());
     }
+    @Test void equallyNamedPolicyRecipientsHaveStableOrderForFormVersions() {
+        Organization other = organizations.save(new Organization("same-name", b.getDisplayName(), null));
+        other.setDiscoverable(true); organizations.save(other);
+        List<UUID> expected = java.util.stream.Stream.of(b.getId(), other.getId()).sorted().toList();
+        var policy = shares.upsert(admin.getId(), a.getId(), ShareScope.CARE, ShareAudience.ALLOWLIST,
+                List.of(expected.get(1), expected.get(0)));
+        assertEquals(expected, policy.recipients().stream().map(SharePolicyService.RecipientView::id).toList(),
+                "equal names must not leave version fingerprints dependent on database/insertion order");
+    }
     @Test void concurrentRecipientHideCannotBeUndoneByPendingSave() throws Exception {
         AppUser adminB = users.save(new AppUser("b@example.org", passwords.encode("password-settings")));
         memberships.save(new OrganizationMembership(b, adminB, MembershipRole.ADMIN, MembershipStatus.ACTIVE));

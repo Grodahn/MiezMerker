@@ -104,7 +104,8 @@ public class SharePolicyService {
         List<RecipientView> views = policy.getRecipients().stream()
                 .map(r -> r.getOrganization())
                 .filter(o -> o.isDiscoverable() && o.getStatus() == OrganizationStatus.ACTIVE)
-                .sorted(Comparator.comparing(Organization::getDisplayName, String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator.comparing(Organization::getDisplayName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(Organization::getId))
                 .map(o -> new RecipientView(o.getId(), o.getSlug(), o.getDisplayName()))
                 .toList();
         return new PolicyView(policy.getScope(), policy.getAudience(), policy.getRevision(), views);
