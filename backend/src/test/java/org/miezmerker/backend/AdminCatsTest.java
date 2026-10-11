@@ -455,6 +455,23 @@ class AdminCatsTest {
     }
 
     @Test
+    void sharedCareExtendsExistingDetailWithoutEmbeddingForeignProjections() throws Exception {
+        var f = seed(); var c = cat(f.orgA(), "SHARED", "Own profile");
+        cat(f.orgB(), "SHARED", "Private foreign profile");
+        loginA();
+        var response = get("/admin/cats/" + c.getId());
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+        assertTrue(response.body().contains("data-shared-care"));
+        assertTrue(response.body().contains("data-organization-id=\"" + f.orgA().getId() + "\""));
+        assertTrue(response.body().contains("data-chip-id=\"SHARED\""));
+        assertTrue(response.body().contains("/admin-shared-care.js"));
+        assertFalse(response.body().contains("Private foreign profile"));
+        assertEquals(200, get("/admin-shared-care.js").statusCode());
+        assertEquals(200, get("/shared-care.js").statusCode());
+    }
+
+    @Test
     void catDetailVisitPagingIsBoundedAndRejectsInvalidPages() throws Exception {
         var f = seed(); var c = cat(f.orgA(), "PAGED", "Paged Cat"); var n = saveClaimedNode(f.orgA());
         var site = saveSite(f.orgA(), "Paged Site", null, null);

@@ -1,0 +1,41 @@
+.shared-care { min-width: 0; overflow-wrap: anywhere; }
+.shared-care__source {
+  margin-block: 1rem;
+  padding: 1rem;
+  border: 1px solid #71948a;
+  border-radius: .75rem;
+}
+.shared-care__table { max-width: 100%; overflow-x: auto; }
+.shared-care table { width: 100%; border-collapse: collapse; }
+.shared-care caption { text-align: left; font-weight: 600; }
+.shared-care th, .shared-care td {
+  text-align: left;
+  vertical-align: top;
+  padding: .5rem;
+  border-bottom: 1px solid #71948a;
+}
+.shared-care__pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+  margin-block: .75rem;
+}
+.shared-care button { min-height: 44px; max-width: 100%; white-space: normal; }
+.shared-care time { overflow-wrap: anywhere; }
+@media (max-width: 430px) {
+  .shared-care__source { padding: .6rem; }
+  .shared-care table, .shared-care caption, .shared-care tbody,
+  .shared-care tr, .shared-care td { display: block; }
+  .shared-care thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .shared-care td:nth-child(1)::before { content: 'Beginn (UTC): '; font-weight: 600; }
+  .shared-care td:nth-child(2)::before { content: 'Ende (UTC): '; font-weight: 600; }
+  .shared-care td:nth-child(3)::before { content: 'Futterstelle: '; font-weight: 600; }
+  .shared-care tr { margin-block: .75rem; }
+}

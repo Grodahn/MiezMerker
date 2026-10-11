@@ -38,3 +38,15 @@ test('development proxy reserves the complete Admin namespace for Spring', async
     expect(html).not.toContain('id="root"');
   }
 });
+
+test('Admin presenter resources pass through the backend session gate in preview and development', async ({ request }) => {
+  for (const base of ['http://127.0.0.1:4173', 'http://127.0.0.1:5173']) {
+    for (const path of ['/admin-shared-care.js', '/shared-care.js', '/shared-care.css']) {
+      const response = await request.get(base + path);
+      // A fresh browser has no backend session. Spring rejects the static
+      // request; Vite must never answer it with the field SPA HTML instead.
+      expect(response.status()).toBe(401);
+      expect(response.headers()['cache-control']).toContain('no-store');
+    }
+  }
+});

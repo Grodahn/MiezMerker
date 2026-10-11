@@ -32,6 +32,11 @@ async function backend(page: Page) {
     if (method !== 'GET' && request.headers()['x-xsrf-token'] !== 'csrf') return send({}, 403);
     const foreign = path.includes(orgB) || url.searchParams.get('organizationId') === orgB;
     if (foreign) return send([]);
+    if (path === '/api/v1/observations' && method === 'GET') {
+      const chipId = url.searchParams.get('chipId');
+      return send(observations.filter(row => row.chipId === chipId).slice(0, 1).map(row => ({ ...row, organizationId: orgA })));
+    }
+    if (path.endsWith('/shared-care/resolve')) return send({ items: [], nextOffset: null });
     if (path.endsWith('/feeding-sites')) {
       return send(sites);
     }
@@ -132,7 +137,14 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await page.goto('/sync');
     await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
     expect(state.requests.filter(r => r.path.endsWith('/deployments/move'))).toHaveLength(0);
-    expect(state.requests.some(r => r.path.endsWith('/members') || r.path.endsWith('/visits/recompute') || r.path === '/api/v1/observations')).toBe(false);
+    expect(state.requests.some(r => r.path.endsWith('/members') || r.path.endsWith('/visits/recompute'))).toBe(false);
+    // #98 permits only one chip-scoped persisted observation as proof in detail;
+    // no bulk raw-observation history or administrative observation screen.
+    const proofRequests = state.requests.filter(r => r.path === '/api/v1/observations');
+    expect(proofRequests).toHaveLength(1);
+    expect(proofRequests[0].method).toBe('GET');
+    const proofQuery = new URLSearchParams(proofRequests[0].query);
+    expect(Object.fromEntries(proofQuery)).toEqual({ organizationId: orgA, chipId: 'CHIP-NEW', limit: '1', offset: '0', newestFirst: 'true' });
     const cached = await page.evaluate(async () => {
       const urls: string[] = [];
       for (const key of await caches.keys()) for (const request of await (await caches.open(key)).keys()) urls.push(request.url);
