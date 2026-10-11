@@ -533,6 +533,8 @@ export function CollectorShell(props: {
     void provisionNode(transport, nodeId, organizationId, operation.signal).then(() => {
       if (!stillActive()) return;
       setClaimMessage('Napf registriert!');
+      setBatchResults(previous => previous.filter(result => result.browserId !== entry.id));
+      setFreigebenMessage('');
       setSetupNodeId(nodeId);
       setSetupOrgId(organizationId);
       try {

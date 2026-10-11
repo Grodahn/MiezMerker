@@ -83,9 +83,9 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
   await expect(dialog.getByPlaceholder('Der Grüne')).toBeFocused();
   await dialog.getByPlaceholder('Der Grüne').fill('Der Grüne');
   await dialog.getByRole('button', { name: 'Einrichtung abschließen' }).click();
-  await expect(dialog.getByText('Einrichtung abgeschlossen!', { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByText(/kann beim nächsten Auslesen mitmachen/)).toBeVisible();
   expect(claims).toBe(1); expect(deployments).toBe(1); expect(displayName).toBe('Der Grüne');
-  expect(await page.evaluate(() => localStorage.getItem('miezmerker-last-setup-node'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('miezmerker-last-setup-node'))).toBeNull();
   expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { registrationEvents: { activation: boolean } }).registrationEvents.activation)).toBe(true);
