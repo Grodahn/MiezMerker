@@ -78,6 +78,7 @@ public class TestDatabaseCleaner {
     /** Deletes all fixture rows, children before parents. */
     @Transactional
     public void clean() {
+        jdbc.update("DELETE FROM demo_fixture_records WHERE record_key <> 'lock'");
         derivedVisits.deleteAllInBatch();
         observations.deleteAllInBatch();
         deployments.deleteAllInBatch();

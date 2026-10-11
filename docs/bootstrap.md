@@ -1,5 +1,8 @@
 # Local bootstrap and test-phase setup
 
+For the explicit one-command local demo with five cats, one feeding site and an
+audited SYSADMIN account, see [DEMO ONLY setup (#111)](dev-demo.md).
+
 This bootstrap creates an organization **Orgaadmin** (`ADMIN` membership), never
 a global SYSADMIN. Explicit SYSADMIN setup, revocation and recovery are documented
 in [Global SYSADMIN operations](sysadmin.md).

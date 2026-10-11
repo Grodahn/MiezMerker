@@ -1,5 +1,8 @@
 # Global SYSADMIN operations (#91)
 
+The [local demo setup (#111)](dev-demo.md) orchestrates this same audited maintenance
+mechanism for an explicitly owned development account; normal startup remains unchanged.
+
 Implements [ADR 0016](adr/0016-cross-organization-sharing.md), decision 1.
 `SYSADMIN` is a global account privilege in `app_user_system_roles`, separate
 from organization memberships. Organization `ADMIN` (displayed as **Orgaadmin**)
