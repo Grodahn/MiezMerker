@@ -8,6 +8,8 @@ playwright-report/
 test-results/
 *.log
 *.tsbuildinfo
+# Runtime cat photo storage (#95): persistent local data, never committed.
+data/
 __pycache__/
 *.pyc
 .env

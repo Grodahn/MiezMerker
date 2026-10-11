@@ -17,6 +17,7 @@ import org.miezmerker.backend.domain.Cat;
 import org.miezmerker.backend.repo.CatRepository;
 import org.miezmerker.backend.repo.FeedingSiteRepository;
 import org.miezmerker.backend.security.AppUserDetails;
+import org.miezmerker.backend.service.CatPhotoService;
 import org.miezmerker.backend.service.CatService;
 import org.miezmerker.backend.service.CatHistoryService;
 import org.miezmerker.backend.service.ChipActivityService;
@@ -32,7 +33,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /** #37: Admin context is tenant authority; no organization or chip identity edits. */
@@ -44,15 +47,18 @@ public class AdminCatsController {
     private final CatRepository cats;
     private final FeedingSiteRepository sites;
     private final CatService maintenance;
+    private final CatPhotoService photos;
     private final ChipActivityService activity;
     private final CatHistoryService history;
     private final Validator validator;
     public AdminCatsController(AdminService admins, CatRepository cats, FeedingSiteRepository sites,
-            CatService maintenance, ChipActivityService activity, CatHistoryService history, Validator validator) {
+            CatService maintenance, CatPhotoService photos, ChipActivityService activity,
+            CatHistoryService history, Validator validator) {
         this.admins = admins;
         this.cats = cats;
         this.sites = sites;
         this.maintenance = maintenance;
+        this.photos = photos;
         this.activity = activity;
         this.history = history;
         this.validator = validator;
@@ -129,6 +135,9 @@ public class AdminCatsController {
         Cat cat = own(org, catId);
         model.addAttribute("cat", rows(principal.getId(), org).stream()
                 .filter(r -> catId.equals(r.id())).findFirst().orElseThrow());
+        var photo = photos.info(principal.getId(), org, catId);
+        model.addAttribute("hasPhoto", photo.hasPhoto());
+        model.addAttribute("photoUpdatedAt", photo.updatedAt());
         var page = history.visitPage(principal.getId(), org, cat.getChipId(), offset, limit + 1);
         boolean more = page.size() > limit;
         model.addAttribute("visits", more ? page.subList(0, limit) : page);
@@ -210,6 +219,53 @@ public class AdminCatsController {
         }
         Cat cat = maintenance.create(principal.getId(), org, chip, name, status, notes);
         return "redirect:/admin/cats/" + cat.getId();
+    }
+    @PostMapping("/{catId}/photo")
+    @Transactional
+    public String uploadPhoto(@PathVariable UUID catId, @RequestParam UUID formOrganizationId,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AppUserDetails principal, HttpSession session,
+            RedirectAttributes flash) {
+        UUID org = context(principal, session, nullModel());
+        if (org == null) return "redirect:/admin/org";
+        stale(org, formOrganizationId);
+        own(org, catId);
+        try {
+            if (file == null || file.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Bitte eine Bilddatei wählen.");
+            }
+            photos.store(principal.getId(), org, catId, file.getBytes());
+            flash.addFlashAttribute("photoSaved", "Foto gespeichert.");
+        } catch (java.io.IOException e) {
+            flash.addFlashAttribute("photoError", "Foto konnte nicht gelesen werden.");
+        } catch (ResponseStatusException e) {
+            flash.addFlashAttribute("photoError",
+                    e.getStatusCode() == HttpStatus.BAD_REQUEST || e.getStatusCode().value() == 413
+                            ? "Datei wird abgelehnt. Bitte JPEG/PNG in angemessener Größe wählen."
+                            : "Foto konnte nicht gespeichert werden.");
+        }
+        return "redirect:/admin/cats/" + catId;
+    }
+    @PostMapping("/{catId}/photo/delete")
+    @Transactional
+    public String deletePhoto(@PathVariable UUID catId, @RequestParam UUID formOrganizationId,
+            @AuthenticationPrincipal AppUserDetails principal, HttpSession session,
+            RedirectAttributes flash) {
+        UUID org = context(principal, session, nullModel());
+        if (org == null) return "redirect:/admin/org";
+        stale(org, formOrganizationId);
+        own(org, catId);
+        try {
+            photos.delete(principal.getId(), org, catId);
+            flash.addFlashAttribute("photoSaved", "Foto entfernt.");
+        } catch (ResponseStatusException e) {
+            flash.addFlashAttribute("photoError", "Foto konnte nicht entfernt werden.");
+        }
+        return "redirect:/admin/cats/" + catId;
+    }
+    private static Model nullModel() {
+        return new org.springframework.ui.ConcurrentModel();
     }
     private void stale(UUID active, UUID submitted) {
         if (!active.equals(submitted)) throw new ResponseStatusException(HttpStatus.CONFLICT,

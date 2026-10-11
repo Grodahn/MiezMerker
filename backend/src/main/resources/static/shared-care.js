@@ -7,6 +7,9 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
   let profileOffset = 0;
   let visitOffsets = {};
   let focusIndex;
+  // Transient foreign photo URLs (blob:). Revoked on every reload, context
+  // loss and dispose; never persisted to any browser storage.
+  let photoUrls = [];
   const listeners = [];
   const listen = (target, name, callback) => {
     target.addEventListener(name, callback);
@@ -27,8 +30,15 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
     });
     return node;
   }
+  function revokePhotos() {
+    for (const url of photoUrls) {
+      try { URL.revokeObjectURL(url); } catch { /* Already revoked. */ }
+    }
+    photoUrls = [];
+  }
   function clear(message) {
     pending?.abort(); pending = undefined;
+    revokePhotos();
     root.replaceChildren();
     const status = element('p', message);
     status.setAttribute('role', 'status');
@@ -78,7 +88,22 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
         limit: pageSize, offset: visitOffsets[profile.source.organizationId] ?? 0, newestFirst: true,
       }, signal)));
       signal.throwIfAborted();
-      if (disposed || suspended || pending !== controller) return;
+      // Foreign photos are strictly opt-in per source: without effective PHOTO
+      // the adapter resolves null and the card keeps a neutral placeholder.
+      // A denied photo never fails the profile/visit page.
+      const images = await Promise.all(items.map(profile =>
+        api.photo(organizationId, {
+          ownObservationRef: proof, sourceOrganizationId: profile.source.organizationId,
+        }, signal).then(url => url, () => null)));
+      signal.throwIfAborted();
+      if (disposed || suspended || pending !== controller) {
+        for (const url of images) {
+          if (url) { try { URL.revokeObjectURL(url); } catch { /* Already revoked. */ } }
+        }
+        return;
+      }
+      revokePhotos();
+      photoUrls = images.filter(url => url);
       root.replaceChildren();
       element('p', 'Eigene Angaben bleiben maßgeblich. Geteilte Profile sind schreibgeschützt. Fremde Besuche zählen nicht zur eigenen Aktivität.');
       if (!items.length) element('p', 'Keine freigegebene Betreuung verfügbar.');
@@ -88,6 +113,17 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
         card.setAttribute('aria-label', `Geteilte Betreuung von ${source.displayName}`);
         element('h3', `Wird auch von ${source.displayName} betreut`, card);
         if (profile.catDisplayName) element('p', `Name bei ${source.displayName}: ${profile.catDisplayName}`, card);
+        const image = images[index];
+        if (image) {
+          const figure = element('figure', undefined, card); figure.className = 'shared-care__photo';
+          const picture = document.createElement('img'); picture.className = 'shared-care__image';
+          picture.src = image; picture.alt = `Freigegebenes Katzenfoto von ${source.displayName}`;
+          figure.append(picture);
+          const caption = document.createElement('figcaption'); caption.textContent = 'Freigegebenes Foto · nur online';
+          figure.append(caption);
+        } else {
+          element('p', 'Kein freigegebenes Foto verfügbar.', card);
+        }
         element('h4', `Freigegebene Besuche von ${source.displayName}`, card);
         element('p', 'Nur gespeicherte Besuche mit verlässlicher Uhrzeit. UNKNOWN-Reads und Serverempfang sind keine Besuchszeiten.', card);
         const page = pages[index];
@@ -154,6 +190,7 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
   void load();
   return () => {
     disposed = true; pending?.abort(); pending = undefined;
+    revokePhotos();
     visitOffsets = {}; root.replaceChildren(); listeners.forEach(remove => remove());
   };
 }

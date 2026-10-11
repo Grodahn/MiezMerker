@@ -33,6 +33,15 @@ async function backend(page: Page) {
         expect(body.ownObservationRefs).toEqual([proof]);
         return send({ items: state.revoked ? [] : [profile, ...(state.multiple ? [{ ...profile, source: { organizationId: orgC, displayName: 'Organisation C' }, catDisplayName: 'Foreign-C-unique' }] : [])], nextOffset: null });
       }
+      // Foreign cat photos (#95): observation proof plus source organization,
+      // no chip/cat lookup, no paging. Denied exactly like a missing grant.
+      if (path.endsWith('/photo')) {
+        expect(body.ownObservationRef).toBe(proof);
+        expect([orgB, orgC]).toContain(body.sourceOrganizationId);
+        if (state.revoked || state.careOnly) return send({}, 404);
+        return route.fulfill({ status: 200, contentType: 'image/jpeg',
+          headers: { 'Cache-Control': 'no-store' }, body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
+      }
       expect(body.ownObservationRef).toBe(proof); expect(body.limit).toBe(state.pageSize);
       return send({ items: state.revoked || state.careOnly || body.offset > 0 ? [] : [{ ...visit, ...(state.siteLabel ? { siteDisplayName: 'Authorized-B-site' } : {}) }],
         nextOffset: state.revoked || state.careOnly || body.offset > 0 ? null : body.limit });
@@ -59,6 +68,10 @@ for (const width of [320, 390, 430]) {
     await expect(shared(page)).toContainText('Foreign-B-unique'); await expect(shared(page)).toContainText('Foreign-C-unique');
     await expect(page.getByLabel('Name (optional)')).toHaveValue('Own-A-unique');
     await expect(shared(page)).toContainText('Authorized-B-site');
+    // Authorized foreign photos render read-only inside their provenance card;
+    // the local profile is never substituted.
+    await expect(shared(page).getByAltText('Freigegebenes Katzenfoto von Organisation B')).toBeVisible();
+    await expect(page.getByLabel('Name (optional)')).toHaveValue('Own-A-unique');
     await expect(shared(page).getByRole('textbox')).toHaveCount(0);
     await expect(shared(page).getByRole('link')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -80,6 +93,9 @@ test('unknown chip stays unknown; CARE only and no observation proof reveal no v
   await expect(page.getByRole('heading', { name: 'Unbekannter Chip', exact: true })).toBeVisible();
   await expect(shared(page).locator('time')).toHaveCount(0);
   await expect(shared(page)).toContainText('Keine freigegebenen Besuche');
+  // CARE without PHOTO shows no foreign image, only the neutral placeholder.
+  await expect(shared(page)).toContainText('Kein freigegebenes Foto verfügbar');
+  await expect(shared(page).locator('img')).toHaveCount(0);
   state.hasProof = false; await shared(page).getByRole('button', { name: 'Freigaben neu prüfen' }).click();
   await expect(shared(page)).toContainText('Keine eigene gespeicherte Beobachtung');
   expect(requests.filter(r => r.path.endsWith('/resolve'))).toHaveLength(1);
