@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.miezmerker.backend.domain.*;
 import org.miezmerker.backend.repo.*;
+import org.miezmerker.backend.security.SystemAuthorizationService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,10 +21,11 @@ public class DemoSeedService {
     private final FeedingSiteRepository sites;
     private final PasswordEncoder passwords;
     private final JdbcTemplate jdbc;
+    private final SystemAuthorizationService system;
 
     public DemoSeedService(AppUserRepository users, OrganizationRepository organizations,
             MembershipRepository memberships, CatRepository cats, FeedingSiteRepository sites,
-            PasswordEncoder passwords, JdbcTemplate jdbc) {
+            PasswordEncoder passwords, JdbcTemplate jdbc, SystemAuthorizationService system) {
         this.users = users;
         this.organizations = organizations;
         this.memberships = memberships;
@@ -31,6 +33,7 @@ public class DemoSeedService {
         this.sites = sites;
         this.passwords = passwords;
         this.jdbc = jdbc;
+        this.system = system;
     }
 
     public static UUID grantOperation(UUID userId) {
@@ -88,8 +91,8 @@ public class DemoSeedService {
     }
 
     public void verifyPrivilege(UUID userId) {
-        require(Boolean.TRUE.equals(jdbc.queryForObject("SELECT enabled FROM app_user_system_roles WHERE user_id=? AND role='SYSADMIN'",
-                Boolean.class, userId)), "Demo SYSADMIN was revoked; replay does not restore authority. Follow docs/sysadmin.md");
+        require(system.isSysadmin(userId), "Demo account is inactive or SYSADMIN is missing/revoked; "
+                + "replay does not restore authority. Follow docs/sysadmin.md");
     }
 
     private void remember(String key, UUID id) {

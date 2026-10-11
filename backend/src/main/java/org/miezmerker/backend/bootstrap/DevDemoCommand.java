@@ -75,7 +75,7 @@ public final class DevDemoCommand {
     @EnableAutoConfiguration
     @EntityScan(basePackageClasses = Organization.class)
     @EnableJpaRepositories(basePackageClasses = OrganizationRepository.class)
-    @Import(DemoSeedService.class)
+    @Import({DemoSeedService.class, org.miezmerker.backend.security.SystemAuthorizationService.class})
     public static class DemoConfiguration {
         @Bean DataSource demoDataSource(org.springframework.core.env.Environment env) {
             // Construct directly: JNDI, datasource type and other pool overrides cannot redirect this command.

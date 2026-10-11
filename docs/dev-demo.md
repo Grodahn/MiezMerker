@@ -79,7 +79,9 @@ An unowned email/slug causes a clear failure with no seed writes. A partial ledg
 missing/replaced cat or site, altered chip/ownership, extra cat/site, disabled account,
 disabled/demoted membership or different supplied password fails without repair.
 Existing demo names, notes, site descriptions, coordinates and password hashes are
-preserved on rerun. Revocation fails final verification and is never undone; use
+preserved on rerun. Final verification uses the existing global authorization gate,
+including current ACTIVE account status. Missing/revoked privilege or an inactive
+account fails with recovery guidance and is never repaired automatically; use
 the documented trusted SYSADMIN recovery procedure if explicitly intended.
 
 #113 must use this ledger and revalidate relationships before any removal. The

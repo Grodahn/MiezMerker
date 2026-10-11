@@ -183,4 +183,24 @@ class DevDemoTest {
         assertEquals(0, users.count());
         assertEquals(0, cats.count());
     }
+
+    @Test void missingPrivilegeRowFailsWithRecoveryGuidanceWithoutRegranting() throws Exception {
+        var user = setup();
+        jdbc.update("DELETE FROM app_user_system_roles WHERE user_id=?", user);
+        var failure = assertThrows(IllegalStateException.class, this::setup);
+        assertTrue(failure.getMessage().contains("docs/sysadmin.md"));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM app_user_system_roles WHERE user_id=?", Integer.class, user));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM app_user_system_role_audit WHERE user_id=?", Integer.class, user));
+    }
+
+    @Test void finalPrivilegeVerificationRejectsADisabledAccount() throws Exception {
+        var user = setup();
+        var account = users.findById(user).orElseThrow();
+        account.setStatus(UserStatus.DISABLED);
+        users.save(account);
+        assertFalse(system.isSysadmin(user));
+        var failure = assertThrows(IllegalStateException.class, () -> seed.verifyPrivilege(user));
+        assertTrue(failure.getMessage().contains("docs/sysadmin.md"));
+        assertEquals(UserStatus.DISABLED, users.findById(user).orElseThrow().getStatus());
+    }
 }
