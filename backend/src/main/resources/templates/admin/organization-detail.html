@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Organisation verwalten')}">
+<title>Organisation verwalten</title>
+</head>
+<body>
+<div th:replace="~{admin/layout :: topbar}"></div>
+<main>
+<p><a th:href="@{/admin/organizations}">← Alle Organisationen</a></p>
+<h1>Organisation verwalten</h1>
+
+<div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}">Fehler</div>
+
+<section class="card">
+<h2 th:text="${org.displayName}">Name</h2>
+<dl>
+<dt>Technischer Name (Slug, unveränderlich)</dt><dd th:text="${org.slug}">slug</dd>
+<dt>Technische ID (stabil bei Umbenennung)</dt><dd><code style="word-break:break-all" th:text="${org.id}">id</code></dd>
+<dt>Status</dt><dd th:text="${org.status.name() == 'ACTIVE' ? 'Aktiv' : 'Deaktiviert'}">Aktiv</dd>
+<dt>Sichtbarkeit</dt><dd th:text="${org.discoverable ? 'Sichtbar im Verzeichnis' : 'Versteckt'}">Versteckt</dd>
+<dt>Ausgehende Datenfreigaben</dt><dd th:text="${policyCount == 0 ? 'Keine Freigaben' : policyCount + ' Richtlinie(n)'}">Keine Freigaben</dd>
+</dl>
+<p style="opacity:.7;font-size:.85rem">Umbenennung ändert weder technische Kennungen noch Napf-Zuordnungen,
+Deployment-Historie, Katzen, Beobachtungen oder Besuche.</p>
+</section>
+
+<section class="card">
+<h2>Umbenennen</h2>
+<form th:action="@{'/admin/organizations/' + ${org.id} + '/rename'}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label for="rename-name">Organisationsname</label>
+<input id="rename-name" name="displayName" type="text" required maxlength="255"
+th:value="${org.displayName}"/>
+</div>
+<div>
+<label for="rename-contact">Öffentlicher Kontakt (leer lassen zum Löschen)</label>
+<input id="rename-contact" name="publicContact" type="text" maxlength="500"
+th:value="${org.publicContact}"/>
+</div>
+<div style="margin-top:1rem"><button class="btn" type="submit">Umbenennen</button></div>
+</form>
+</section>
+
+<section class="card">
+<h2>Status</h2>
+<div th:if="${org.status.name() == 'ACTIVE'}">
+<p>Deaktivierung sperrt Zugriffe und Freigaben dieser Organisation sofort.</p>
+<form th:action="@{'/admin/organizations/' + ${org.id} + '/deactivate'}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label><input type="checkbox" name="confirmed" value="true" required/>
+Ich bestätige die sofortige Deaktivierung dieser Organisation.</label>
+</div>
+<div style="margin-top:1rem"><button class="btn" type="submit">Organisation deaktivieren</button></div>
+</form>
+</div>
+<div th:if="${org.status.name() != 'ACTIVE'}">
+<p>Reaktivierung stellt zuvor widerrufene Freigaben <strong>nicht</strong> wieder her;
+Freigaben erfordern danach eine neue ausdrückliche Einrichtung.</p>
+<form th:action="@{'/admin/organizations/' + ${org.id} + '/reactivate'}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label><input type="checkbox" name="confirmed" value="true" required/>
+Ich bestätige die Reaktivierung dieser Organisation.</label>
+</div>
+<div style="margin-top:1rem"><button class="btn" type="submit">Organisation reaktivieren</button></div>
+</form>
+</div>
+</section>
+
+<section class="card">
+<h2>Löschanfrage (sichere Aufbewahrung)</h2>
+<p>Eine Löschanfrage <strong>löscht keine Daten</strong>: Die Organisation wird deaktiviert und mit allen
+Katzen-, Futterstellen-, Napf-, Beobachtungs-, Besuchs- und Mitgliedschaftsdaten aufbewahrt.
+Eine endgültige Löschung mit Aufbewahrungs- und Exportregeln ist ein gesondertes, dokumentiertes
+Operator-Verfahren und hier bewusst nicht als Schnellaktion verfügbar.</p>
+<form th:action="@{'/admin/organizations/' + ${org.id} + '/delete'}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label for="delete-slug">Zur Bestätigung den technischen Namen eingeben</label>
+<input id="delete-slug" name="slugConfirmation" type="text" required maxlength="64" autocomplete="off"
+th:placeholder="${org.slug}"/>
+</div>
+<div>
+<label><input type="checkbox" name="confirmed" value="true" required/>
+Ich bestätige die Sperrung und Aufbewahrung dieser Organisation (keine Datenlöschung).</label>
+</div>
+<div style="margin-top:1rem"><button class="btn" type="submit">Löschanfrage speichern</button></div>
+</form>
+</section>
+
+<section class="card">
+<h2>Orgaadmins</h2>
+<p style="opacity:.8">Nur vorhandene Konten; es gibt keine öffentliche Einladung oder Registrierung.
+Die Vergabe an deaktivierte Konten ist abgelehnt. Andere Mitgliedschaften desselben Kontos bleiben unberührt.
+Der Entzug stuft auf MEMBER zurück, statt die Mitgliedschaft zu sperren.</p>
+<form th:action="@{'/admin/organizations/' + ${org.id} + '/admins'}" method="post">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<div>
+<label for="admin-email">Vorhandenes Konto als Orgaadmin zuweisen (E-Mail)</label>
+<input id="admin-email" name="email" type="email" required maxlength="320" autocomplete="off"
+placeholder="name@beispiel.org"/>
+</div>
+<div style="margin-top:1rem"><button class="btn" type="submit">Orgaadmin zuweisen</button></div>
+</form>
+<div style="overflow:auto;margin-top:1rem" th:if="${!#lists.isEmpty(members)}">
+<table class="orgs" style="width:100%;border-collapse:collapse;background:#fff">
+<thead>
+<tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th>Aktion</th></tr>
+</thead>
+<tbody>
+<tr th:each="m : ${members}">
+<td th:text="${m.displayName != null ? m.displayName : m.email}">Name</td>
+<td th:text="${m.email}">mail</td>
+<td th:text="${m.role.name() == 'ADMIN' ? 'Orgaadmin' : 'MEMBER'}">Rolle</td>
+<td th:text="${m.status.name()}">Status</td>
+<td>
+<form th:if="${m.role.name() == 'ADMIN'}" th:action="@{'/admin/organizations/' + ${org.id} + '/admins/' + ${m.userId} + '/revoke'}" method="post" style="margin:0">
+<input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<button class="btn btn-secondary" type="submit">Orgaadmin entziehen</button>
+</form>
+<span th:if="${m.role.name() != 'ADMIN'}" style="opacity:.6">—</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p th:if="${#lists.isEmpty(members)}">Keine Mitgliedschaften vorhanden.</p>
+</section>
+
+<section class="card">
+<h2>Prüfprotokoll (neueste zuerst)</h2>
+<div style="overflow:auto" th:if="${!#lists.isEmpty(audit)}">
+<table class="orgs" style="width:100%;border-collapse:collapse;background:#fff">
+<thead>
+<tr><th>Zeitpunkt</th><th>Akteur</th><th>Vorgang</th><th>Betroffenes Konto</th><th>Vorher</th><th>Nachher</th></tr>
+</thead>
+<tbody>
+<tr th:each="a : ${audit}">
+<td th:text="${a.createdAt}">Zeit</td>
+<td th:text="${a.actorEmail != null ? a.actorEmail : '–'}">Akteur</td>
+<td th:text="${a.action.name()}">Vorgang</td>
+<td th:text="${a.targetEmail != null ? a.targetEmail : '–'}">Konto</td>
+<td th:text="${a.beforeState}">Vorher</td>
+<td th:text="${a.afterState}">Nachher</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p th:if="${#lists.isEmpty(audit)}">Noch keine protokollierten Vorgänge für diese Organisation.</p>
+</section>
+</main>
+<div th:replace="~{admin/layout :: footer}"></div>
+</body>
+</html>

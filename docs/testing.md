@@ -54,10 +54,10 @@ Backend tags cover all existing test classes:
 | Domain | Test classes |
 | --- | --- |
 | node | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, AdminNodesTest, AdminSitesTest, NodeProvisionSetupTest |
-| auth | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, OfflineCredentialTest, IssuerConfigurationTest, InteropVectorTest, TenancyAuthTest, CookieSecurityTest, BootstrapTest, DisplayNameTest, FoundationTest, AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, NodeProvisionSetupTest, OrganizationSharingTest |
+| auth | NodeClaimTest, NodeDisplayNameTest, DeploymentAuthorizationTest, OfflineCredentialTest, IssuerConfigurationTest, InteropVectorTest, TenancyAuthTest, CookieSecurityTest, BootstrapTest, DisplayNameTest, FoundationTest, AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, AdminOrganizationsTest, NodeProvisionSetupTest, OrganizationSharingTest |
 | ingest | Issue9IngestTest, AdminObservationsVisitsTest |
 | visits | Issue10VisitsTest, Issue100CatVisitsTest, FeedingSiteCatActivityTest, AdminCatsTest, AdminObservationsVisitsTest, AdminObservationsVisitsControllerTest |
-| admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, AdminObservationsVisitsControllerTest, AdminOrganizationSettingsTest |
+| admin | AdminCatsTest, AdminMembersTest, AdminObservationsVisitsTest, AdminShellTest, AdminNodesTest, AdminSitesTest, AdminObservationsVisitsControllerTest, AdminOrganizationSettingsTest, AdminOrganizationsTest |
 | schema | DatabaseSchemaTest, DisplayNameTest, NodeDisplayNameTest, SystemPrivilegeTest, SystemRoleMigrationTest |
 | system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |
 

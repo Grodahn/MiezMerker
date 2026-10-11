@@ -63,7 +63,7 @@ class SystemPrivilegeTest {
     static class Probe {
         private final SystemAuthorizationService system;
         Probe(SystemAuthorizationService system) { this.system = system; }
-        @RequestMapping(value = {"/admin/organizations", "/admin/organizations/probe"},
+        @RequestMapping(value = {"/admin/organizations/probe"},
                 method = {RequestMethod.GET, RequestMethod.POST})
         String boundary() { return "system boundary passed"; }
         @GetMapping("/api/v1/test/system-gate")
@@ -143,7 +143,11 @@ class SystemPrivilegeTest {
         assertEquals(403, get("/admin/organizations/probe").statusCode());
         grant();
         assertTrue(system.isSysadmin(user.getId()));
-        assertEquals(200, get("/admin/organizations").statusCode());
+        // #92 ships the real organization management surface at this path; the
+        // test-only probe lives at /admin/organizations/probe (see above).
+        var orgs = get("/admin/organizations");
+        assertEquals(200, orgs.statusCode(), orgs.body());
+        assertTrue(orgs.body().contains("Organisationen"), orgs.body());
         assertEquals(200, get("/admin/organizations/probe?organizationId=" + a.getId()).statusCode());
         assertEquals(200, get("/api/v1/test/system-gate").statusCode());
         assertEquals(403, get("/admin/cats").statusCode());

@@ -92,6 +92,7 @@ public class TestDatabaseCleaner {
         shareRecipients.deleteAllInBatch();
         sharePolicies.deleteAllInBatch();
         jdbc.update("DELETE FROM organization_share_audit");
+        jdbc.update("DELETE FROM sysadmin_organization_audit");
         users.deleteAllInBatch();
         organizations.deleteAllInBatch();
     }
