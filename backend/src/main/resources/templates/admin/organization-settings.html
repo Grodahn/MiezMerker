@@ -42,11 +42,14 @@ Zum Konfigurieren zuerst die Checkbox zur Unsichtbarkeit deaktivieren.</p>
 </div>
 </fieldset>
 <h3>Fotos (PHOTO)</h3>
-<p>Foto-Freigaben benötigen einen gesondert autorisierten Medienzugriff (#95). Dieser ist noch nicht verfügbar;
-hier können keine neuen Foto-Freigaben aktiviert werden. Betreuung, Besuche und Futterstellennamen geben keine Bilder frei.</p>
+<p>Foto-Freigaben geben das Katzenfoto der Organisation über einen gesondert autorisierten Medien-Endpunkt frei.
+Sie benötigen Betreuung (CARE) für dieselben Empfänger; Betreuung allein gibt keine Bilder frei.
+Neue Foto-Freigaben werden über die Freigabe-API erteilt
+(<code>PUT /api/v1/organizations/{id}/share-policies/PHOTO</code>); hier können bestehende widerrufen werden.
+Betreuung, Besuche und Futterstellennamen geben keine Bilder frei.</p>
 <p th:if="${settings.choices.get(T(org.miezmerker.backend.domain.ShareScope).PHOTO).audience.name() == 'PRIVATE'}">Keine Foto-Freigabe konfiguriert.</p>
 <label th:if="${settings.choices.get(T(org.miezmerker.backend.domain.ShareScope).PHOTO).audience.name() != 'PRIVATE'}">
-<input type="checkbox" name="revokePhoto" value="true"/> Bestehende Foto-Policy widerrufen (derzeit kein Medienzugriff verfügbar)</label>
+<input type="checkbox" name="revokePhoto" value="true"/> Bestehende Foto-Policy widerrufen</label>
 <p>Bei einer Erweiterung der Betreuungsfreigabe oder wenn ihre bisherige Foto-Policy nicht mehr gedeckt ist,
 wird die Foto-Policy ebenfalls widerrufen. Fotos werden dadurch niemals stillschweigend zusätzlich freigegeben.</p>
 <p>Rohbeobachtungen, private Notizen, präzise Koordinaten, Adressen, Kontaktdaten und interne Organisationsdaten werden niemals durch diese Einstellungen freigegeben.</p>

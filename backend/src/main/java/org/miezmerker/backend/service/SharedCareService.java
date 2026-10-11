@@ -19,11 +19,14 @@ public class SharedCareService {
     public static final int MAX_OFFSET = 10000;
     private final TenantService tenants;
     private final CatService cats;
+    private final CatPhotoService photos;
     private final ObservationVisitQueryService queries;
     private final SharedCareRateLimiter limiter;
     public SharedCareService(TenantService tenants, CatService cats,
+            CatPhotoService photos,
             ObservationVisitQueryService queries, SharedCareRateLimiter limiter) {
-        this.tenants = tenants; this.cats = cats; this.queries = queries; this.limiter = limiter;
+        this.tenants = tenants; this.cats = cats; this.photos = photos;
+        this.queries = queries; this.limiter = limiter;
     }
 
     public SharedCareViews.ProfilePage resolve(UUID user, UUID org, List<UUID> refs, int limit, int offset) {
@@ -38,6 +41,22 @@ public class SharedCareService {
         var chips = authorize(user, org, List.of(observation), limit, offset);
         var rows = queries.sharedVisits(org, source, chips.get(observation), offset, limit + 1, newestFirst);
         return new SharedCareViews.VisitPage(rows.stream().limit(limit).toList(), next(rows.size(), limit, offset));
+    }
+
+    /**
+     * Observation-backed foreign photo read (#95). Repeats the same tenant,
+     * rate-limit and proof checks as every other shared page, then serves
+     * the owner's photo only for effective CARE plus PHOTO. Each read
+     * re-evaluates authorization, so revocation blocks the next read.
+     */
+    public CatPhotoService.PhotoData photo(UUID user, UUID org, UUID observation,
+            UUID source) {
+        if (observation == null || source == null) throw badRequest();
+        // Single-element proof: limit/offset bounds are irrelevant here, but
+        // the shared authorize path keeps tenant, limiter and proof semantics
+        // identical to resolve/visits.
+        var chips = authorize(user, org, List.of(observation), 1, 0);
+        return photos.readSharedForChip(org, source, chips.get(observation));
     }
 
     private java.util.Map<UUID, String> authorize(UUID user, UUID org, List<UUID> refs, int limit, int offset) {

@@ -27,6 +27,25 @@ if (root) {
       }), signal),
       resolve: (organizationId, body, signal) => request(`/api/v1/organizations/${organizationId}/shared-care/resolve`, signal, body),
       visits: (organizationId, body, signal) => request(`/api/v1/organizations/${organizationId}/shared-care/visits`, signal, body),
+      // Transient blob URLs only: no-store, never any browser storage. The
+      // presenter revokes them on reload, context loss and dispose.
+      photo: async (organizationId, body, signal) => {
+        const csrf = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
+        if (!csrf.ok) return null;
+        const token = (await csrf.json()).token;
+        signal.throwIfAborted();
+        const response = await fetch(`/api/v1/organizations/${organizationId}/shared-care/photo`, {
+          credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': token },
+          body: JSON.stringify(body),
+        });
+        signal.throwIfAborted();
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        signal.throwIfAborted();
+        if (!blob.type.startsWith('image/')) return null;
+        return URL.createObjectURL(blob);
+      },
     },
   });
 }

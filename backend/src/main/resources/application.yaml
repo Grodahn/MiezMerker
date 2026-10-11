@@ -7,6 +7,13 @@ spring:
       # V1 reserves a schema named after the PostgreSQL user. Pin every new
       # connection so that creating it cannot change migration/query lookup.
       connection-init-sql: SET search_path TO public
+  servlet:
+    multipart:
+      # Container guard above the application limit (miezmerker.media.*):
+      # uploads between the two are rejected by the app with a controlled
+      # 413 instead of a container error. See docs/cat-photos.md.
+      max-file-size: ${MEDIA_MULTIPART_MAX_FILE_SIZE:6MB}
+      max-request-size: ${MEDIA_MULTIPART_MAX_REQUEST_SIZE:10MB}
   jpa:
     open-in-view: false
     hibernate:
@@ -52,3 +59,19 @@ miezmerker:
     org-slug: ${BOOTSTRAP_ORG_SLUG:versuch}
     org-name: ${BOOTSTRAP_ORG_NAME:Versuchsorganisation}
     org-contact: ${BOOTSTRAP_ORG_CONTACT:}
+  media:
+    # Self-hosted cat photo storage (#95): plain filesystem directory holding
+    # random, non-guessable JPEG files. Must live on persistent storage and be
+    # included in backups together with the database (see docs/cat-photos.md).
+    storage-dir: ${MEDIA_STORAGE_DIR:data/cat-photos}
+    # Upload and image guards. Uploads above max-upload-bytes are rejected
+    # with 413/400; decoded images above max-dimension per side or max-pixels
+    # in total are rejected as malformed (decompression-bomb protection).
+    max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:5242880}
+    max-dimension: ${MEDIA_MAX_DIMENSION:4096}
+    max-pixels: ${MEDIA_MAX_PIXELS:12000000}
+    # Normalization for mobile devices: the long edge is scaled down to
+    # target-long-edge and everything is re-encoded as JPEG (metadata-free)
+    # with the configured quality.
+    target-long-edge: ${MEDIA_TARGET_LONG_EDGE:1600}
+    jpeg-quality: ${MEDIA_JPEG_QUALITY:0.85}

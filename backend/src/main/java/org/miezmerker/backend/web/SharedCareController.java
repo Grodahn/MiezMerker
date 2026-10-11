@@ -26,6 +26,9 @@ public class SharedCareController {
     @Schema(name = "SharedCareVisitsRequest")
     public record VisitsRequest(@NotNull UUID ownObservationRef, @NotNull UUID sourceOrganizationId,
             Integer limit, Integer offset, Boolean newestFirst) {}
+    @Schema(name = "SharedCarePhotoRequest")
+    public record PhotoRequest(@NotNull UUID ownObservationRef,
+            @NotNull UUID sourceOrganizationId) {}
 
     @PostMapping(value = "/resolve", consumes = "application/json", produces = "application/json")
     @Operation(operationId = "resolveSharedCare", summary = "Resolve CARE projections using owned persisted observations")
@@ -42,6 +45,30 @@ public class SharedCareController {
         return shared.visits(TenantService.currentUserId(principal), organizationId,
                 request.ownObservationRef(), request.sourceOrganizationId(), limit(request.limit()),
                 offset(request.offset()), request.newestFirst() == null || request.newestFirst());
+    }
+
+    @PostMapping(value = "/photo", consumes = "application/json", produces = "image/jpeg")
+    @Operation(operationId = "getSharedCarePhoto",
+            summary = "Read an explicitly shared foreign cat photo with fresh observation proof (requires CARE plus PHOTO)")
+    public org.springframework.http.ResponseEntity<byte[]> photo(
+            @PathVariable UUID organizationId,
+            @AuthenticationPrincipal AppUserDetails principal,
+            @Valid @RequestBody PhotoRequest request) {
+        var data = shared.photo(TenantService.currentUserId(principal), organizationId,
+                request.ownObservationRef(), request.sourceOrganizationId());
+        var headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.parseMediaType(
+                data.contentType()));
+        headers.setContentLength(data.bytes().length);
+        // Foreign shared photos are online-only: never stored by caches, and
+        // every read re-evaluates authorization so revocation takes effect
+        // on the next read.
+        headers.setCacheControl("no-store");
+        headers.set("X-Content-Type-Options", "nosniff");
+        headers.set("Content-Security-Policy", "default-src 'none'");
+        headers.setContentDispositionFormData("inline", "shared-cat-photo.jpg");
+        return new org.springframework.http.ResponseEntity<>(data.bytes(), headers,
+                org.springframework.http.HttpStatus.OK);
     }
     private static int limit(Integer value) { return value == null ? 50 : value; }
     private static int offset(Integer value) { return value == null ? 0 : value; }

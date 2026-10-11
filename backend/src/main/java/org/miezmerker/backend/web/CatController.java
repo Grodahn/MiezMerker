@@ -11,6 +11,7 @@ import org.miezmerker.backend.domain.Cat;
 import org.miezmerker.backend.repo.CatRepository;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.miezmerker.backend.security.TenantService;
+import org.miezmerker.backend.service.CatPhotoService;
 import org.miezmerker.backend.service.CatService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -35,18 +36,21 @@ import org.springframework.web.server.ResponseStatusException;
 public class CatController {
     private final CatRepository cats;
     private final CatService service;
+    private final CatPhotoService photos;
     private final TenantService tenants;
 
     public CatController(CatRepository cats, CatService service,
-            TenantService tenants) {
+            CatPhotoService photos, TenantService tenants) {
         this.cats = cats;
         this.service = service;
+        this.photos = photos;
         this.tenants = tenants;
     }
 
     @Schema(name = "CatView")
     public record CatView(UUID id, String organizationId, String chipId, String name,
-            String status, String notes, String createdAt, String updatedAt) {}
+            String status, String notes, String createdAt, String updatedAt,
+            boolean hasPhoto, String photoUpdatedAt) {}
 
     @Schema(name = "CreateCatRequest")
     public record CreateCatRequest(
@@ -65,7 +69,14 @@ public class CatController {
     private static CatView toView(Cat c) {
         return new CatView(c.getId(), c.getOrganization().getId().toString(), c.getChipId(),
                 c.getName(), c.getStatus(), c.getNotes(), c.getCreatedAt().toString(),
-                c.getUpdatedAt().toString());
+                c.getUpdatedAt().toString(), false, null);
+    }
+
+    private CatView toViewWithPhoto(UUID user, UUID organizationId, Cat c) {
+        var meta = photos.info(user, organizationId, c.getId());
+        return new CatView(c.getId(), c.getOrganization().getId().toString(), c.getChipId(),
+                c.getName(), c.getStatus(), c.getNotes(), c.getCreatedAt().toString(),
+                c.getUpdatedAt().toString(), meta.hasPhoto(), meta.updatedAt());
     }
 
     @GetMapping(produces = "application/json")
@@ -78,8 +89,17 @@ public class CatController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireActive(principal.getId(), organizationId);
-        return cats.findByOrganizationId(organizationId).stream()
-                .map(CatController::toView).toList();
+        var known = cats.findByOrganizationId(organizationId);
+        var presence = photos.presence(principal.getId(), organizationId,
+                known.stream().map(Cat::getId).toList());
+        return known.stream().map(cat -> {
+            var meta = presence.get(cat.getId());
+            return new CatView(cat.getId(), cat.getOrganization().getId().toString(),
+                    cat.getChipId(), cat.getName(), cat.getStatus(), cat.getNotes(),
+                    cat.getCreatedAt().toString(), cat.getUpdatedAt().toString(),
+                    meta != null && meta.hasPhoto(),
+                    meta == null ? null : meta.updatedAt());
+        }).toList();
     }
 
     @GetMapping(value = "/{catId}", produces = "application/json")
@@ -92,8 +112,9 @@ public class CatController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         tenants.requireActive(principal.getId(), organizationId);
-        return toView(cats.findByIdAndOrganizationId(catId, organizationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
+        return toViewWithPhoto(principal.getId(), organizationId,
+                cats.findByIdAndOrganizationId(catId, organizationId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
     }
 
     @PostMapping(consumes = "application/json", produces = "application/json")
@@ -126,8 +147,9 @@ public class CatController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }
-        return toView(service.update(principal.getId(), organizationId, catId,
-                request.chipId(), request.name(), request.status(), request.notes()));
+        return toViewWithPhoto(principal.getId(), organizationId, service.update(
+                principal.getId(), organizationId, catId, request.chipId(),
+                request.name(), request.status(), request.notes()));
     }
 
     @DeleteMapping("/{catId}")
@@ -142,6 +164,10 @@ public class CatController {
         tenants.requireAdmin(principal.getId(), organizationId);
         Cat cat = cats.findByIdAndOrganizationId(catId, organizationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        // Remove the org-local photo first so no orphaned files remain; the
+        // database row would cascade, but the stored bytes need explicit
+        // cleanup scoped to the same tenant.
+        photos.deleteForCatRemoval(cat.getId());
         cats.delete(cat);
     }
 

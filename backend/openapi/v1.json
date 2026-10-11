@@ -1,6 +1,29 @@
 {
   "components": {
     "schemas": {
+      "CatPhotoMeta": {
+        "properties": {
+          "byteSize": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hasPhoto": {
+            "type": "boolean"
+          },
+          "height": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "width": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "CatView": {
         "properties": {
           "chipId": {
@@ -8,6 +31,9 @@
           },
           "createdAt": {
             "type": "string"
+          },
+          "hasPhoto": {
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -20,6 +46,9 @@
             "type": "string"
           },
           "organizationId": {
+            "type": "string"
+          },
+          "photoUpdatedAt": {
             "type": "string"
           },
           "status": {
@@ -1058,6 +1087,23 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "SharedCarePhotoRequest": {
+        "properties": {
+          "ownObservationRef": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceOrganizationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownObservationRef",
+          "sourceOrganizationId"
+        ],
         "type": "object"
       },
       "SharedCareProfile": {
@@ -2302,6 +2348,145 @@
         ]
       }
     },
+    "/api/v1/organizations/{organizationId}/cats/{catId}/photo": {
+      "delete": {
+        "operationId": "deleteCatPhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "catId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Remove the organization's own cat photo",
+        "tags": [
+          "cat-photo-controller"
+        ]
+      },
+      "get": {
+        "operationId": "getCatPhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "catId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Read the organization's own cat photo (requires ACTIVE membership)",
+        "tags": [
+          "cat-photo-controller"
+        ]
+      },
+      "put": {
+        "operationId": "putCatPhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "catId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatPhotoMeta"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Upload or replace the organization's own cat photo",
+        "tags": [
+          "cat-photo-controller"
+        ]
+      }
+    },
     "/api/v1/organizations/{organizationId}/chip-activity": {
       "get": {
         "operationId": "listChipActivity",
@@ -3169,6 +3354,49 @@
         "summary": "ADMIN creates or replaces one outgoing policy; scope in path, audience in body",
         "tags": [
           "share-policy-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/shared-care/photo": {
+      "post": {
+        "operationId": "getSharedCarePhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedCarePhotoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Read an explicitly shared foreign cat photo with fresh observation proof (requires CARE plus PHOTO)",
+        "tags": [
+          "shared-care-controller"
         ]
       }
     },

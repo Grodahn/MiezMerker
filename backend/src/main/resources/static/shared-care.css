@@ -21,6 +21,10 @@
   align-items: center;
   margin-block: .75rem;
 }
+.shared-care__photo { margin: 0 0 .75rem; }
+.shared-care__image { display: block; width: 100%; max-width: 28rem; height: auto;
+  aspect-ratio: 4 / 3; object-fit: cover; border-radius: .75rem; }
+.shared-care__photo figcaption { font-size: .8125rem; opacity: .8; }
 .shared-care button { min-height: 44px; max-width: 100%; white-space: normal; }
 .shared-care time { overflow-wrap: anywhere; }
 @media (max-width: 430px) {

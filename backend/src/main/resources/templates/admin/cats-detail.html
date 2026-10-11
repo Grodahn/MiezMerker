@@ -7,6 +7,23 @@
 <div class="card"><dl><dt>Chip-ID</dt><dd th:text="${cat.chipId}">Chip</dd><dt>Status</dt><dd th:text="${cat.status ?: '–'}">Status</dd><dt>Notiz</dt><dd style="white-space:pre-wrap" th:text="${cat.notes ?: '–'}">Notiz</dd>
 <dt>Letzte verlässliche Sichtung (UTC)</dt><dd th:text="${cat.sighting ?: 'unbekannt – keine verlässliche Uhrzeit'}">Zeit</dd><dt>Letzter Server-Empfang (UTC)</dt><dd th:text="${cat.received ?: 'unbekannt'}">Empfang</dd><dt>Beobachtungen</dt><dd th:text="${cat.count}">0</dd></dl>
 <p th:if="${cat.uncertain > 0}">Uhrzeit unbekannt/ungültig bei <span th:text="${cat.uncertain}">0</span> Beobachtungen. UNKNOWN wird nicht als präzise Sichtung ausgegeben.</p></div>
+<section class="card" aria-label="Katzenfoto"><h2>Foto</h2>
+<p th:if="${photoError != null}" role="alert" th:text="${photoError}">Fehler</p>
+<p th:if="${photoSaved != null}" role="status" th:text="${photoSaved}">Gespeichert</p>
+<div th:if="${hasPhoto}"><img th:src="@{/api/v1/organizations/{org}/cats/{cat}/photo(org=${activeOrg.id}, cat=${cat.id})}" alt="Katzenfoto" style="display:block;max-width:28rem;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:.75rem"/></div>
+<p th:unless="${hasPhoto}">Kein Foto vorhanden.</p>
+<form method="post" th:action="@{/admin/cats/{id}/photo(id=${cat.id}, _csrf=${_csrf.token})}" enctype="multipart/form-data">
+<input type="hidden" name="formOrganizationId" th:value="${activeOrg.id}"/>
+<label>Bild wählen (JPEG oder PNG)<input type="file" name="file" accept="image/jpeg,image/png" required/></label>
+<button type="submit" class="btn">Foto speichern</button>
+</form>
+<!-- Hinweis: Das CSRF-Token steht in der URL, weil Servlet-Container
+den Body von Multipart-Formularen vor dem CSRF-Filter nicht parsen. -->
+<form th:if="${hasPhoto}" method="post" th:action="@{/admin/cats/{id}/photo/delete(id=${cat.id})}">
+<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<input type="hidden" name="formOrganizationId" th:value="${activeOrg.id}"/>
+<button type="submit" class="btn">Foto entfernen</button>
+</form></section>
 <h2>Bekannte Futterstellen</h2><p>Futterstellen zum Zeitpunkt der Beobachtungen; ein späterer Geräteumzug verändert sie nicht.</p><p th:if="${#lists.isEmpty(cat.knownSites)}">Keine bekannte Futterstelle.</p><ul><li th:each="site : ${cat.knownSites}"><a th:href="@{/admin/sites/{id}(id=${site.id})}" th:text="${site.name}">Site</a></li></ul>
 <h2>Besuchte Futterstellen</h2><p>Jede Futterstelle einmal, mit der letzten verlässlichen Besuchszeit (UTC). Besuche behalten ihre historische Futterstelle; der Serverempfang ist keine Sichtungszeit.</p><p th:if="${#lists.isEmpty(siteVisits)}">Keine besuchte Futterstelle mit verlässlicher Uhrzeit.</p><ul><li th:each="site : ${siteVisits}"><a th:href="@{/admin/sites/{id}(id=${site.id})}" th:text="${site.name}">Site</a>: letzter Besuch <span th:text="${site.latestVisitStart}">Zeit</span></li></ul>
 <h2>Besuche dieses Chips</h2><p>Seitengröße <span th:text="${visitLimit}">20</span>, insgesamt <span th:text="${visitTotal}">0</span> gespeicherte Besuche. Beobachtungen ohne verlässliche Zeit oder bekannte Futterstelle erscheinen nicht als Besuch.</p><p th:if="${#lists.isEmpty(visits)}">Keine gespeicherten Besuche.</p>

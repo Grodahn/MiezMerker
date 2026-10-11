@@ -363,6 +363,25 @@ export interface paths {
         patch: operations["updateCat"];
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/cats/{catId}/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the organization's own cat photo (requires ACTIVE membership) */
+        get: operations["getCatPhoto"];
+        /** Upload or replace the organization's own cat photo */
+        put: operations["putCatPhoto"];
+        post?: never;
+        /** Remove the organization's own cat photo */
+        delete: operations["deleteCatPhoto"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}/chip-activity": {
         parameters: {
             query?: never;
@@ -578,6 +597,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/shared-care/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read an explicitly shared foreign cat photo with fresh observation proof (requires CARE plus PHOTO) */
+        post: operations["getSharedCarePhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}/shared-care/resolve": {
         parameters: {
             query?: never;
@@ -718,14 +754,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CatPhotoMeta: {
+            /** Format: int32 */
+            byteSize?: number;
+            hasPhoto?: boolean;
+            /** Format: int32 */
+            height?: number;
+            updatedAt?: string;
+            /** Format: int32 */
+            width?: number;
+        };
         CatView: {
             chipId?: string;
             createdAt?: string;
+            hasPhoto?: boolean;
             /** Format: uuid */
             id?: string;
             name?: string;
             notes?: string;
             organizationId?: string;
+            photoUpdatedAt?: string;
             status?: string;
             updatedAt?: string;
         };
@@ -1081,6 +1129,12 @@ export interface components {
             memberships?: components["schemas"]["MembershipView"][];
             /** Format: uuid */
             userId?: string;
+        };
+        SharedCarePhotoRequest: {
+            /** Format: uuid */
+            ownObservationRef: string;
+            /** Format: uuid */
+            sourceOrganizationId: string;
         };
         SharedCareProfile: {
             catDisplayName?: string | null;
@@ -1803,6 +1857,82 @@ export interface operations {
             };
         };
     };
+    getCatPhoto: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                organizationId: string;
+                catId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                };
+            };
+        };
+    };
+    putCatPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                catId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatPhotoMeta"];
+                };
+            };
+        };
+    };
+    deleteCatPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                catId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listChipActivity: {
         parameters: {
             query?: never;
@@ -2286,6 +2416,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevokeSharePolicyResponse"];
+                };
+            };
+        };
+    };
+    getSharedCarePhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedCarePhotoRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
                 };
             };
         };

@@ -2,6 +2,7 @@ package org.miezmerker.backend.support;
 
 import org.miezmerker.backend.repo.AppDeviceRepository;
 import org.miezmerker.backend.repo.AppUserRepository;
+import org.miezmerker.backend.repo.CatPhotoRepository;
 import org.miezmerker.backend.repo.CatRepository;
 import org.miezmerker.backend.repo.DerivedVisitRepository;
 import org.miezmerker.backend.repo.FeedingSiteRepository;
@@ -35,6 +36,7 @@ public class TestDatabaseCleaner {
     private final DerivedVisitRepository derivedVisits;
     private final RawObservationRepository observations;
     private final NodeDeploymentRepository deployments;
+    private final CatPhotoRepository catPhotos;
     private final CatRepository cats;
     private final FeedingSiteRepository sites;
     private final AppDeviceRepository devices;
@@ -50,6 +52,7 @@ public class TestDatabaseCleaner {
             DerivedVisitRepository derivedVisits,
             RawObservationRepository observations,
             NodeDeploymentRepository deployments,
+            CatPhotoRepository catPhotos,
             CatRepository cats,
             FeedingSiteRepository sites,
             AppDeviceRepository devices,
@@ -64,6 +67,7 @@ public class TestDatabaseCleaner {
         this.derivedVisits = derivedVisits;
         this.observations = observations;
         this.deployments = deployments;
+        this.catPhotos = catPhotos;
         this.cats = cats;
         this.sites = sites;
         this.devices = devices;
@@ -82,6 +86,7 @@ public class TestDatabaseCleaner {
         derivedVisits.deleteAllInBatch();
         observations.deleteAllInBatch();
         deployments.deleteAllInBatch();
+        catPhotos.deleteAllInBatch();
         cats.deleteAllInBatch();
         sites.deleteAllInBatch();
         devices.deleteAllInBatch();

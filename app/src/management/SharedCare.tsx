@@ -22,6 +22,24 @@ const sharedApi: SharedCareApi = {
       ...requestOptions(signal), headers: { 'X-XSRF-TOKEN': token }, params: { path: { organizationId } }, body,
     }));
   },
+  // Foreign photos stay transient: fetched as blobs (no-store), surfaced as
+  // revocable object URLs, never written to any browser storage.
+  photo: async (organizationId, body, signal) => {
+    const token = await fetchCsrfToken(); signal.throwIfAborted();
+    const response = await fetch(`/api/v1/organizations/${encodeURIComponent(organizationId)}/shared-care/photo`, {
+      ...requestOptions(signal),
+      credentials: 'same-origin',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': token },
+      body: JSON.stringify(body),
+    });
+    signal.throwIfAborted();
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    signal.throwIfAborted();
+    if (!blob.type.startsWith('image/')) return null;
+    return URL.createObjectURL(blob);
+  },
 };
 
 export function SharedCare({ organizationId, chipId }: { organizationId: string; chipId: string }) {

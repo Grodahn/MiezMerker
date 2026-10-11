@@ -502,4 +502,74 @@ class AdminCatsTest {
         assertEquals(400, get("/admin/cats/" + c.getId() + "?offset=-1").statusCode());
     }
 
+    @Test
+    void catPhotoSectionUploadAndDeleteThroughAdmin() throws Exception {
+        var f = seed(); var c = cat(f.orgA(), "PHOTO", "Photo Cat");
+        Cat foreign = cat(f.orgB(), "PHOTO", "Foreign Cat");
+        loginA();
+        var empty = get("/admin/cats/" + c.getId());
+        assertEquals(200, empty.statusCode(), empty.body());
+        assertTrue(empty.body().contains("Katzenfoto"));
+        assertTrue(empty.body().contains("Kein Foto vorhanden"));
+
+        byte[] photo = adminTestJpeg();
+        String boundary = "----admintest" + UUID.randomUUID().toString().replace("-", "");
+        var uploaded = multipart("/admin/cats/" + c.getId() + "/photo",
+                "/admin/cats/" + c.getId(), boundary, photo);
+        assertEquals(302, uploaded.statusCode(), uploaded.body());
+        var shown = get("/admin/cats/" + c.getId());
+        assertEquals(200, shown.statusCode(), shown.body());
+        assertTrue(shown.body().contains("/api/v1/organizations/" + f.orgA().getId()
+                + "/cats/" + c.getId() + "/photo"), shown.body());
+        assertTrue(shown.body().contains("Foto entfernen"));
+
+        // Another organization's cat is never editable through this tenant.
+        var forged = multipart("/admin/cats/" + foreign.getId() + "/photo",
+                "/admin/cats/" + c.getId(), boundary, photo);
+        assertEquals(404, forged.statusCode(), forged.body());
+
+        String csrf = adminPageCsrf("/admin/cats/" + c.getId());
+        var deleted = postForm("/admin/cats/" + c.getId() + "/photo/delete",
+                formBody(csrf));
+        assertEquals(302, deleted.statusCode(), deleted.body());
+        var cleared = get("/admin/cats/" + c.getId());
+        assertEquals(200, cleared.statusCode(), cleared.body());
+        assertTrue(cleared.body().contains("Kein Foto vorhanden"));
+    }
+
+    static byte[] adminTestJpeg() throws Exception {
+        var image = new java.awt.image.BufferedImage(48, 48,
+                java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var graphics = image.createGraphics();
+        graphics.setColor(java.awt.Color.MAGENTA);
+        graphics.fillRect(0, 0, 48, 48);
+        graphics.dispose();
+        var output = new java.io.ByteArrayOutputStream();
+        assertTrue(javax.imageio.ImageIO.write(image, "JPEG", output));
+        return output.toByteArray();
+    }
+
+    HttpResponse<String> multipart(String path, String csrfPath, String boundary, byte[] photo) throws Exception {
+        String csrf = adminPageCsrf(csrfPath);
+        var body = new java.io.ByteArrayOutputStream();
+        body.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        body.write(("Content-Disposition: form-data; name=\"formOrganizationId\"\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        body.write(formOrganizationId.getBytes(StandardCharsets.UTF_8));
+        body.write("\r\n".getBytes(StandardCharsets.UTF_8));
+        body.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        body.write(("Content-Disposition: form-data; name=\"file\"; filename=\"admin.jpg\"\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        body.write("Content-Type: image/jpeg\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        body.write(photo);
+        body.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        // Multipart bodies are invisible to the CSRF filter (parsed only by
+        // Spring MVC), so the token rides in the query string like the form.
+        String target = base(path) + "?_csrf=" + URLEncoder.encode(csrf, StandardCharsets.UTF_8);
+        return client.send(HttpRequest.newBuilder(URI.create(target))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
 }

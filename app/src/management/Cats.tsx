@@ -7,6 +7,7 @@ import { Card } from '../ui/primitives';
 import { api } from '../api/client';
 import { Feedback, LoadState, millis, siteName, time, type Activity, type Cat, type Site } from './common';
 import { requestOptions, result, useLoad, useMutation } from './data';
+import { CatPhoto } from './CatPhoto';
 import { VisitTable } from './VisitTable';
 import { SharedCare } from './SharedCare';
 import './cats.css';
@@ -103,8 +104,9 @@ function feedingSiteLabels(sites: Site[], ids?: string[]): string[] {
 
 type CatFilter = 'all' | 'known' | 'unknown';
 
-function CatDetail({ organizationId, chipId, cat, activity, sites, onClose }: {
+function CatDetail({ organizationId, chipId, cat, activity, sites, onClose, onPhotoChanged }: {
   organizationId: string; chipId: string; cat?: Cat; activity?: Activity; sites: Site[]; onClose: () => void;
+  onPhotoChanged: () => void;
 }) {
   const title = cat ? catDisplayTitle(cat) : 'Unbekannter Chip';
   const seen = lastSeenValue(activity);
@@ -112,12 +114,13 @@ function CatDetail({ organizationId, chipId, cat, activity, sites, onClose }: {
   const unknownClock = !!activity && !activity.lastSeenAtMillis && !!activity.uncertainClockCount;
   return <section className="detail cat-detail" aria-label="Katzendetails">
     <div className="cat-detail__header">
-      <Graphic src={assets.placeholders.cat} alt="" className="avatar cat-detail__avatar" />
+      {!cat?.hasPhoto && <Graphic src={assets.placeholders.cat} alt="" className="avatar cat-detail__avatar" />}
       <div className="cat-detail__titles">
         <h2 className="cat-detail__title">{title}</h2>
         <p className="cat-detail__chip">Chip-ID: <code>{chipId}</code></p>
       </div>
     </div>
+    {cat?.id && <CatPhoto organizationId={organizationId} cat={cat} onChanged={onPhotoChanged} />}
     {!cat && <p>Zu diesem Chip ist noch keine Katze angelegt. Ein unbekannter Chip ist kein Fehler.</p>}
     <dl className="cat-detail__list">
       {cat && <>
@@ -282,7 +285,8 @@ export function Cats({ organizationId }: { organizationId: string }) {
       cat={selectedEntry?.cat}
       activity={selectedEntry?.activity}
       sites={data.sites}
-      onClose={() => setSelected(null)} />}
+      onClose={() => setSelected(null)}
+      onPhotoChanged={list.reload} />}
     {selected && <CatEditor key={`editor-${selected.id ?? selected.chipId ?? 'new'}`} organizationId={organizationId} initial={selected}
       onClose={() => setSelected(null)} onSaved={() => {
         selectionOrigin.current = null; focusSearchOnReload.current = true;

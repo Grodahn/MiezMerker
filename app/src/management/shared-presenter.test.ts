@@ -13,7 +13,8 @@ beforeEach(() => {
   root = document.createElement('div'); document.body.append(root);
   api = { observations: vi.fn().mockResolvedValue([{ id: 'own-read', organizationId: 'org-a', chipId: 'CHIP', clockStatus: 'UNKNOWN' }]),
     resolve: vi.fn().mockResolvedValue({ items: [profile], nextOffset: null }),
-    visits: vi.fn().mockResolvedValue({ items: [visit], nextOffset: null }) };
+    visits: vi.fn().mockResolvedValue({ items: [visit], nextOffset: null }),
+    photo: vi.fn().mockResolvedValue(null) };
 });
 afterEach(() => { dispose?.(); root.remove(); vi.restoreAllMocks(); });
 function mount(options = {}) {
@@ -43,6 +44,49 @@ test.each(['no grant', 'hidden organization', 'revoked grant'])('%s does not sug
   vi.mocked(api.resolve).mockResolvedValue({ items: [] }); mount();
   await waitFor(() => expect(root.textContent).toContain('Keine freigegebene Betreuung'));
   expect(root.textContent).not.toContain('Organisation B'); expect(api.visits).not.toHaveBeenCalled();
+});
+
+test('authorized foreign photo renders read-only with provenance; denied photo keeps a neutral placeholder', async () => {
+  vi.mocked(api.photo).mockResolvedValue('blob:foreign-b');
+  mount(); await ready();
+  const image = root.querySelector('.shared-care__source img') as HTMLImageElement | null;
+  expect(image?.src).toContain('blob:foreign-b');
+  expect(image?.alt).toContain('Organisation B');
+  expect(api.photo).toHaveBeenCalledWith('org-a',
+    { ownObservationRef: 'own-read', sourceOrganizationId: 'org-b' }, expect.any(AbortSignal));
+  // The local photo is never substituted: no photo URL appears outside the
+  // provenance-marked foreign card.
+  expect(root.querySelectorAll('img')).toHaveLength(1);
+
+  vi.mocked(api.photo).mockResolvedValue(null);
+  fireEvent.click(within(root).getByRole('button', { name: 'Freigaben neu prüfen' }));
+  await waitFor(() => expect(root.textContent).toContain('Kein freigegebenes Foto verfügbar'));
+  expect(root.querySelector('img')).toBeNull();
+  // A denied photo never fails the profile/visit page.
+  expect(root.textContent).toContain('B-Name');
+});
+
+test('foreign photo URLs are revoked on reload and dispose; a late photo never restores', async () => {
+  const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  vi.mocked(api.photo).mockImplementation(async () => URL.createObjectURL(new Blob(['x'], { type: 'image/jpeg' })));
+  mount(); await ready();
+  const first = (root.querySelector('.shared-care__source img') as HTMLImageElement).src;
+  expect(first.startsWith('blob:')).toBe(true);
+  fireEvent.click(within(root).getByRole('button', { name: 'Freigaben neu prüfen' }));
+  await waitFor(() => expect(api.photo).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(revoke).toHaveBeenCalledWith(first));
+  // A photo resolving after dispose is never rendered.
+  let finish!: (url: string) => void;
+  vi.mocked(api.photo).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  fireEvent.click(within(root).getByRole('button', { name: 'Freigaben neu prüfen' }));
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  const undone = dispose; dispose = () => {};
+  undone();
+  finish('blob:stale');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(root.querySelector('img')).toBeNull();
+  // Nothing is written to persistent browser storage.
+  expect(localStorage.length).toBe(0);
 });
 
 test.each([[], [{ id: 'forged', organizationId: 'org-b', chipId: 'CHIP' }], [{ id: 'other-chip', organizationId: 'org-a', chipId: 'OTHER' }]].map(observations => [observations]))(
