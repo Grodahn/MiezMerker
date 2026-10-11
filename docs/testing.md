@@ -62,6 +62,9 @@ Backend tags cover all existing test classes:
 | system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |
 
 `SystemPrivilegeTest` also belongs to the `auth` domain.
+`NodeTimeBootstrapTest` and `NodeTimeProtocolTest` belong to `node` and `auth` and
+cover signed UTC bootstrap, authorization, claim races, bounded abuse controls,
+and the ADR 0017 challenge/proof/acceptance interoperability fixtures.
 `DevDemoTest` and `DevDemoCommandTest` belong to `auth`, `system`, and `schema` and cover the explicit
 local demo fixture, ownership collisions, login/API access and replay safety.
 `AdminOrganizationSettingsTest` also belongs to the `auth` domain and covers the rendered sharing settings,

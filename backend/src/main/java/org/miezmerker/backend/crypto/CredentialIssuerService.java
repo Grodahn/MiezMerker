@@ -46,6 +46,7 @@ public class CredentialIssuerService {
     private final ECPrivateKey privateKey;
     private final ECPublicKey publicKey;
     private final long ttlSeconds;
+    private final boolean stableKey;
 
     @org.springframework.beans.factory.annotation.Autowired
     public CredentialIssuerService(
@@ -76,6 +77,7 @@ public class CredentialIssuerService {
                 this.privateKey = priv;
                 this.publicKey = pub;
                 this.ttlSeconds = configuredTtl;
+                this.stableKey = true;
                 log.info("Using configured credential issuer key (kid={}).", KEY_ID);
                 return;
             } catch (IllegalArgumentException e) {
@@ -90,6 +92,7 @@ public class CredentialIssuerService {
         this.privateKey = (ECPrivateKey) kp.getPrivate();
         this.publicKey = (ECPublicKey) kp.getPublic();
         this.ttlSeconds = configuredTtl;
+        this.stableKey = false;
         log.warn("Using ephemeral credential issuer key (kid={}). "
                 + "Configure a stable miezmerker.issuer key for production.", KEY_ID);
     }
@@ -107,6 +110,7 @@ public class CredentialIssuerService {
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.ttlSeconds = ttlSeconds;
+        this.stableKey = stable;
     }
 
     private static void validateKeyPair(ECPrivateKey privateKey, ECPublicKey publicKey) {
@@ -125,6 +129,20 @@ public class CredentialIssuerService {
 
     public ECPublicKey getPublicKey() {
         return publicKey;
+    }
+
+    public boolean hasStableKey() { return stableKey; }
+
+    /** Purpose-specific payload; never copies caller claims or credential authorization fields. */
+    public String issueTimeProof(NodeTimeProtocol.Challenge challenge, long utcMillis) {
+        if (!stableKey || utcMillis <= 0) throw new IllegalStateException("Time issuance unavailable");
+        NodeTimeProtocol.validate(challenge);
+        return sign(new JWTClaimsSet.Builder().issuer(ISSUER).claim("kid", KEY_ID)
+                .claim("kind", "node-time-bootstrap").claim("ver", 1)
+                .claim("node", challenge.nodeId()).claim("incarnation", challenge.incarnation())
+                .claim("boot", challenge.bootCounter()).claim("nonce", challenge.challengeNonce())
+                .claim("dpf", challenge.devicePublicKeyFingerprint()).claim("utc_ms", utcMillis)
+                .jwtID(UUID.randomUUID().toString()).build());
     }
 
     public long getTtlSeconds() {

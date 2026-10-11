@@ -770,6 +770,109 @@
         },
         "type": "object"
       },
+      "NodeTimeBootstrapRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge": {
+            "$ref": "#/components/schemas/NodeTimeChallengeV1"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "registrationState": {
+            "enum": [
+              "CLAIMED",
+              "UNCLAIMED"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge",
+          "organizationId",
+          "registrationState"
+        ],
+        "type": "object"
+      },
+      "NodeTimeChallengeV1": {
+        "additionalProperties": false,
+        "properties": {
+          "bootCounter": {
+            "format": "int64",
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "challengeNonce": {
+            "type": "string"
+          },
+          "challengeUptimeMs": {
+            "description": "Unsigned 64-bit integer 0..18446744073709551615; clients must preserve integers losslessly",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "deviceChallengeSignature": {
+            "type": "string"
+          },
+          "devicePublicKey": {
+            "type": "string"
+          },
+          "devicePublicKeyFingerprint": {
+            "type": "string"
+          },
+          "incarnation": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bootCounter",
+          "challengeNonce",
+          "challengeUptimeMs",
+          "deviceChallengeSignature",
+          "devicePublicKey",
+          "devicePublicKeyFingerprint",
+          "incarnation",
+          "nodeId",
+          "version"
+        ],
+        "type": "object"
+      },
+      "NodeTimeProofView": {
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "issuer",
+          "keyId",
+          "proof",
+          "tokenType",
+          "version"
+        ],
+        "type": "object"
+      },
       "NodeView": {
         "properties": {
           "claimedAt": {
@@ -1764,6 +1867,37 @@
         "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + claim mode)",
         "tags": [
           "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/time-bootstrap": {
+      "post": {
+        "operationId": "issueNodeTimeProof",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeTimeBootstrapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeTimeProofView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Issue challenge-bound UTC proof; ACTIVE owner member or pre-claim ADMIN",
+        "tags": [
+          "node-time-controller"
         ]
       }
     },
