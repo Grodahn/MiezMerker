@@ -13,7 +13,7 @@ and organizations. A SYSADMIN role conveys no tenant access.
 {"ownObservationRefs":["<recipient RawObservation UUID>"],"limit":50,"offset":0}
 ```
 
-`ownObservationRefs` must contain 1–50 distinct, non-null references. Every reference
+`ownObservationRefs` must contain 1ï¿½50 distinct, non-null references. Every reference
 must be persisted in the recipient organization and reference one of that
 organization's claimed Nodes. Validation is all-or-nothing, before any foreign query.
 Unknown, foreign, and Node/organization-mismatched references receive the same
@@ -70,7 +70,7 @@ ascending order. Ties use the visit UUID internally, which is never serialized.
 ## Limits, pagination, revocation and cache behavior
 
 JSON bodies are limited to 16 KiB before deserialization, including chunked bodies;
-excessive bodies receive 413 with no-store. Both routes default to 50 items and offset 0. Limits are 1–100 and offsets 0–10000.
+excessive bodies receive 413 with no-store. Both routes default to 50 items and offset 0. Limits are 1ï¿½100 and offsets 0ï¿½10000.
 Requests outside these bounds fail with 400. Pages read at most `limit + 1` rows;
 `nextOffset` is returned only when another authorized row exists and the next
 request stays within the offset bound. There is no total count. Paging is
@@ -85,13 +85,14 @@ Revocation, hiding or disabling affects every subsequent authorization decision;
 revocation cannot recall previously delivered data or abort a read already underway.
 There are no reciprocal or transitive grants.
 
-Both routes, including authentication, CSRF and validation errors, set
-`Cache-Control: no-store`. There is no persistent shared-data cache. PHOTO remains
-part of the policy vocabulary without image URLs or a media bypass; #95 owns media
-authorization. #98 owns transient PWA display and navigation cleanup.
+All shared-care routes, including authentication, CSRF and validation errors, set
+`Cache-Control: no-store`. There is no persistent shared-data cache. PHOTO media
+delivery lives at `POST .../shared-care/photo` under the same proof, scope and
+revocation semantics (see `docs/cat-photos.md`); #98 owns transient PWA display
+and navigation cleanup.
 
 A bounded in-memory limiter permits 120 requests per account per minute across
-both routes and all recipient contexts, returning 429 afterward. Once-per-window
+all shared-care routes and all recipient contexts, returning 429 afterward. Once-per-window
 warnings audit rate-limit violations and ten invalid proofs. Logs include only the
 reader account, never chips, observation references, foreign identities or results.
 The limiter holds at most 10000 active account windows and fails closed if full.
