@@ -1,2 +1,5 @@
-# Explicit opt-in: idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.dev" build
+# Explicit opt-in (separate build/config prevents reusing a production cache):
+# idf.py -B build-dev -D SDKCONFIG=sdkconfig.local-dev -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.dev" -D MM_DEVELOPMENT_BUILD=ON build
 CONFIG_MM_DEV_SYNTHETIC_INPUT=y
+CONFIG_MM_DEV_GPIO_RFID=y
+CONFIG_MM_DEV_GPIO_RFID_PIN=3

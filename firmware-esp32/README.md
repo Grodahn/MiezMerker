@@ -42,7 +42,7 @@ Push-Location firmware-esp32/idf
 idf.py --version
 idf.py -B build-production -D SDKCONFIG=sdkconfig.local-production set-target esp32c3
 idf.py -B build-production -D SDKCONFIG=sdkconfig.local-production `
-  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' build size
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' -D MM_DEVELOPMENT_BUILD=OFF build size
 # Standard activated IDF workflow, after confirming the selected board:
 idf.py -B build-production -p COM6 flash monitor
 # Exit monitor with Ctrl+]. Normal flash never needs erase_flash.
@@ -65,7 +65,7 @@ Equivalent helper build, without an activated terminal:
 ```powershell
 Push-Location firmware-esp32/idf
 & ../tools/idf.ps1 -IdfArguments @('-B','build-production','-D',
-  'SDKCONFIG=sdkconfig.local-production','-D','SDKCONFIG_DEFAULTS=sdkconfig.defaults','build','size')
+  'SDKCONFIG=sdkconfig.local-production','-D','SDKCONFIG_DEFAULTS=sdkconfig.defaults','-D','MM_DEVELOPMENT_BUILD=OFF','build','size')
 Pop-Location
 ```
 
@@ -185,7 +185,7 @@ vectors or automatic capture:
 ```powershell
 Push-Location firmware-esp32/idf
 idf.py -B build-dev -D SDKCONFIG=sdkconfig.local-dev `
-  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.dev' build size
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.dev' -D MM_DEVELOPMENT_BUILD=ON build size
 Pop-Location
 # Flash the explicitly selected dev image with flash_board.py, then:
 & $idfPython firmware-esp32/tools/serial_capture.py --port COM6 --seconds 15 `
@@ -266,3 +266,73 @@ are host fault models, not measurements of flash power interruption. Existing
 Root/CI protocol, simulator/auth/lifecycle regressions remain intact. The new
 ESP32 CI builds production and dev with a pinned IDF 6.1 image and checks
 configuration/image/partition sizes; GitHub-hosted CI has no USB/BLE access.
+
+## Development pushbutton RFID reader (#112)
+
+Wiring: **GPIO3 -> normally open pushbutton -> GND**. The internal pull-up gives
+HIGH while open; pressed is LOW. No external voltage is needed. Use the header
+pad labelled `3`, not physical header position 3. In this board configuration,
+GPIO9 is reserved for BOOT/claim/reset, 18/19 for native USB, 2/8/9 are strapping
+pins, flash uses 12-17, and no ADC/RTC/UART reader occupies GPIO3. This matches
+[Espressif's pin restrictions](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32c3/schematic-checklist.html)
+and ESP-IDF C3 GPIO definitions. Actual wiring inspection and physical acceptance
+are recorded separately in [#112 verification](hardware/issue112.md).
+
+Default/release builds contain no button adapter or chip generator. Both the
+separate CMake profile `MM_DEVELOPMENT_BUILD=ON` and `CONFIG_MM_DEV_GPIO_RFID=y`
+are required. Release (`MM_DEVELOPMENT_BUILD=OFF`, default) rejects either GPIO
+or existing synthetic console input even with a stale dev sdkconfig. Keep build
+directories separate. [Release gate #113](https://github.com/Grodahn/MiezMerker/issues/113)
+remains mandatory. Pin `CONFIG_MM_DEV_GPIO_RFID_PIN` defaults to 3; strapping/BOOT,
+USB and flash pins are rejected. Recheck conflicts before selecting another pin.
+GPIO-only dev builds can enable the button in menuconfig with console commands off.
+
+```powershell
+Push-Location firmware-esp32/idf
+& ../tools/idf.ps1 -IdfArguments @('-B','build-dev','-D',
+  'SDKCONFIG=sdkconfig.local-dev','-D','SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.dev',
+  '-D','MM_DEVELOPMENT_BUILD=ON','build','size')
+Pop-Location
+# List current ports and verify chip/MAC, then use flash_board.py as above.
+# Never erase or factory reset; GPIO3 is separate from BOOT/GPIO9.
+```
+
+The existing 25 ms board loop polls `DevButtonReader` under the same state mutex
+as BLE and storage. Both HIGH release and LOW press must be stable for 50 ms
+(observed latency 50-75 ms plus scheduling/storage delay). Short LOW spikes are
+ignored; short HIGH bounces cannot rearm. Held-at-boot input is ignored until a
+stable release. Each press consumes one capture attempt, including rejected,
+full, I/O or debounced results. Holding never retries.
+
+`BoardRandom::fill_random` uses hardware `esp_fill_random` after BLE starts.
+Rejection sampling chooses among the literal strings **"1", "2", "3", "4", "5"**.
+`Core::poll_reader` passes the selected string unchanged to `record_chip_read`.
+A real reader can implement the same `RfidReader` port without changing capture,
+storage, synchronization or backend logic.
+
+Logs give chip, named capture result, claimed state, `clock=UNKNOWN` and
+`attribution=UNCONFIRMED`. The firmware cannot inspect backend deployment history.
+An unclaimed Node may buffer raw reads; those are not confirmed visits.
+`RECORDED` means durable NVS append. Repeating a chip within **2000 ms of that
+chip's last recorded read** returns `DEBOUNCED`, allocates no sequence and does
+not refresh the window. Intervening other-chip reads do not remove its window.
+No alternate-cat selection or production deduplication change is made.
+
+UUID/key, reserve-before-append sequences, immutable records, ACK/retry, bounded
+storage and reboot reconciliation remain unchanged. UNKNOWN UTC stays absent.
+No organization/site identifiers or backend writes are added. Trusted UTC (#4),
+independent issuer pin, administrator claiming, valid NodeDeployment and legitimate
+AppDevice credentials remain required for attributed Android sync. Upload time
+cannot repair unknown historical time. Backend gap aggregation can combine reads.
+
+Focused test after host configure/build:
+
+```powershell
+python scripts/test.py firmware --build-dir build/portable --test '^esp32-dev-button-reader$'
+```
+
+Tests cover active LOW, both bounce edges, long holds, boot-held suppression,
+all RNG byte outcomes/rejection, core deduplication, exact BLE record chip bytes,
+unclaimed capture with absent UTC, sequence and persistent-adapter reconstruction.
+Existing adapter/auth/ACK/recovery regressions protect downstream behavior.
+Hardware-free GPIO samples do not count as physical button acceptance.

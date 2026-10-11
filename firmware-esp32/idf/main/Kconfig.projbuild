@@ -5,6 +5,22 @@ config MM_DEV_SYNTHETIC_INPUT
     help
         Development only. Commands use the real Core capture and NVS path.
         Does not weaken authorization or expose a BLE injection endpoint.
+config MM_DEV_GPIO_RFID
+    bool "Enable development GPIO pushbutton RFID reader"
+    default n
+    help
+        Explicit development build only. Active LOW with internal pull-up.
+        Each debounced press offers one random demo chip 1..5 to the real Core.
+        Requires CMake MM_DEVELOPMENT_BUILD=ON; release builds reject this flag.
+config MM_DEV_GPIO_RFID_PIN
+    int "Development RFID button GPIO"
+    depends on MM_DEV_GPIO_RFID
+    range 0 10
+    default 3
+    help
+        SuperMini GPIO3 is unused. GPIO2/8/9 are forbidden strapping/BOOT pins.
+        USB18/19 and flash pins are outside this range. Recheck wiring conflicts
+        before selecting another pin or adding real reader/RTC hardware.
 config MM_ISSUER_PUBLIC_KEY_HEX
     string "Independently pinned backend P-256 public key (130 hex characters)"
     default ""
