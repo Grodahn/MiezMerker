@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { Feedback, LoadState, millis, siteName, time, type Activity, type Cat, type Site } from './common';
 import { requestOptions, result, useLoad, useMutation } from './data';
 import { VisitTable } from './VisitTable';
+import { SharedCare } from './SharedCare';
 import './cats.css';
 
 export function CatEditor({ organizationId, initial, onSaved, onClose }: {
@@ -139,6 +140,7 @@ function CatDetail({ organizationId, chipId, cat, activity, sites, onClose }: {
         <dd>{siteLabels.length ? siteLabels.join(', ') : 'Keine bekannte Zuordnung'}</dd></div>
     </dl>
     <CatSiteVisits organizationId={organizationId} chipId={chipId}/>
+    <SharedCare organizationId={organizationId} chipId={chipId}/>
     <div className="actions"><button type="button" onClick={onClose}>Zurück zur Liste</button></div>
   </section>;
 }
