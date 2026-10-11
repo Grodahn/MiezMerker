@@ -53,11 +53,15 @@ SYSADMIN allein genügt nicht):
 - `PUT /api/v1/organizations/{org}/cats/{cat}/photo` (multipart, Feld
   `file`) — Upload/Ersetzen, auch für `MEMBER` (wie Katzenbearbeitung).
 - `GET /api/v1/organizations/{org}/cats/{cat}/photo` — JPEG-Bytes,
-  `Cache-Control: private, max-age=60, must-revalidate` + `ETag`.
+  `Cache-Control: no-store` + `ETag` (jede Abfrage serverseitig
+  autorisiert; keine Browser-Zwischenspeicherung über Logout,
+  Organisationswechsel oder Widerruf hinweg).
 - `DELETE /api/v1/organizations/{org}/cats/{cat}/photo` — Entfernen (204).
 - `CatView` (`GET/POST/PATCH …/cats`) enthält `hasPhoto`/`photoUpdatedAt`
-  zur Anzeigeentscheidung; unbekannte/fremde Katzen liefern 404/403 ohne
-  unterscheidbare Details.
+  zur Anzeigeentscheidung. Statuscodes: Wer ohne aktive Mitgliedschaft im
+  Pfad-Kontext anfragt, erhält 403 (Mandantengrenze, wie überall); wer im
+  Mandanten, aber ohne Foto/Freigabe anfragt, erhält in allen Fällen
+  dasselbe 404 (Existenz nicht aufzählbar).
 
 Fremde Organisation (jede Abfrage prüft neu; CARE allein genügt nie):
 
@@ -104,13 +108,19 @@ Fremde Organisation (jede Abfrage prüft neu; CARE allein genügt nie):
 
 ## Caching und Widerruf (Client)
 
-- Geteilte Fotos sind strikt online-only: `Cache-Control: no-store`,
-  keine Ablage in Dexie/IndexedDB/localStorage/Cache Storage/Service
-  Worker, keine Einbettung in die Offline-Asset-Registry, nur transiente
-  Blob-URLs, die bei Logout, Organisationswechsel, Berechtigungsverlust,
-  Navigation und fehlgeschlagenen Neuprüfungen widerrufen und aus dem DOM
-  entfernt werden. Abgebrochene/veraltete Antworten stellen nach einem
-  Kontextwechsel kein Foto wieder her.
-- Eigene Fotos nutzen `private`-Caching mit `ETag`-Revalidierung und
-  werden ebenfalls aus dem transienten Speicher entfernt, sobald der
-  Organisationskontext wechselt oder die Sitzung endet.
+- Geteilte wie eigene Fotos sind strikt online-only: `Cache-Control:
+  no-store` auf allen Bild-Bytes, keine Ablage in Dexie/IndexedDB/
+  localStorage/Cache Storage/Service Worker, keine Einbettung in die
+  Offline-Asset-Registry, nur transiente Blob-URLs, die bei Logout,
+  Organisationswechsel, Berechtigungsverlust, Navigation und
+  fehlgeschlagenen Neuprüfungen widerrufen und aus dem DOM entfernt werden.
+  Abgebrochene/veraltete Antworten stellen nach einem Kontextwechsel kein
+  Foto wieder her. „Widerruf wirkt sofort“ gilt für alle neuen
+  Backend-Lesezugriffe; bereits heruntergeladene Kopien auf fremden Geräten
+  können nicht ferngelöscht werden.
+- Admin-Hinweis: Das Multipart-Upload-Formular trägt das CSRF-Token in der
+  URL (`?_csrf=…`), weil Servlet-Container Multipart-Bodys vor dem
+  CSRF-Filter nicht parsen und die Seite ohne JavaScript auskommen soll.
+  Das Token ist sitzungsgebunden und bleibt same-origin (kein externer
+  Referer); Server-Access-Logs zeichnen standardmäßig keine Query-Strings
+  aus.

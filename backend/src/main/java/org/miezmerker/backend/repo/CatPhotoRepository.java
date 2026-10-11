@@ -11,10 +11,10 @@ import org.springframework.data.jpa.repository.Query;
 public interface CatPhotoRepository extends JpaRepository<CatPhoto, UUID> {
     Optional<CatPhoto> findByCatIdAndOrganizationId(UUID catId, UUID organizationId);
 
-    List<CatPhoto> findByOrganizationId(UUID organizationId);
+    List<CatPhoto> findByOrganizationIdAndCatIdIn(UUID organizationId, java.util.Collection<UUID> catIds);
 
-    /** Serializes concurrent replace/delete of the same logical photo. */
+    /** Serializes concurrent replace/delete of the same tenant-scoped photo. */
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @Query("select p from CatPhoto p where p.catId = :catId")
-    Optional<CatPhoto> lockByCatId(UUID catId);
+    @Query("select p from CatPhoto p where p.catId = :catId and p.organization.id = :organizationId")
+    Optional<CatPhoto> lockByCatIdAndOrganizationId(UUID catId, UUID organizationId);
 }

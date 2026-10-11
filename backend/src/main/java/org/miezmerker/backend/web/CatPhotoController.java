@@ -107,9 +107,11 @@ public class CatPhotoController {
         headers.setContentType(MediaType.parseMediaType(data.contentType()));
         headers.setContentLength(data.bytes().length);
         headers.setETag(data.etag());
-        // Own photos are tenant-private: shared caches must not store them,
-        // and conditional requests revalidate against the photo version.
-        headers.setCacheControl("private, max-age=60, must-revalidate");
+        // Tenant-private bytes must never sit in a shared or local HTTP
+        // cache: no-store keeps every read server-authorized, so logout,
+        // organization switch and revocation take effect immediately. The
+        // ETag still serves explicit conditional API clients.
+        headers.setCacheControl("no-store");
         headers.set("X-Content-Type-Options", "nosniff");
         headers.set("Content-Security-Policy", "default-src 'none'");
         headers.setContentDispositionFormData("inline", "cat-photo.jpg");

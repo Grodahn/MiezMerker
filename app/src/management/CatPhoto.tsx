@@ -118,6 +118,8 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
       if (!response.ok) {
         throw new Error(response.status === 413 || response.status === 400
           ? 'Datei wird abgelehnt. Bitte JPEG/PNG in angemessener Größe wählen.'
+          : response.status === 409
+          ? 'Foto hat sich gerade geändert. Bitte erneut versuchen.'
           : response.status === 401 ? 'Sitzung abgelaufen. Bitte erneut anmelden.'
           : response.status === 403 ? 'Keine Berechtigung. Bitte die aktive Mitgliedschaft prüfen.'
           : 'Foto konnte nicht gespeichert werden.');

@@ -47,6 +47,7 @@ import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.repo.RawObservationRepository;
 import org.miezmerker.backend.service.SharePolicyService;
+import org.miezmerker.backend.service.CatPhotoService;
 import org.miezmerker.backend.support.TestDatabaseCleaner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,6 +55,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -76,6 +78,8 @@ class CatPhotoTest {
     @Autowired NodeRepository nodes;
     @Autowired RawObservationRepository observations;
     @Autowired SharePolicyService shares;
+    @Autowired CatPhotoService photoService;
+    @Autowired PlatformTransactionManager txManager;
     @Autowired PasswordEncoder passwords;
     @Autowired TestDatabaseCleaner cleaner;
     @Autowired JdbcTemplate jdbc;
@@ -306,7 +310,9 @@ class CatPhotoTest {
         assertTrue(read.headers().firstValue("Content-Type").orElse("").contains("image/jpeg"));
         assertTrue(isJpeg(read.body()));
         String etag = read.headers().firstValue("ETag").orElseThrow();
-        assertTrue(read.headers().firstValue("Cache-Control").orElse("").contains("private"));
+        // Every read stays server-authorized: nothing cacheable survives
+        // logout, organization switch or revocation.
+        assertEquals("no-store", read.headers().firstValue("Cache-Control").orElseThrow());
 
         var revalidated = client.send(HttpRequest.newBuilder(URI.create(base(photoPath(orgA, catA))))
                 .header("If-None-Match", etag).GET().build(),
@@ -521,8 +527,62 @@ class CatPhotoTest {
         assertTrue(oversizedStatus == 400 || oversizedStatus == 413,
                 "oversized upload must be rejected, got " + oversizedStatus);
 
+        // Above the container multipart limit the rejection stays a
+        // controlled 413 with no internal details, never a 500.
+        byte[] containerSized = new byte[7_000_000];
+        containerSized[0] = (byte) 0xFF;
+        containerSized[1] = (byte) 0xD8;
+        containerSized[2] = (byte) 0xFF;
+        var containerReply = putPhoto(orgA, catA, containerSized, "huger.jpg", "image/jpeg");
+        assertEquals(413, containerReply.statusCode(), body(containerReply));
+        assertFalse(body(containerReply).contains("Multipart"), body(containerReply));
+
         // Every rejected upload left the current photo untouched.
         assertArrayEquals(current, getPhoto(orgA, catA).body());
+    }
+
+    @Test
+    void noPublicUrlServesPrivateMedia() throws Exception {
+        login(memberA);
+        assertEquals(200, putPhoto(orgA, catA, jpeg(48, 48, Color.RED), "a.jpg", "image/jpeg").statusCode());
+        for (String path : List.of(
+                "/cat-photos/anything.jpg",
+                "/data/cat-photos/anything.jpg",
+                "/static/cat-photos/anything.jpg",
+                "/api/v1/cat-photos/anything.jpg")) {
+            var response = client.send(HttpRequest.newBuilder(URI.create(base(path))).GET().build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            assertEquals(404, response.statusCode(), path);
+        }
+        // The authorized endpoint still serves the same photo.
+        assertEquals(200, getPhoto(orgA, catA).statusCode());
+    }
+
+    @Test
+    void rolledBackStoreLeavesNoOrphanedFiles() throws Exception {
+        byte[] upload = jpeg(64, 64, Color.MAGENTA);
+        Path dir = Path.of(storageDir).toAbsolutePath().normalize();
+        Set<String> before;
+        try (var files = Files.list(dir)) {
+            before = Set.copyOf(files.map(path -> path.getFileName().toString()).toList());
+        } catch (java.io.IOException e) {
+            before = Set.of();
+        }
+        var template = new org.springframework.transaction.support.TransactionTemplate(txManager);
+        RuntimeException forced = assertThrows(RuntimeException.class, () -> template.execute(status -> {
+            photoService.store(memberA.getId(), orgA.getId(), catA.getId(), upload);
+            assertEquals(1, jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM cat_photos WHERE organization_id = ?", Long.class, orgA.getId()));
+            throw new RuntimeException("forced rollback");
+        }));
+        assertEquals("forced rollback", forced.getMessage());
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM cat_photos WHERE organization_id = ?", Long.class, orgA.getId()));
+        try (var files = Files.list(dir)) {
+            assertEquals(before, Set.copyOf(
+                    files.map(path -> path.getFileName().toString()).toList()),
+                    "rolled-back bytes must be removed again");
+        }
     }
 
     @Test

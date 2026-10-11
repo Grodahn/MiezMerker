@@ -167,7 +167,7 @@ public class CatController {
         // Remove the org-local photo first so no orphaned files remain; the
         // database row would cascade, but the stored bytes need explicit
         // cleanup scoped to the same tenant.
-        photos.deleteForCatRemoval(cat.getId());
+        photos.deleteForCatRemoval(principal.getId(), organizationId, cat.getId());
         cats.delete(cat);
     }
 

@@ -48,11 +48,12 @@ final class CatPhotoImage {
             // SVG, HTML, text and unknown binaries are rejected before decoding.
             throw invalid();
         }
-        BufferedImage decoded = decode(upload, kind);
+        BufferedImage decoded = decode(upload, kind, maxDimension, maxPixels);
         int width = decoded.getWidth();
         int height = decoded.getHeight();
-        if (width <= 0 || height <= 0 || width > maxDimension || height > maxDimension
-                || (long) width * (long) height > maxPixels) {
+        if (width <= 0 || height <= 0) {
+            // The header check above already enforced the caps; a decoder
+            // disagreeing with its own header is not trusted.
             throw invalid();
         }
         BufferedImage framed = scaleDown(decoded, targetLongEdge);
@@ -80,7 +81,8 @@ final class CatPhotoImage {
         return null;
     }
 
-    private static BufferedImage decode(byte[] upload, String kind) {
+    private static BufferedImage decode(byte[] upload, String kind, int maxDimension,
+            long maxPixels) {
         try (ImageInputStream input = ImageIO.createImageInputStream(
                 new ByteArrayInputStream(upload))) {
             if (input == null) {
@@ -95,14 +97,32 @@ final class CatPhotoImage {
             ImageReader reader = readers.next();
             try {
                 reader.setInput(input, true, true);
-                BufferedImage image = reader.read(0);
+                // Bounds BEFORE pixels: header-only metadata, so a small
+                // file declaring huge dimensions (decompression bomb) is
+                // rejected without allocating the raster.
+                int width;
+                int height;
+                try {
+                    width = reader.getWidth(0);
+                    height = reader.getHeight(0);
+                } catch (IndexOutOfBoundsException | IOException | IllegalArgumentException e) {
+                    throw invalid();
+                }
+                if (width <= 0 || height <= 0 || width > maxDimension || height > maxDimension
+                        || (long) width * (long) height > maxPixels) {
+                    throw invalid();
+                }
+                BufferedImage image;
+                try {
+                    image = reader.read(0);
+                } catch (IndexOutOfBoundsException | IOException | IllegalArgumentException e) {
+                    // Malformed images and truncated streams.
+                    throw invalid();
+                }
                 if (image == null) {
                     throw invalid();
                 }
                 return image;
-            } catch (IndexOutOfBoundsException | IOException | IllegalArgumentException e) {
-                // Malformed images, truncated streams and decompression bombs.
-                throw invalid();
             } finally {
                 reader.dispose();
             }

@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.miezmerker.backend.domain.Cat;
 import org.miezmerker.backend.domain.CatPhoto;
 import org.miezmerker.backend.domain.Organization;
@@ -62,14 +61,20 @@ public class CatPhotoService {
     private final float jpegQuality;
 
     /**
-     * JVM-local per-cat monitors serializing concurrent replace/delete of
-     * the same logical photo. The database row lock alone cannot serialize
+     * Fixed-size JVM-local lock stripes serializing concurrent replace/delete
+     * of the same logical photo. The database row lock alone cannot serialize
      * two concurrent inserts (no row exists yet); without this, one of them
-     * would fail with a constraint violation. Multi-instance deployments
-     * keep the database constraint as the final guard and translate the
-     * residual race into a retryable 409 (see persistLocked).
+     * would fail with a constraint violation. Bounded (64 stripes) so lock
+     * state cannot grow with data. Multi-instance deployments keep the
+     * database constraint as the final guard and translate the residual race
+     * into a retryable 409 (see persistLocked).
      */
-    private final ConcurrentHashMap<UUID, Object> photoLocks = new ConcurrentHashMap<>();
+    private static final int LOCK_STRIPES = 64;
+    private final Object[] photoLocks = new Object[LOCK_STRIPES];
+
+    private Object lockFor(UUID catId) {
+        return photoLocks[(catId.hashCode() & 0x7fffffff) % LOCK_STRIPES];
+    }
 
     public CatPhotoService(CatRepository cats, CatPhotoRepository photos,
             OrganizationRepository organizations, TenantService tenants,
@@ -83,6 +88,9 @@ public class CatPhotoService {
         this.photos = photos;
         this.organizations = organizations;
         this.tenants = tenants;
+        for (int i = 0; i < LOCK_STRIPES; i++) {
+            photoLocks[i] = new Object();
+        }
         this.storageDir = Path.of(storageDir).toAbsolutePath().normalize();
         this.maxUploadBytes = maxUploadBytes;
         this.maxDimension = maxDimension;
@@ -116,10 +124,8 @@ public class CatPhotoService {
         // bounded by the organization's own cats.
         Set<UUID> wanted = Set.copyOf(catIds);
         java.util.Map<UUID, PhotoMeta> result = new java.util.HashMap<>();
-        for (CatPhoto photo : photos.findByOrganizationId(org)) {
-            if (wanted.contains(photo.getCatId())) {
-                result.put(photo.getCatId(), toMeta(photo));
-            }
+        for (CatPhoto photo : photos.findByOrganizationIdAndCatIdIn(org, wanted)) {
+            result.put(photo.getCatId(), toMeta(photo));
         }
         return result;
     }
@@ -180,7 +186,7 @@ public class CatPhotoService {
         CatPhotoImage.Normalized normalized = CatPhotoImage.normalize(upload,
                 maxUploadBytes, maxDimension, maxPixels, targetLongEdge,
                 jpegQuality);
-        synchronized (photoLocks.computeIfAbsent(catId, key -> new Object())) {
+        synchronized (lockFor(catId)) {
             Path staged = stage(normalized.bytes());
             try {
                 persistLocked(cat, organization, normalized, staged);
@@ -212,9 +218,8 @@ public class CatPhotoService {
         // Tenant-scoped: a cat of another organization is simply not found.
         cats.findByIdAndOrganizationId(catId, org)
                 .orElseThrow(CatPhotoService::hidden);
-        synchronized (photoLocks.computeIfAbsent(catId, key -> new Object())) {
-            CatPhoto photo = photos.lockByCatId(catId)
-                    .filter(locked -> locked.getOrganization().getId().equals(org))
+        synchronized (lockFor(catId)) {
+            CatPhoto photo = photos.lockByCatIdAndOrganizationId(catId, org)
                     .orElseThrow(CatPhotoService::hidden);
             Path file = pathFor(photo.getStorageKey());
             photos.delete(photo);
@@ -223,11 +228,18 @@ public class CatPhotoService {
         }
     }
 
-    /** Best-effort file cleanup when a cat itself is deleted. */
+    /**
+     * Best-effort file cleanup when a cat itself is deleted. Tenant-scoped
+     * like every other mutation: the caller proves ownership with the
+     * preceding cat lookup, and the lock/delete below re-checks it.
+     */
     @Transactional
-    public void deleteForCatRemoval(UUID catId) {
-        synchronized (photoLocks.computeIfAbsent(catId, key -> new Object())) {
-            photos.lockByCatId(catId).ifPresent(photo -> {
+    public void deleteForCatRemoval(UUID user, UUID org, UUID catId) {
+        tenants.requireActive(user, org);
+        cats.findByIdAndOrganizationId(catId, org)
+                .orElseThrow(CatPhotoService::hidden);
+        synchronized (lockFor(catId)) {
+            photos.lockByCatIdAndOrganizationId(catId, org).ifPresent(photo -> {
                 Path file = pathFor(photo.getStorageKey());
                 photos.delete(photo);
                 photos.flush();
@@ -247,19 +259,22 @@ public class CatPhotoService {
                     "photo storage is unavailable");
         }
         moveIntoPlace(staged, target);
+        // If the surrounding transaction rolls back after the bytes moved
+        // (e.g. a late commit conflict in an outer admin transaction), the
+        // unreferenced bytes are removed again: no orphaned files, no
+        // metadata without bytes.
+        onRollback(() -> deleteQuietly(target));
         final String[] previous = new String[1];
         try {
-            CatPhoto locked = photos.lockByCatId(cat.getId()).orElse(null);
+            CatPhoto locked = photos
+                    .lockByCatIdAndOrganizationId(cat.getId(), organization.getId())
+                    .orElse(null);
             if (locked == null) {
                 photos.saveAndFlush(new CatPhoto(cat, organization, key,
                         CatPhotoImage.OUTPUT_CONTENT_TYPE,
                         normalized.bytes().length, normalized.width(),
                         normalized.height()));
             } else {
-                if (!locked.getOrganization().getId().equals(
-                        organization.getId())) {
-                    throw hidden();
-                }
                 previous[0] = locked.getStorageKey();
                 locked.replace(key, CatPhotoImage.OUTPUT_CONTENT_TYPE,
                         normalized.bytes().length, normalized.width(),
@@ -361,17 +376,25 @@ public class CatPhotoService {
     }
 
     private static void afterCommit(Runnable action) {
+        synchronize(TransactionSynchronization.STATUS_COMMITTED, action);
+    }
+
+    private static void onRollback(Runnable action) {
+        synchronize(TransactionSynchronization.STATUS_ROLLED_BACK, action);
+    }
+
+    private static void synchronize(int status, Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
                         @Override
-                        public void afterCompletion(int status) {
-                            if (status == STATUS_COMMITTED) {
+                        public void afterCompletion(int completion) {
+                            if (completion == status) {
                                 action.run();
                             }
                         }
                     });
-        } else {
+        } else if (status == TransactionSynchronization.STATUS_COMMITTED) {
             action.run();
         }
     }
