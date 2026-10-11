@@ -49,7 +49,8 @@ TimeAnchorV1:
   incarnation: UUID
   bootCounter: u32
   uptimeMs: u64                               // sampled at node acceptance
-  utcMs: signed 64-bit UTC epoch
+  utcMs: signed 64-bit UTC epoch              // signed backend issuance instant,
+                                              // NOT assumed exact acceptance instant
   source: BACKEND_SIGNED | PHONE_ESTIMATE | RTC_HOLDOVER
   verifiedSecurityTime: bool                  // derived by verifier, never trusted from PWA
   uncertaintyMinusMs: u64
@@ -73,18 +74,47 @@ Both the Node's time proof acceptance and its boot/anchor metadata must be expor
 
 ## 4. Projection math and uncertainty
 
-For an RFID event at uptime U_event and a verified anchor with uptime U_anchor, UTC T_anchor **from that SAME boot**, the nominal estimate is:
+For an RFID event at uptime U_event and a **verified installed anchor** at
+uptime U_anchor from that **same boot**, with backend signed issuance instant
+S and an independently bounded backend-clock error E_server:
 
 ~~~text
-T_event = T_anchor - (U_anchor - U_event)
-elapsed = abs(U_anchor - U_event)
-drift_budget_ms = ceil(elapsed * drift_ppm_bound / 1_000_000)
-[earliest, latest] =
-  [T_event - anchor_uncertainty_minus - drift_budget_ms,
-   T_event + anchor_uncertainty_plus + drift_budget_ms]
+D = U_anchor - U_challenge                  // measured, nonnegative,
+                                          // cannot exceed challenge lifetime
+acceptance_utc_lower = S - E_server
+acceptance_utc_upper = S + E_server + D    // server issued after challenge
+                                          // and before node acceptance
+delta = U_anchor - U_event                  // signed, same-boot only
+drift = ceil(abs(delta) * drift_ppm_bound / 1_000_000)
+event_utc_lower = acceptance_utc_lower - delta - drift
+event_utc_upper = acceptance_utc_upper - delta + drift
 ~~~
 
-All calculations use checked integer arithmetic and UTC; the UI localizes time. The uncertainty includes backend time-source error, the bounded **entire challenge/response delay**, local sampling latency, quantization and oscillator drift/operating-mode assumptions. Signed does not imply mathematically exact. A candidate drift bound is configurable/reviewed and requires real measurement for production calibration; the ADR makes **no unsupported physical ppm guarantee**.
+Here D deliberately **overestimates** the elapsed time between server issuance
+and device acceptance. It is a defensible conservative bound using a
+monotonic challenge-start sample and the cryptographically tied acceptance
+sample. Add quantization, record sampling, scheduling and clock-source
+uncertainty to the appropriate side of the interval. The Node must not
+assign `utcMs = S` to its *acceptance uptime* as if transmission delay were
+zero. A nominal time for display is optional; the normative fact is the
+closed interval `[event_utc_lower, event_utc_upper]`.
+
+**Security clock and JWT guard:** at every protected operation, propagate
+this bound and accumulated drift to a current interval `[L, U]`.
+Only if **L >= credential.iat AND U < credential.exp** (with all other
+claim/scope/PoP checks passing) is its validity unambiguous. If either
+boundary intersects the possible-time interval, or any bound is unknown,
+deny. This uses the existing no-expiry-grace policy. For node-signed claim
+advertisements, ensure the current interval is tight enough to meet the
+backend's freshness rule; never sign a knowingly ambiguous "fresh" point.
+
+All calculations use checked integer arithmetic and UTC; the UI localizes
+time. The uncertainty includes backend time-source error, the bounded
+**entire challenge/response delay**, local sampling latency, quantization
+and oscillator drift/operating-mode assumptions. Signed does not imply
+mathematically exact. The selected drift bound is a documented, verified
+configuration assumption requiring real measurement for production
+calibration; **no unmeasured physical ppm guarantee is claimed**.
 
 Several anchors in one boot can reduce uncertainty only if their bounded constraints are consistent; contradiction produces CONFLICT/UNKNOWN plus diagnostics, not optimistic selection. Do not use an anchor from another boot. A clock correction only influences **subsequent** original capture timestamps; earlier originals remain frozen.
 
@@ -121,8 +151,8 @@ These DTO qualities are independent of the existing immutable on-wire capture en
 2. **Authenticated PWA:** Browser-freigegebene PWA requests a time proof from the backend. For an owned node, authenticated ACTIVE member of that owner org; for a first unclaimed node, ACTIVE ADMIN of the selected organization, plus regular physical claim-mode checks during the actual claim. Rate limits, request bounds and abuse logging apply. Never trust a caller-supplied owner identifier over backend-verified ownership. No arbitrary-time-signing endpoint.
 3. **Backend signing:** Server samples **its own authoritative UTC** and issues a domain-separated ES256 token, purpose "MM-TRUSTED-TIME-v1", carrying issuer/key ID, version, time in UTC milliseconds, node ID, incarnation, boot counter, fresh challenge, and node key fingerprint where available. The PWA cannot submit a UTC to be signed. Server must withhold issuance if its own time source is unhealthy. The public signing key must be provisioned independently on the node.
 4. **Node validation:** ESP verifies signature under independently pinned public key (existing CONFIG_MM_ISSUER_PUBLIC_KEY_HEX or separately pinned time key), purpose, key ID, boot/node/nonce binding, and single-use state. **Never** bootstrap trust from the signed token's embedded public key, from an unverified claim receipt or from a public /issuer response alone.
-5. **Freshness without any pre-existing clock:** A signed issuance timestamp **cannot prove its own freshness**. Freshness instead relies on nonce unpredictability plus a short **monotonic challenge-to-acceptance deadline** (provisional maximum 30 s, to be confirmed in tests). The accepted UTC interval includes full round-trip elapsed uncertainty. Old proofs after reboot or a stale nonce fail. No post-reset reuse of stored time proof.
-6. **Persistence/activation:** Node atomically commits its verified time anchor before publishing a valid security clock, minting a fresh signed claim advertisement or authorizing a time-dependent credential. After a crash before commit, remain UNKNOWN. All attempts consume/retire the nonce, even invalid ones.
+5. **Freshness without any pre-existing clock:** A signed issuance timestamp **cannot prove its own freshness**. Freshness instead relies on nonce unpredictability plus a short **monotonic challenge-to-acceptance deadline** (provisional maximum 30 s, to be confirmed in tests). The signed server issuance is bounded between Node challenge and acceptance. At Node acceptance, the security clock starts from the **conservative interval** `[S-E_server, S+E_server+D]`, where `D = U_accept - U_challenge`; it MUST NOT start from the point value S alone. After the deadline, or after any nonce consumption/reset, reject. No post-reset reuse of stored time proof.
+6. **Persistence/activation:** Node atomically commits its verified time anchor and the exact challenge/acceptance uptime and signed-proof digest before publishing a valid security clock, minting a fresh signed claim advertisement or authorizing a time-dependent credential. A trusted clock means a bounded interval, not a magic precise point; validity is checked with the strict `[L,U]` guard above. After a crash before commit, remain UNKNOWN. All attempts consume/retire the nonce, even invalid ones.
 7. **During operation:** Maintain trusted UTC as monotonic elapsed since the verified anchor with a conservative growing error envelope and finite maximum age. When a JWT iat/exp boundary falls **inside the uncertainty interval**, deny rather than treat validity as certain. Recheck can_sync at every protected GATT operation. A new boot starts UNKNOWN under this MVP policy, even after a soft reset, unless a later explicit continuity design is proven. Detect rollback/clock jumps; invalidate and rebootstrap instead of silently moving the trusted clock backwards.
 
 The physical claim gate from ADR 0013 remains required. Signing backend time does not itself register a node, issue BLE credentials, read observations, or authorize any session. Authenticated time initialization and authenticated observation transfer are **separate** transitions.
@@ -215,12 +245,14 @@ After a full power loss and **without internet access on the phone**, there is n
 
 Use additive versioned TIME_BOOTSTRAP request/response opcodes and capability bits in protocol/ble; existing v1 authorized TimeCorrect, authorization and binary observation layout stay unchanged. Handle signed proof length with bounded, offset-validated BLE fragmentation as needed. No silent fallback to unauthenticated TimeCorrect. The Web Bluetooth chooser still requires a user gesture and getDevices() does not scan unknown hardware.
 
-For evidence required to interpret a batch:
-- Node persists the accepted anchor/boot evidence before treating any new security time as valid.
-- PWA durably stores raw bytes and the associated boot/anchor evidence before Node ACK.
-- Backend durably stores authorized raw observations **and** associated time evidence before the PWA declares them completely uploaded/reconstructable.
-- A Node may compact/prune only when the necessary evidence has a verifiable durable downstream copy; a signed backend issuance alone does not prove device acceptance. Distinguish crash points/retries/idempotent retransmission from successful upload. Design an explicit evidence ACK if the existing observation watermark cannot express that condition.
-- Original RawObservation payloads, sequence and samePayload must remain byte-stable for duplicate retries. Neither clock correction nor late anchor updates modify them.
+**Separate ACK lifetimes are mandatory:**
+- Node persists an accepted anchor/boot evidence before treating new security time as valid, and retains each anchor until safely handed downstream.
+- Each raw record already contains `(boot_counter, monotonic_ms)`; a future anchor **need not exist yet**. The PWA may durably store/ACK an UNKNOWN raw record under the **existing #6 contiguous watermark contract**, and the Node may subsequently compact that record. Do **not** retain an ever-growing raw log while waiting for a future time anchor.
+- Boot/anchor evidence has a **separate immutable, replayable transfer and acknowledgement lifecycle**, keyed by Node/incarnation/boot/anchor identity; it MUST NOT be deleted by raw-record `Compact`. If an anchor arrives after related raw records were already uploaded and compacted, upload it separately and rebuild their backend temporal projections.
+- Before acknowledging *any available evidence*, the PWA durably stores that evidence and its binding. Before the Node discards **anchor evidence**, the PWA must have a durable copy; ideally retain it until the backend acknowledges it, or else guarantee retry in a durable outbox and documented recovery.
+- Backend marks observation uploads as received independently of whether a time anchor is already available. "Zeit rekonstruiert" is a **separate, later status**. Never label observation upload as fully time-attributed merely because backend signed an uninstalled token.
+- Existing observation high-watermark remains unchanged. For anchor evidence, add an independent ACK/cursor (or equivalent idempotent evidence receipt) if the current observation watermark cannot express that condition; distinguish the two statuses in tests and UI.
+- Original RawObservation payloads, sequence and samePayload remain byte-stable for duplicate retries. Neither clock correction nor late anchor updates modify them.
 - PWA context switches, logout and pending asynchronous callbacks cannot attach anchors to the wrong organization or Node.
 
 ## 7. Backend projection, historical FeedingSites and visits (#132/#133)
