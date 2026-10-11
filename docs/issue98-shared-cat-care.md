@@ -45,7 +45,8 @@ Spring explicitly, retaining the backend session gate and correct script MIME.
 
 Refresh and pagination immediately erase prior projections. Abort controllers,
 request identity and departure guards discard late responses. Offline, blur,
-hidden document, pagehide and form submission clear the DOM. The PWA reuses the
+hidden document, pagehide and Admin form submission clear the DOM. Local PWA
+Cat form validation errors leave the shared panel usable. The PWA reuses the
 management context generation/session lifecycle to unmount on organization,
 role, verification, logout and route changes. Admin returns through its existing
 server detail controller on focus/history return, rechecking its server-selected
@@ -89,3 +90,10 @@ tables become mobile cards. Final delivery checks also added explicit Admin
 static-resource proxy routes and a session-gate browser regression. No policy
 engine, sharing settings (#93), firmware,
 BLE synchronization, demo seeding or media infrastructure (#95) changes.
+
+Post-implementation PR review found no P1 issue. Three P2 lifecycle/accessibility
+findings were corrected: local PWA saves no longer trigger Admin navigation
+cleanup, visibility/focus return events initiate only one Admin context reload,
+and removed/disabled pagination controls restore focus to an enabled refresh or
+retry control. Regression tests reproduce these cases, including rejected saves
+and keyboard pagination after revocation.

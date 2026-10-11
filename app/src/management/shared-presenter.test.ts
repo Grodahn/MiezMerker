@@ -85,7 +85,7 @@ test('server nextOffset drives visits and organization pagination including empt
 });
 
 test.each(['offline', 'blur', 'pagehide', 'submit'])('%s clears all foreign DOM and ignores a late request', async event => {
-  mount(); await ready();
+  mount(event === 'submit' ? { onReturn: vi.fn() } : {}); await ready();
   let finish!: (value: { items: typeof profile[] }) => void;
   vi.mocked(api.resolve).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   fireEvent.click(within(root).getByRole('button', { name: 'Freigaben neu prüfen' }));
@@ -93,6 +93,39 @@ test.each(['offline', 'blur', 'pagehide', 'submit'])('%s clears all foreign DOM 
   (event === 'submit' ? document : window).dispatchEvent(new Event(event));
   finish({ items: [profile] }); await new Promise(resolve => setTimeout(resolve, 0));
   expect(root.textContent).not.toContain('B-Name'); expect(root.querySelector('time')).toBeNull();
+});
+
+test('a field-PWA local form submission leaves the shared panel usable', async () => {
+  mount(); await ready();
+  document.dispatchEvent(new Event('submit'));
+  expect(root.textContent).toContain('B-Name');
+  expect(within(root).getByRole('button', { name: 'Freigaben neu prüfen' })).toBeTruthy();
+});
+
+test('Admin focus and visibility return events request only one context reload', async () => {
+  const onReturn = vi.fn(); mount({ onReturn }); await ready();
+  window.dispatchEvent(new Event('blur'));
+  document.dispatchEvent(new Event('visibilitychange'));
+  window.dispatchEvent(new Event('focus'));
+  expect(onReturn).toHaveBeenCalledTimes(1);
+  expect(root.textContent).not.toContain('B-Name');
+});
+
+test('revoked care restores keyboard focus to an enabled refresh control', async () => {
+  vi.mocked(api.visits).mockResolvedValue({ items: [visit], nextOffset: 5 }); mount(); await ready();
+  vi.mocked(api.resolve).mockResolvedValueOnce({ items: [] });
+  const older = within(root).getByRole('button', { name: 'Ältere Besuche' });
+  older.focus(); fireEvent.click(older);
+  await waitFor(() => expect(root.textContent).toContain('Keine freigegebene Betreuung'));
+  expect(document.activeElement).toBe(within(root).getByRole('button', { name: 'Freigaben neu prüfen' }));
+});
+
+test('a failed page restores keyboard focus to its retry control', async () => {
+  mount(); await ready(); vi.mocked(api.resolve).mockRejectedValueOnce(new Error('unavailable'));
+  const refresh = within(root).getByRole('button', { name: 'Freigaben neu prüfen' });
+  refresh.focus(); fireEvent.click(refresh);
+  await waitFor(() => expect(root.textContent).toContain('Berechtigung prüfen'));
+  expect(document.activeElement).toBe(within(root).getByRole('button', { name: 'Erneut prüfen' }));
 });
 
 test('offline initially performs no request; reconnect reauthorizes', async () => {

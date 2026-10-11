@@ -33,6 +33,19 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
     const status = element('p', message);
     status.setAttribute('role', 'status');
   }
+  function restoreFocus() {
+    if (focusIndex != null && document.activeElement === document.body) {
+      const buttons = [...root.querySelectorAll('button')];
+      const candidate = buttons[focusIndex];
+      const target = candidate && !candidate.disabled ? candidate : buttons.findLast(node => !node.disabled);
+      if (target) target.focus();
+      else {
+        const status = root.querySelector('[role="status"]');
+        if (status) { status.tabIndex = -1; status.focus(); }
+      }
+    }
+    focusIndex = undefined;
+  }
   function unavailable() {
     suspended = true;
     focusIndex = undefined;
@@ -52,6 +65,7 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
       const proof = observations.find(row => row.id && row.organizationId === organizationId && row.chipId === chipId)?.id;
       if (!proof) {
         clear('Keine eigene gespeicherte Beobachtung. Geteilte Betreuung kann nicht geprüft werden.');
+        restoreFocus();
         return;
       }
       const profiles = await api.resolve(organizationId, { ownObservationRefs: [proof], limit: pageSize, offset: profileOffset }, signal);
@@ -113,20 +127,18 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
       button('Vorherige Organisationen', () => move(Math.max(0, profileOffset - pageSize)), pager, profileOffset === 0);
       button('Weitere Organisationen', () => move(profiles.nextOffset), pager, profiles.nextOffset == null);
       button('Freigaben neu prüfen', () => { profileOffset = 0; visitOffsets = {}; void load(); });
-      if (focusIndex != null && document.activeElement === document.body) {
-        const buttons = root.querySelectorAll('button');
-        (buttons[focusIndex] ?? buttons[buttons.length - 1])?.focus();
-      }
-      focusIndex = undefined;
+      restoreFocus();
     } catch {
       if (!signal.aborted && pending === controller && !disposed) {
         clear('Geteilte Informationen nicht verfügbar. Verbindung, Sitzung oder Berechtigung prüfen.');
         button('Erneut prüfen', () => void load());
+        restoreFocus();
       }
     }
   }
   function resume() {
     if (disposed || !suspended || document.visibilityState === 'hidden' || !navigator.onLine) return;
+    suspended = false; // Visibility and focus commonly arrive for the same return.
     if (onReturn) onReturn(); else void load();
   }
   listen(window, 'offline', unavailable);
@@ -136,8 +148,9 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
   listen(document, 'visibilitychange', () => document.visibilityState === 'hidden' ? unavailable() : resume());
   listen(window, 'pagehide', unavailable);
   listen(window, 'pageshow', event => { if (event.persisted) resume(); });
-  // Admin logout/org-switch forms clear transient foreign information before submit.
-  listen(document, 'submit', unavailable);
+  // Admin forms navigate through its server session. Field-PWA local Cat forms
+  // stay on this page after validation errors; auth/context handles its logout.
+  if (onReturn) listen(document, 'submit', unavailable);
   void load();
   return () => {
     disposed = true; pending?.abort(); pending = undefined;

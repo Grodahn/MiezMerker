@@ -24,6 +24,7 @@ async function backend(page: Page) {
     if (path.endsWith('/auth/session')) return send({ userId: 'user', email: 'staff@example.org', memberships: [orgA, orgC].map((organizationId, i) => ({
       membershipId: `membership-${i}`, organizationId, organizationName: i ? 'Organisation C' : 'Organisation A', role: 'ADMIN', status: 'ACTIVE',
     })) });
+    if (request.method() === 'PATCH' && path.endsWith('/cats/local')) return send({}, 409);
     if (path.includes('/shared-care/')) {
       expect(request.method()).toBe('POST'); expect(request.headers()['x-xsrf-token']).toBe('csrf');
       expect(url.search).toBe('');
@@ -96,6 +97,17 @@ test('pagination reauthorizes scopes and removes revoked foreign profile', async
   await shared(page).getByRole('button', { name: 'Neuere Besuche' }).click();
   await expect(shared(page)).toContainText('Keine freigegebene Betreuung');
   await expect(shared(page)).not.toContainText('Foreign-B-unique');
+  await expect(shared(page).getByRole('button', { name: 'Freigaben neu prüfen' })).toBeFocused();
+});
+
+test('a rejected local Cat save preserves the shared panel and its refresh control', async ({ page }) => {
+  await backend(page); await open(page); await expect(shared(page)).toContainText('Foreign-B-unique');
+  await page.getByLabel('Name (optional)').fill('Changed own name');
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(page.getByText(/Konflikt: Chip bereits vorhanden/)).toBeVisible();
+  await expect(shared(page)).toContainText('Foreign-B-unique');
+  await shared(page).getByRole('button', { name: 'Freigaben neu prüfen' }).click();
+  await expect(shared(page)).toContainText('Foreign-B-unique');
 });
 
 for (const transition of ['organization', 'logout', 'expired session', 'navigation', 'offline', 'pagehide']) {
