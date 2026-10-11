@@ -11,6 +11,7 @@
 <p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong>
 <span th:text="' (' + ${activeOrg.slug} + ')'"> (slug)</span></p>
 <div class="grid">
+<a class="card cardlink" th:href="@{/admin/organization/settings}"><h2>Organisation</h2><p>Sichtbarkeit und ausdrückliche Datenfreigaben verwalten.</p></a>
 <a class="card cardlink" th:href="@{/admin/members}"><h2>Mitglieder</h2><p>Name, E-Mail, Rolle, Status pflegen (aktive Organisation).</p></a>
 <a class="card cardlink" th:href="@{/admin/sites}"><h2>Futterstellen</h2><p>Liste, Anlage, Detail, Nodes und Deployment-Historie.</p></a>
 <a class="card cardlink" th:href="@{/admin/nodes}"><h2>Näpfe</h2><p>Benennen, Futterstellen zuordnen, umziehen und Historie einsehen.</p></a>
