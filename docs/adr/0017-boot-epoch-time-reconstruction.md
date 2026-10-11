@@ -127,6 +127,71 @@ These DTO qualities are independent of the existing immutable on-wire capture en
 
 The physical claim gate from ADR 0013 remains required. Signing backend time does not itself register a node, issue BLE credentials, read observations, or authorize any session. Authenticated time initialization and authenticated observation transfer are **separate** transitions.
 
+### Proposed interop payloads and installation evidence
+
+The exact BLE opcode numbers are assigned in #131, but the following
+**typed/signature-covered fields are normative** for #129–#131. No field may
+be silently omitted by one platform:
+
+~~~text
+NodeTimeChallengeV1:
+  nodeId: 16 bytes
+  incarnation: 16 bytes
+  bootCounter: u32
+  challengeNonce: 32 bytes from board CSPRNG
+  challengeUptimeMs: u64
+  devicePublicKeyFingerprint: SHA-256(65-byte uncompressed P-256 key)
+  deviceChallengeSignature: 64-byte ES256/P1363
+  version: 1
+
+BackendTimeProofV1 (JWS compact ES256, purpose-separated):
+  iss: configured issuer
+  kid: pinned signer key ID
+  kind: "node-time-bootstrap"
+  ver: 1
+  node: NodeTimeChallengeV1.nodeId
+  incarnation: NodeTimeChallengeV1.incarnation
+  boot: NodeTimeChallengeV1.bootCounter
+  nonce: base64url(challengeNonce)
+  dpf: base64url(devicePublicKeyFingerprint)
+  utc_ms: server-issued current UTC, signed 64-bit
+  jti: unique proof ID
+
+NodeTimeAcceptanceV1 (device-signed separate from token):
+  nodeId, incarnation, bootCounter, proofIdOrDigest,
+  challengeNonceDigest, acceptedUptimeMs, anchorId
+  signature: device P-256 signature with TIME-ACCEPT domain separation
+~~~
+
+The device challenge signature uses a **dedicated domain** different from
+normal offline-auth, claim and session signatures. Sign canonical binary
+field encoding (fixed-width LE for counters, raw UUID/nonce/key digest)
+under a documented prefix such as **MM-NODE-TIME-CHALLENGE-v1**; acceptance
+uses **MM-NODE-TIME-ACCEPT-v1**. No generic signature of free text and
+no accidental cross-protocol signature reuse. Exact canonical byte vectors
+must be in checked-in golden fixtures before #129/#130 are merged.
+
+For a **claimed** device the backend verifies the challenge signature
+against its registered Node public key and verifies ACTIVE membership in
+the owning organization. For an **unclaimed** device it can verify proof of
+possession against the presented device key, but this **does not establish
+ownership**; only a subsequent physical-mode claim with #18 may do that.
+The backend must never create ownership merely by issuing time.
+
+The ESP32 validates the backend proof, persists its anchor, and generates
+the device-signed acceptance record. The backend validates that acceptance
+against the registered Node key (or the subsequently verified claiming key)
+and the **same** issued proof, then stores immutable evidence. A PWA cannot
+declare its own arbitrary anchor VERIFIED by replaying an issued proof that
+was never installed on the Node.
+
+For unknown security time, the firmware can bound **how long after challenge
+creation** a proof was accepted, but cannot independently check token
+`utc_ms` against current UTC. This is intentional: the signed server time
+is authoritative, while challenge lifetime bounds possible transmission
+delay. Any proof expiry field is supplemental, not a replacement for this
+bootstrap freshness mechanism.
+
 ### Threat controls
 
 | Threat | Defense |
