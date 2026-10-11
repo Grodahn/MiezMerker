@@ -1,6 +1,6 @@
 # 0017 — Boot-Epoch Time Reconstruction and Trusted-Time Bootstrap
 
-Status: **Proposed for architecture/security review** — issue #127, epic #126  
+Status: **Accepted architectural contract** — issue #127, epic #126; focused adversarial self-review completed at maintainer request (2026-10-11). External security assessment remains recommended before real-world deployment.  
 Date: 2026-10-11  
 Related: #3, #4, #5, #6, #7, #8, #10, #13, #17, #18, #76, #108, #121, #128–#134
 
@@ -10,7 +10,7 @@ An external battery-backed RTC is **optional**, not a requirement for a low-cost
 
 **Observation-time estimates and security-trusted UTC are separate trust domains.** Only a backend-signed, fresh, challenge-bound UTC proof, validated against an **independently pinned** issuer key, may initialize the time required for offline credential expiration and secure claiming. Phone time is untrusted. The current protected BLE TimeCorrect operation must remain protected. Without security-trusted UTC the node continues storing raw RFID events but does not authorize protected BLE reads, ACKs, time correction or claims.
 
-This ADR is the **design contract for later implementation**, not a claim of completed device functionality, hardware validation or accepted security review.
+This ADR is the **reviewed design contract for later implementation**, not a claim of completed device functionality, independent third-party security certification or physical hardware validation.
 
 ## 1. Existing-code audit and compatibility constraints
 
@@ -377,11 +377,21 @@ iat > clock lower bound waits/retries, never uses an iat grace window.
 
 ## 10. Acceptance for issue #127
 
-- [ ] Review validates existing boot counter semantics, core log, board clock, BLE auth, backend ingestion, visit aggregation, site attribution and trust contracts.
-- [ ] Security-time/bootstrap is separated from observation-time reconstruction, including real anti-replay and error bounds.
-- [ ] All 0/1/2-powerloss and reset scenarios have falsifiable test vectors; unknown downtime stays unknown.
-- [ ] Storage/wire identity, crash consistency, backward compatibility, ACK evidence and no raw rewrite are explicit.
-- [ ] No silent historical FeedingSite reassignment and no guessed exact DerivedVisit from uncertain intervals.
-- [ ] **Independent architecture/security review** approves this proposed ADR before #128–#133 are considered unblocked.
+- [x] Review inspected existing boot counter semantics, core log, board clock, BLE auth, backend ingestion, visit aggregation, site attribution and trust contracts.
+- [x] Security-time/bootstrap is separated from observation-time reconstruction, including anti-replay and conservative asymmetric error bounds.
+- [x] All 0/1/2-powerloss and reset scenarios have falsifiable test vectors; unknown downtime stays unknown.
+- [x] Storage/wire identity, crash consistency, backward compatibility, separate raw/anchor ACK evidence and no raw rewrite are explicit.
+- [x] No silent historical FeedingSite reassignment and no guessed exact DerivedVisit from uncertain intervals.
+- [x] Dedicated adversarial architecture/security **self-review requested by the maintainer**, followed by fixes and a separate final consistency pass. A third-party security audit remains recommended **before production deployment**; it is not claimed as completed.
+
+### Review findings and resolutions (2026-10-11)
+
+- **MAJOR — bootstrap time bias / credential expiry:** treating server issuance UTC as exact Node acceptance UTC was incorrect. Define asymmetric interval `[S-E_server, S+E_server+D]`, propagate drift, and require `L >= iat && U < exp` on every security-sensitive operation.
+- **MAJOR — conflated observation and anchor ACK:** previously worded cleanup could retain raw records indefinitely pending a *future* anchor. Raw records may follow the existing durable PWA high-watermark ACK; evidence receives its **own** durable transfer, receipt and retention lifetime. Late anchors rebuild projections of already-uploaded raw data.
+- **MAJOR — insufficiently bound pre-claim device key:** an unclaimed device's challenge now carries its actual 65-byte public key plus fingerprint; the signed challenge binds both. This proves possession only, **not** organization ownership.
+- **MAJOR — ambiguous cross-platform signatures:** exact domain-separated, fixed-length canonical Node challenge and acceptance signing bytes, compact JWS binding and verification responsibilities specified. Golden vectors required before implementing sign/verify.
+- **MINOR — absent explicit interval/iat test:** add a numerical server-delay test vector, JWT near-boundary rule, temporary newly issued JWT `iat` race handling and a fail-closed clock-bootstrap state diagram.
+
+This review is limited to the ADR's design, signatures/schema contract and current-source compatibility. **No new backend/firmware code was implemented or compiled by this PR**; #128–#134 must prove the design through tests.
 
 **No physical Android/ESP32 testing has been performed as part of this ADR.** Hardware acceptance is tracked in #134.
