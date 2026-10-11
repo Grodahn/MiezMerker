@@ -72,7 +72,7 @@ async function csrfHeaders(): Promise<Record<string, string>> {
 export async function claimNode(
   organizationId: string,
   input: ClaimInput,
-  options: { claimModeConfirmed: boolean } = { claimModeConfirmed: false },
+  options: { claimModeConfirmed: boolean; assertActive?: () => void } = { claimModeConfirmed: false },
 ): Promise<ClaimOutcome> {
   assertAdminMayClaim(organizationId);
   if (!options.claimModeConfirmed) {
@@ -83,6 +83,8 @@ export async function claimNode(
     throw new ClaimError('offline', 'Claiming benötigt Internet (Backend-Provisionierung). Bitte online erneut versuchen.');
   }
   const headers = await csrfHeaders();
+  options.assertActive?.();
+  assertAdminMayClaim(organizationId);
   const { data, error, response } = await api.POST('/api/v1/nodes/claim', {
     signal: AbortSignal.timeout(10_000),
     body: {

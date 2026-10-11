@@ -28,6 +28,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     if (hello.claimState === 1 && hello.owner?.organizationId !== organizationId) {
       throw new ClaimError('conflict-foreign', 'Node gehört einer anderen Organisation.');
     }
+    if (hello.claimState === 1) throw new ClaimError('backend', 'Dieser Napf ist bereits registriert. Bitte erneut auslesen und Einrichtung fortsetzen; kein erneutes Claiming.');
     const receipt = (await db.nodeMeta.get(nodeId));
     let savedReceipt = receipt?.organizationId === organizationId ? receipt.claimReceipt : undefined;
     await transport.connect();
@@ -40,7 +41,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
         nodeId, publicKeyX: toBase64Url(advertisement.publicKey.slice(1, 33)),
         publicKeyY: toBase64Url(advertisement.publicKey.slice(33)),
         claimSignature: toBase64Url(advertisement.signature), timestampMillis: Number(advertisement.timestampMillis),
-      }, { claimModeConfirmed: true });
+      }, { claimModeConfirmed: true, assertActive: operation.assertActive });
       savedReceipt = outcome.receipt;
     }
     operation.assertActive();
