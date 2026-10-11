@@ -89,6 +89,37 @@ test('foreign photo URLs are revoked on reload and dispose; a late photo never r
   expect(localStorage.length).toBe(0);
 });
 
+test('logout then login as another organization revokes the old photo and never reopens it', async () => {
+  const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  vi.mocked(api.photo).mockImplementation(async () => URL.createObjectURL(new Blob(['a'], { type: 'image/jpeg' })));
+  mount(); await ready();
+  const first = (root.querySelector('.shared-care__source img') as HTMLImageElement).src;
+  expect(first.startsWith('blob:')).toBe(true);
+  // Logout disposes the presenter: the transient blob URL is revoked and the
+  // DOM no longer shows foreign data.
+  const undone = dispose; dispose = () => {};
+  undone();
+  expect(revoke).toHaveBeenCalledWith(first);
+  expect(root.querySelector('img')).toBeNull();
+  // Login as another organization context requires fresh observation proof;
+  // the previous blob is never reopened and a denied photo stays neutral.
+  // (Shell session/org-switch wiring itself stays covered by e2e/shared-care.spec.ts.)
+  vi.mocked(api.observations).mockResolvedValue([{ id: 'other-read', organizationId: 'org-c', chipId: 'CHIP', clockStatus: 'UNKNOWN' }]);
+  vi.mocked(api.resolve).mockResolvedValue({ items: [] });
+  vi.mocked(api.photo).mockResolvedValue(null);
+  const callsBefore = vi.mocked(api.observations).mock.calls.length;
+  const photoCallsBefore = vi.mocked(api.photo).mock.calls.length;
+  dispose = mountSharedCare(root, { organizationId: 'org-c', chipId: 'CHIP', api });
+  await waitFor(() => expect(vi.mocked(api.observations).mock.calls.length).toBe(callsBefore + 1));
+  expect(vi.mocked(api.observations)).toHaveBeenLastCalledWith('org-c', 'CHIP', expect.any(AbortSignal));
+  await waitFor(() => expect(root.textContent).toContain('Keine freigegebene Betreuung'));
+  // No granted profile means no visit or photo request for the new context.
+  expect(vi.mocked(api.photo).mock.calls.length).toBe(photoCallsBefore);
+  await waitFor(() => expect(root.textContent).toContain('Keine freigegebene Betreuung'));
+  expect(root.querySelector('img')).toBeNull();
+  expect(root.textContent).not.toContain('B-Name');
+});
+
 test.each([[], [{ id: 'forged', organizationId: 'org-b', chipId: 'CHIP' }], [{ id: 'other-chip', organizationId: 'org-a', chipId: 'OTHER' }]].map(observations => [observations]))(
   'no valid own observation prevents shared queries (%j)', async observations => {
     vi.mocked(api.observations).mockResolvedValue(observations); mount();
