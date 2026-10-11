@@ -312,9 +312,14 @@ class AdminOrganizationsTest {
         sharePolicyService.upsert(f.adminA().getId(), f.orgA().getId(), ShareScope.CARE,
                 ShareAudience.ALLOWLIST, List.of(f.orgB().getId()));
         sharePolicyService.upsert(f.adminA().getId(), f.orgA().getId(), ShareScope.VISITS,
-                ShareAudience.ALLOWLIST, List.of(f.orgB().getId()));
+                ShareAudience.ALL_DISCOVERABLE, List.of());
+        // Reverse grant: A is the recipient of B's CARE policy.
+        sharePolicyService.upsert(f.adminA().getId(), f.orgB().getId(), ShareScope.CARE,
+                ShareAudience.ALLOWLIST, List.of(f.orgA().getId()));
         assertTrue(sharePolicyService
                 .hasEffectiveScope(f.orgB().getId(), f.orgA().getId(), ShareScope.CARE));
+        assertTrue(sharePolicyService
+                .hasEffectiveScope(f.orgA().getId(), f.orgB().getId(), ShareScope.CARE));
 
         formLogin("sysop@example.org", "supersecret-sysop");
         String detailPath = "/admin/organizations/" + f.orgA().getId();
@@ -322,7 +327,13 @@ class AdminOrganizationsTest {
                 pageCsrf(detailPath)).statusCode());
         assertTrue(sharePolicies.findByOrganizationId(f.orgA().getId()).isEmpty(),
                 "deactivation deletes outgoing grants");
+        assertTrue(sharePolicies.findByOrganizationIdWithRecipients(f.orgB().getId()).stream()
+                .flatMap(p -> p.getRecipients().stream())
+                .noneMatch(r -> r.getOrganization().getId().equals(f.orgA().getId())),
+                "deactivation removes the org from foreign allowlists");
         assertTrue(sharePolicyService.resolveEffectiveScopes(f.orgB().getId(), f.orgA().getId())
+                .isEmpty());
+        assertTrue(sharePolicyService.resolveEffectiveScopes(f.orgA().getId(), f.orgB().getId())
                 .isEmpty());
 
         assertEquals(302, postForm(detailPath + "/reactivate", "confirmed=true",
@@ -330,6 +341,8 @@ class AdminOrganizationsTest {
         assertTrue(sharePolicies.findByOrganizationId(f.orgA().getId()).isEmpty(),
                 "reactivation restores no grants");
         assertTrue(sharePolicyService.resolveEffectiveScopes(f.orgB().getId(), f.orgA().getId())
+                .isEmpty());
+        assertTrue(sharePolicyService.resolveEffectiveScopes(f.orgA().getId(), f.orgB().getId())
                 .isEmpty());
     }
 
@@ -385,6 +398,11 @@ class AdminOrganizationsTest {
         assertEquals(MembershipRole.ADMIN, membership.getRole());
         assertEquals(MembershipStatus.ACTIVE, membership.getStatus());
 
+        // Data minimization: only Orgaadmin memberships are listed.
+        String detailAfterAssign = get(detailPath).body();
+        assertTrue(detailAfterAssign.contains("outsider@example.org"), detailAfterAssign);
+        assertFalse(detailAfterAssign.contains("member-a@example.org"), detailAfterAssign);
+
         // Duplicate assignment is a conflict, not a second membership.
         var duplicate = postForm(detailPath + "/admins",
                 "email=" + enc("outsider@example.org"), pageCsrf(detailPath));
@@ -412,6 +430,64 @@ class AdminOrganizationsTest {
                 "email=" + enc("unbekannt@example.org"), pageCsrf(detailPath));
         assertEquals(302, unknown.statusCode());
         assertTrue(followRedirect(unknown).contains("Kein Konto"));
+    }
+
+    @Test
+    void inactiveMembershipsAreNotSilentlyActivated() throws Exception {
+        Fixture f = seed();
+        grantSysadmin(f.sysadmin());
+        AppUser pending = users.save(new AppUser("pending92@example.org",
+                passwords.encode("supersecret-p")));
+        memberships.save(new OrganizationMembership(f.orgA(), pending, MembershipRole.MEMBER,
+                MembershipStatus.PENDING));
+        AppUser sanctioned = users.save(new AppUser("sanctioned92@example.org",
+                passwords.encode("supersecret-s")));
+        OrganizationMembership sanctionedMembership = new OrganizationMembership(f.orgA(),
+                sanctioned, MembershipRole.MEMBER, MembershipStatus.ACTIVE);
+        memberships.save(sanctionedMembership);
+        sanctionedMembership.disable();
+        memberships.save(sanctionedMembership);
+        formLogin("sysop@example.org", "supersecret-sysop");
+        String detailPath = "/admin/organizations/" + f.orgA().getId();
+
+        for (String email : List.of("pending92@example.org", "sanctioned92@example.org")) {
+            var attempt = postForm(detailPath + "/admins", "email=" + enc(email),
+                    pageCsrf(detailPath));
+            assertEquals(302, attempt.statusCode());
+            assertTrue(followRedirect(attempt).contains("nicht automatisch aktiviert"));
+        }
+        assertEquals(MembershipStatus.PENDING, memberships.findByOrganizationIdAndUserId(
+                f.orgA().getId(), pending.getId()).orElseThrow().getStatus());
+        assertEquals(MembershipStatus.DISABLED, memberships.findByOrganizationIdAndUserId(
+                f.orgA().getId(), sanctioned.getId()).orElseThrow().getStatus());
+        assertTrue(memberships.findByOrganizationIdAndUserId(f.orgA().getId(), pending.getId())
+                .map(m -> m.getRole()).orElseThrow() == MembershipRole.MEMBER);
+        assertTrue(sysadminAudit.findByOrganizationIdOrderByCreatedAtDesc(f.orgA().getId()).stream()
+                .noneMatch(a -> a.getAction() == SysadminOrgAction.ADMIN_GRANTED));
+    }
+
+    @Test
+    void revokedOrDisabledSysadminLosesRealSurfaceImmediately() throws Exception {
+        Fixture f = seed();
+        grantSysadmin(f.sysadmin());
+        formLogin("sysop@example.org", "supersecret-sysop");
+        assertEquals(200, get("/admin/organizations").statusCode());
+
+        try (var connection = dataSource.getConnection()) {
+            assertTrue(SystemRoleMaintenance.apply(connection, UUID.randomUUID(),
+                    f.sysadmin().getId(), "REVOKE", "test-operator", "revoke test"));
+        }
+        assertEquals(403, get("/admin/organizations").statusCode());
+        assertEquals(403, get("/admin/organizations/" + f.orgA().getId()).statusCode());
+
+        try (var connection = dataSource.getConnection()) {
+            assertTrue(SystemRoleMaintenance.apply(connection, UUID.randomUUID(),
+                    f.sysadmin().getId(), "GRANT", "test-operator", "re-grant test"));
+        }
+        assertEquals(200, get("/admin/organizations").statusCode());
+        f.sysadmin().setStatus(UserStatus.DISABLED);
+        users.save(f.sysadmin());
+        assertEquals(403, get("/admin/organizations").statusCode());
     }
 
     @Test

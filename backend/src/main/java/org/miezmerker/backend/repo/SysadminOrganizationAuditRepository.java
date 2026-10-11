@@ -16,4 +16,10 @@ public interface SysadminOrganizationAuditRepository
             + " order by a.createdAt desc")
     List<SysadminOrganizationAudit> findByOrganizationIdOrderByCreatedAtDesc(
             @Param("organizationId") UUID organizationId);
+
+    @Query("select a from SysadminOrganizationAudit a left join fetch a.actor"
+            + " left join fetch a.target where a.organization.id = :organizationId"
+            + " order by a.createdAt desc")
+    List<SysadminOrganizationAudit> findTop50ByOrganizationIdOrderByCreatedAtDesc(
+            @Param("organizationId") UUID organizationId);
 }

@@ -94,8 +94,9 @@ Ich bestätige die Sperrung und Aufbewahrung dieser Organisation (keine Datenlö
 <section class="card">
 <h2>Orgaadmins</h2>
 <p style="opacity:.8">Nur vorhandene Konten; es gibt keine öffentliche Einladung oder Registrierung.
-Die Vergabe an deaktivierte Konten ist abgelehnt. Andere Mitgliedschaften desselben Kontos bleiben unberührt.
-Der Entzug stuft auf MEMBER zurück, statt die Mitgliedschaft zu sperren.</p>
+Die Vergabe an deaktivierte Konten oder inaktive Mitgliedschaften ist abgelehnt. Andere Mitgliedschaften
+desselben Kontos bleiben unberührt. Der Entzug stuft auf MEMBER zurück, statt die Mitgliedschaft zu sperren.
+Aus Datensparsamkeit werden hier nur Orgaadmin-Mitgliedschaften aufgelistet.</p>
 <form th:action="@{'/admin/organizations/' + ${org.id} + '/admins'}" method="post">
 <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
 <div>
@@ -127,7 +128,7 @@ placeholder="name@beispiel.org"/>
 </tbody>
 </table>
 </div>
-<p th:if="${#lists.isEmpty(members)}">Keine Mitgliedschaften vorhanden.</p>
+<p th:if="${#lists.isEmpty(members)}">Dieser Organisation ist derzeit kein Orgaadmin zugewiesen.</p>
 </section>
 
 <section class="card">

@@ -93,7 +93,7 @@ public class AdminOrganizationsController {
         model.addAttribute("userLabel", admins.displayLabelFor(principal.getId()));
         model.addAttribute("userEmail", admins.emailFor(principal.getId()));
         model.addAttribute("org", org);
-        model.addAttribute("members", organizations.listMembers(principal, id));
+        model.addAttribute("members", organizations.listAdmins(principal, id));
         model.addAttribute("policyCount", organizations.outgoingPolicyCount(principal, id));
         model.addAttribute("audit", organizations.recentAudit(principal, id));
         return "admin/organization-detail";

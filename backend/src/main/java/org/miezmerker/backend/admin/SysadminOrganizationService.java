@@ -67,6 +67,11 @@ import org.springframework.web.server.ResponseStatusException;
  * operation, timestamp, before/after state). Failed operations roll back
  * data and audit together. Audit rows contain only organization metadata and
  * membership transitions, never passwords, keys, tokens or animal data.
+ *
+ * <p>Intended recovery path: a SYSADMIN may grant itself ADMIN on an
+ * organization and then use the regular tenant surface. That grant is an
+ * audited {@code ADMIN_GRANTED} event like any other; there is no silent
+ * self-escalation outside the ledger.
  */
 @Service
 public class SysadminOrganizationService {
@@ -137,13 +142,20 @@ public class SysadminOrganizationService {
         return toView(requireOrganization(organizationId));
     }
 
+    /**
+     * Orgaadmin memberships of one organization. Only ADMIN rows are exposed:
+     * assignment works by exact e-mail lookup and revocation targets ADMINs,
+     * so MEMBER/PENDING/DISABLED contact details are not listed here (data
+     * minimization; a compromised SYSADMIN session exposes less).
+     */
     @Transactional(readOnly = true)
-    public List<MemberView> listMembers(AppUserDetails principal, UUID organizationId) {
+    public List<MemberView> listAdmins(AppUserDetails principal, UUID organizationId) {
         system.requireSysadmin(principal);
         // Unknown ids yield the same 404 as known-but-empty ones for the detail
         // loader; membership rows themselves are organization metadata.
         requireOrganization(organizationId);
         return memberships.findByOrganizationIdWithUser(organizationId).stream()
+                .filter(m -> m.getRole() == MembershipRole.ADMIN)
                 .map(SysadminOrganizationService::toMemberView)
                 .toList();
     }
@@ -152,8 +164,9 @@ public class SysadminOrganizationService {
     public List<AuditView> recentAudit(AppUserDetails principal, UUID organizationId) {
         system.requireSysadmin(principal);
         requireOrganization(organizationId);
-        return audit.findByOrganizationIdOrderByCreatedAtDesc(organizationId).stream()
-                .limit(50)
+        // Bounded in the query: forensic history stays queryable per
+        // organization without loading an unbounded ledger into memory.
+        return audit.findTop50ByOrganizationIdOrderByCreatedAtDesc(organizationId).stream()
                 .map(SysadminOrganizationService::toAuditView)
                 .toList();
     }
@@ -162,7 +175,7 @@ public class SysadminOrganizationService {
     public int outgoingPolicyCount(AppUserDetails principal, UUID organizationId) {
         system.requireSysadmin(principal);
         requireOrganization(organizationId);
-        return sharePolicies.findByOrganizationId(organizationId).size();
+        return sharePolicies.countByOrganizationId(organizationId);
     }
 
     @Transactional
@@ -335,16 +348,21 @@ public class SysadminOrganizationService {
     private MemberView promoteExisting(AppUser actor, Organization org,
             OrganizationMembership existing) {
         // Only this organization's membership is touched; other memberships
-        // of the same account are never modified.
+        // of the same account are never modified. PENDING/DISABLED
+        // memberships are never silently activated here: activation stays in
+        // the tenant admin workflow, and the conflict message says so.
         if (existing.getRole() == MembershipRole.ADMIN
                 && existing.getStatus() == MembershipStatus.ACTIVE) {
             throw error(HttpStatus.CONFLICT, "Dieses Konto ist bereits Orgaadmin.");
         }
+        if (existing.getStatus() != MembershipStatus.ACTIVE) {
+            throw error(HttpStatus.CONFLICT,
+                    "Die Mitgliedschaft ist " + existing.getStatus()
+                            + " und wird nicht automatisch aktiviert. Bitte zuerst den "
+                            + "Mitgliedschaftsstatus in der Organisationsverwaltung klären.");
+        }
         String before = "role=" + existing.getRole() + ", status=" + existing.getStatus();
         existing.setRole(MembershipRole.ADMIN);
-        if (existing.getStatus() != MembershipStatus.ACTIVE) {
-            existing.activate();
-        }
         memberships.save(existing);
         audit.save(new SysadminOrganizationAudit(actor, org, existing.getUser(),
                 SysadminOrgAction.ADMIN_GRANTED, before,
