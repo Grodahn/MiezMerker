@@ -1,6 +1,62 @@
 import { expect, test, type Page } from '@playwright/test';
 import { encodeFrame, encodeHelloPublic, encodeOwnerResponse, Opcode } from '../src/collector/ble-codec';
 
+for (const width of [320, 390, 430]) {
+  test(`Sync at ${width}px has a central circular action and keyboard-accessible diagnostics`, async ({ page }) => {
+    await backend(page);
+    await page.setViewportSize({ width, height: 844 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addInitScript(() => Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {
+      getDevices: async () => [], requestDevice: () => { throw new Error('Unexpected chooser'); },
+    } }));
+    await page.goto('/sync');
+    const button = page.getByRole('button', { name: 'Näpfe auslesen', exact: true });
+    await expect(button).toBeEnabled();
+    const bounds = await button.boundingBox();
+    expect(bounds!.width).toBeGreaterThanOrEqual(190);
+    expect(Math.abs(bounds!.height - bounds!.width)).toBeLessThan(1);
+    expect(Math.abs(bounds!.x + bounds!.width / 2 - width / 2)).toBeLessThan(2);
+    expect(await button.evaluate(el => getComputedStyle(el).borderRadius)).toBe('50%');
+    await expect(page.getByText('Lokaler Speicher bereit')).toBeHidden();
+    await button.focus();
+    expect(await button.evaluate(el => getComputedStyle(el).outlineStyle)).not.toBe('none');
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Noch kein Napf freigegeben', { exact: true })).toBeVisible();
+    const disclosure = page.locator('summary', { hasText: 'Technische Infos zur Entwicklung' });
+    await disclosure.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.sync-technical')).toHaveAttribute('open', '');
+    await expect(page.getByText('Lokaler Speicher bereit')).toBeVisible();
+    await expect(page.getByText('Hinweise zu Fehlerfällen', { exact: true })).toBeVisible();
+    await expect(page.getByText('Offline-Berechtigung', { exact: true })).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Lokaler Speicher bereit')).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await page.locator('main').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.locator('main').evaluate(el => { el.scrollTop = 0; });
+    await page.screenshot({ path: test.info().outputPath(`sync-${width}.png`) });
+  });
+}
+
+test('Bluetooth blocker is visible with diagnostics closed', async ({ page }) => {
+  await backend(page);
+  await page.addInitScript(() => Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: undefined }));
+  await page.goto('/sync');
+  await expect(page.getByRole('alert')).toContainText('Bluetooth wird nicht unterstützt');
+  await expect(page.getByRole('button', { name: 'Näpfe auslesen' })).toBeDisabled();
+  await expect(page.locator('.sync-technical')).not.toHaveAttribute('open');
+});
+
+test('a browser without getDevices offers explicit recovery', async ({ page }) => {
+  await backend(page);
+  await page.addInitScript(() => Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {
+    requestDevice: () => { throw new Error('Unexpected chooser'); },
+  } }));
+  await page.goto('/sync');
+  await expect(page.getByText('Automatisches Wiederfinden nicht verfügbar')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Weiteren Napf hinzufügen' })).toBeEnabled();
+});
+
 async function backend(page: Page) {
   const state = { fail: false, unknownClock: false, hold: Promise.resolve() };
   await page.route('**/api/v1/**', async route => {
@@ -64,14 +120,14 @@ for (const [name, pattern, message = 'selection'] of [
     }), { errorName: name, message });
     await page.goto('/sync');
     // Batch sync itself never opens the chooser; only the explicit release does.
-    await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+    await page.getByRole('button', { name: 'Näpfe auslesen' }).click();
     await expect(page.getByText('Noch kein Napf freigegeben')).toBeVisible();
-    await page.getByRole('button', { name: 'Weiteren Napf freigeben' }).click();
+    await page.getByRole('button', { name: 'Weiteren Napf hinzufügen' }).click();
     await expect(page.getByText('Browser-Freigabe')).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: 'Browser-Freigabe' }).getByText(pattern)).toBeVisible();
     await expect(page.getByText('Napf ausgelesen', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Daten an Server übertragen', { exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Weiteren Napf freigeben' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Weiteren Napf hinzufügen' })).toBeEnabled();
   });
 }
 
@@ -85,7 +141,7 @@ test('long Bluetooth waits explain recovery and respect reduced motion without b
   await page.goto('/sync');
   // With no authorized bowls the batch reports an honest fallback instead of
   // an endless spinner; navigation stays available throughout.
-  await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+  await page.getByRole('button', { name: 'Näpfe auslesen' }).click();
   await expect(page.getByText('Noch kein Napf freigegeben')).toBeVisible();
   await expect(page.getByRole('progressbar')).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath('loading-mobile.png') });
@@ -137,10 +193,10 @@ test('one click probes two fake nodes sequentially after a connection failure wi
     } });
   }, { hello, owner });
   await page.goto('/sync');
-  await page.getByRole('button', { name: 'Futterstelle auslesen' }).click();
+  await page.getByRole('button', { name: 'Näpfe auslesen' }).click();
   await expect(page.getByText('0 von 2 freigegebenen Näpfen ausgelesen.')).toBeVisible();
-  await expect(page.getByText('Napf nicht erreichbar', { exact: true })).toBeVisible();
-  await expect(page.getByText('Napf noch nicht registriert', { exact: true })).toBeVisible();
+  await expect(page.locator('.sync-screen > .status-card').getByText('Napf nicht erreichbar', { exact: true })).toBeVisible();
+  await expect(page.locator('.sync-screen > .status-card').getByText('Napf noch nicht registriert', { exact: true })).toBeVisible();
   const events = await page.evaluate(() => (window as unknown as { batchEvents: string[] }).batchEvents);
   expect(events.indexOf('unreachable:disconnect')).toBeLessThan(events.indexOf('unclaimed:connect'));
   expect(events).not.toContain('chooser');

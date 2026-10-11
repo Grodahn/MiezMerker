@@ -28,7 +28,7 @@ export function NodeStatus({ view, retry, disabled }: { view: CollectorViewState
   </Status>;
 }
 
-export function UploadStatus({ view, retry, disabled }: { view: CollectorViewState; retry: () => void; disabled: boolean }) {
+export function UploadStatus({ view, retry, disabled, compact = false }: { view: CollectorViewState; retry: () => void; disabled: boolean; compact?: boolean }) {
   const status = view.backendState === 'uploading'
     ? { kind: 'loading' as const, title: 'Backend-Upload läuft …', message: view.backendMessage }
     : view.backendState === 'waiting-for-network'
@@ -43,6 +43,17 @@ export function UploadStatus({ view, retry, disabled }: { view: CollectorViewSta
     (view.backendState === 'failed' && 'retry' in status && status.retry === true);
   const snapshot = view.backendState === 'complete';
   const countsKnown = ['complete', 'waiting-for-network'].includes(view.backendState) || view.pendingUploads > 0 || view.uploadedCount > 0;
+  if (compact) return <Status kind={view.backendState === 'failed' ? 'error' : view.backendState === 'uploading' ? 'loading' : 'info'}
+    title={view.backendState === 'uploading' ? 'Daten werden an den Server übertragen …'
+      : view.backendState === 'failed' ? status.title
+        : view.backendState === 'waiting-for-network' ? 'Daten warten auf Internet'
+          : 'Letzter geprüfter Serverstand'}
+    message={view.backendState === 'failed' ? status.message
+      : view.backendState === 'uploading' ? 'Das Auslesen am Napf bleibt unabhängig davon möglich.'
+        : 'Stand der gesamten Organisation. Neue Übernahmen werden separat geprüft.'}
+    action={canRetry ? { label: 'Serverübertragung erneut versuchen', onClick: retry, disabled } : undefined}>
+    {countsKnown && <p>Zuletzt geprüft: {view.pendingUploads} ausstehend · {view.uploadedCount} an Server übertragen</p>}
+  </Status>;
   return <Status {...status} scope={snapshot ? 'Backend-Upload · Letzter geprüfter Uploadstand (gesamte Organisation)' : 'Backend-Upload (gesamte Organisation)'}
     action={canRetry ? { label: 'Backend-Upload erneut versuchen', onClick: retry, disabled } : undefined}>
     {countsKnown && <p>{snapshot ? '' : 'Zuletzt geprüft: '}Ausstehend: {view.pendingUploads} · Hochgeladen: {view.uploadedCount}</p>}
