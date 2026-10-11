@@ -103,11 +103,14 @@ test('logout then login as another organization revokes the old photo and never 
   expect(root.querySelector('img')).toBeNull();
   // Login as another organization context requires fresh observation proof;
   // the previous blob is never reopened and a denied photo stays neutral.
+  // (Shell session/org-switch wiring itself stays covered by e2e/shared-care.spec.ts.)
   vi.mocked(api.observations).mockResolvedValue([{ id: 'other-read', organizationId: 'org-c', chipId: 'CHIP', clockStatus: 'UNKNOWN' }]);
   vi.mocked(api.resolve).mockResolvedValue({ items: [] });
   vi.mocked(api.photo).mockResolvedValue(null);
+  const callsBefore = vi.mocked(api.observations).mock.calls.length;
   dispose = mountSharedCare(root, { organizationId: 'org-c', chipId: 'CHIP', api });
-  await waitFor(() => expect(api.observations).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(vi.mocked(api.observations).mock.calls.length).toBe(callsBefore + 1));
+  expect(vi.mocked(api.observations)).toHaveBeenLastCalledWith('org-c', 'CHIP', expect.any(AbortSignal));
   await waitFor(() => expect(root.textContent).toContain('Keine freigegebene Betreuung'));
   expect(root.querySelector('img')).toBeNull();
   expect(root.textContent).not.toContain('B-Name');

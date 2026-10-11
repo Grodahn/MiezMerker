@@ -39,6 +39,7 @@ import org.miezmerker.backend.domain.RawObservation;
 import org.miezmerker.backend.domain.ShareAudience;
 import org.miezmerker.backend.domain.ShareScope;
 import org.miezmerker.backend.domain.UserStatus;
+import org.miezmerker.backend.domain.UserStatus;
 import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.CatRepository;
 import org.miezmerker.backend.repo.DerivedVisitRepository;
@@ -73,6 +74,11 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>All assertions use the real backend authorization layer over HTTP or
  * through the authorized services; no mocks confer access.
+ *
+ * <p>Not parallel-safe with itself: the class shares one media directory and
+ * the application's singleton in-memory shared-care rate limiter, so it must
+ * run sequentially (per-test user/UUID fixtures keep sequential runs
+ * deterministic and far below rate limits).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "miezmerker.media.storage-dir=target/cat-photos-acceptance99")
@@ -246,6 +252,12 @@ class CrossOrgSecurityAcceptanceTest {
                 .PUT(HttpRequest.BodyPublishers.ofString(body)).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
+
+    HttpResponse<String> deleteRaw(String path) throws Exception {
+        return client.send(HttpRequest.newBuilder(URI.create(base(path)))
+                .header("X-XSRF-TOKEN", csrf()).DELETE().build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
     HttpResponse<byte[]> getBytes(String path) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create(base(path))).GET().build(),
                 HttpResponse.BodyHandlers.ofByteArray());
@@ -398,8 +410,32 @@ class CrossOrgSecurityAcceptanceTest {
         grant(orgB, adminB, ShareScope.SITE_LABEL, orgA);
         var labeled = postJson("/api/v1/organizations/" + orgA.getId() + "/shared-care/visits",
                 visitsBody(proofA, orgB));
+        assertEquals(200, labeled.statusCode());
+        assertEquals("no-store", labeled.headers().firstValue("Cache-Control").orElseThrow());
         assertEquals("Bowl B", json.readTree(labeled.body()).get("items").get(0).get("siteDisplayName").asText());
         assertNoLeak(labeled.body(), "desc B", "addr B", "52.1", "13.1", "private");
+
+        // SITE_LABEL without VISITS stays ineffective even with CARE present.
+        shares.revoke(adminB.getId(), orgB.getId(), ShareScope.VISITS);
+        assertEquals(0, json.readTree(postJson("/api/v1/organizations/" + orgA.getId()
+                + "/shared-care/visits", visitsBody(proofA, orgB)).body()).get("items").size());
+        assertEquals(1, json.readTree(postJson("/api/v1/organizations/" + orgA.getId()
+                + "/shared-care/resolve", resolveBody(proofA)).body()).get("items").size());
+        grant(orgB, adminB, ShareScope.VISITS, orgA);
+
+        // Request bounds are enforced before any foreign discovery (400, never data).
+        var refs = new StringBuilder("{\"ownObservationRefs\":[");
+        for (int i = 0; i < 51; i++) {
+            if (i > 0) refs.append(',');
+            refs.append('"').append(UUID.randomUUID()).append('"');
+        }
+        refs.append("]}");
+        assertEquals(400, postJson("/api/v1/organizations/" + orgA.getId() + "/shared-care/resolve",
+                refs.toString()).statusCode());
+        assertEquals(400, postJson("/api/v1/organizations/" + orgA.getId() + "/shared-care/resolve",
+                "{\"ownObservationRefs\":[\"" + proofA.getId() + "\"],\"limit\":0}").statusCode());
+        assertEquals(400, postJson("/api/v1/organizations/" + orgA.getId() + "/shared-care/visits",
+                visitsBody(proofA, orgB, 50, 10001)).statusCode());
 
         // PHOTO requires CARE plus observation evidence; CARE + PHOTO authorizes delivery.
         grant(orgB, adminB, ShareScope.PHOTO, orgA);
@@ -503,6 +539,18 @@ class CrossOrgSecurityAcceptanceTest {
         memberships.save(membership);
         login(memberA);
         assertEquals(200, get(catsPath(orgA)).statusCode());
+
+        // A disabled global account loses its live session: session reads 401,
+        // tenant reads 403, and re-enabling plus re-login restores access.
+        memberA.setStatus(UserStatus.DISABLED);
+        users.save(memberA);
+        assertEquals(401, get("/api/v1/auth/session").statusCode());
+        assertEquals(403, get(catsPath(orgA)).statusCode());
+        memberA.setStatus(UserStatus.ACTIVE);
+        users.save(memberA);
+        login(memberA);
+        assertEquals(200, get(catsPath(orgA)).statusCode());
+
         logout();
         assertEquals(401, get("/api/v1/auth/session").statusCode());
         assertEquals(401, get(catsPath(orgA)).statusCode());
@@ -567,11 +615,13 @@ class CrossOrgSecurityAcceptanceTest {
         assertEquals(200, get("/api/v1/organizations/directory").statusCode());
         assertEquals(403, get(catsPath(orgA)).statusCode());
 
-        // MEMBER cannot perform ADMIN-only operations (policy surface is PUT).
+        // MEMBER cannot perform ADMIN-only operations (policy surface is PUT/DELETE).
         login(memberA);
         var grantAttempt = putJson("/api/v1/organizations/" + orgA.getId() + "/share-policies/CARE",
                 "{\"audience\":\"PRIVATE\"}");
         assertEquals(403, grantAttempt.statusCode());
+        assertEquals(403, deleteRaw("/api/v1/organizations/" + orgA.getId()
+                + "/share-policies/CARE").statusCode());
         var deleteAttempt = client.send(HttpRequest.newBuilder(
                         URI.create(base(catsPath(orgA) + "/" + catA.getId())))
                         .header("X-XSRF-TOKEN", csrf()).DELETE().build(),

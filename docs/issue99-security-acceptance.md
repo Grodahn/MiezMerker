@@ -16,11 +16,18 @@ Different sharing policies per test. All assertions use the real backend
 authorization layer over HTTP or through the authorized services; no mocks
 confer access.
 
-Reproduce:
+Reproduce (new in this PR):
 
 ```text
 python scripts/test.py backend --test CrossOrgSecurityAcceptanceTest
 python scripts/test.py frontend src/management/shared-presenter.test.ts
+```
+
+Pre-existing browser coverage (unchanged by this PR, run in CI):
+
+```text
+cd app
+npm run test:e2e -- e2e/shared-care.spec.ts
 ```
 
 ## Roles and access boundaries — PASS
