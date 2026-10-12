@@ -29,6 +29,7 @@
 #include "miezmerker/types.hpp"
 
 namespace miezmerker {
+struct TimeEvidenceStore;
 
 /// Tunables for the capture pipeline. All hardware-independent.
 struct CoreConfig {
@@ -37,6 +38,7 @@ struct CoreConfig {
     /// Default 2000 ms: short enough to keep distinct passes, long enough to
     /// collapse radio repeats of one presentation.
     std::uint64_t debounce_interval_ms{2000};
+    TimeEvidenceStore* evidence{nullptr};
 };
 
 /// Outcome of a single RFID read offered to the core.
@@ -55,6 +57,7 @@ enum class RecordResult : std::uint8_t {
     /// Durable write failed. Prior records are intact; the read was not
     /// counted as captured.
     IO_ERROR = 5,
+    REJECTED_UNCLAIMED = 6,
 };
 
 inline std::string_view to_string(RecordResult result) {
@@ -71,6 +74,8 @@ inline std::string_view to_string(RecordResult result) {
             return "NOT_READY";
         case RecordResult::IO_ERROR:
             return "IO_ERROR";
+        case RecordResult::REJECTED_UNCLAIMED:
+            return "REJECTED_UNCLAIMED";
     }
     return "IO_ERROR";
 }
@@ -135,6 +140,7 @@ private:
     bool reconcile_after_load();
     bool provision_fresh_identity(bool is_factory_reset);
     bool complete_pending_reset();
+    bool persist_boot_evidence();
 
     Clock* clock_{nullptr};
     Storage* storage_{nullptr};
@@ -146,6 +152,7 @@ private:
     bool legacy_mode_{false};
     bool ready_{false};
     std::uint64_t started_at_ms_{0};
+    std::uint64_t last_monotonic_ms_{0};
     IdentityRecord identity_{};
     /// Last RECORDED monotonic time per chip (RAM only, lost on reboot).
     std::map<std::string, std::uint64_t> last_recorded_ms_{};

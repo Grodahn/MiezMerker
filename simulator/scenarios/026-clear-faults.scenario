@@ -4,6 +4,7 @@ version: 1
 description: fail_clear_next leaves the log intact and retries; crash_clear_next clears then resumes on reboot.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 read CHIP-002
@@ -17,6 +18,7 @@ assert ready
 assert observations 0
 assert next_sequence 1
 assert node_id changed
+capture_claim_fixture
 read CHIP-A
 assert observations 1
 crash_clear_next

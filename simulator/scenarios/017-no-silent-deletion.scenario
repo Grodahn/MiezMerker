@@ -5,6 +5,7 @@ capacity: 10
 description: Unacknowledged data never silently deleted across reboots and full store.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 repeat 5
   read CHIP

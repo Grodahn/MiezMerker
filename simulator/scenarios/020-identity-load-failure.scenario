@@ -4,6 +4,7 @@ version: 1
 description: Identity load failure (IO_ERROR) leaves core not ready.
 
 boot
+capture_claim_fixture
 read CHIP-001
 reboot
 fail_load_next

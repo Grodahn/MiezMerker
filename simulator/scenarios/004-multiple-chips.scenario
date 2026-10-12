@@ -4,6 +4,7 @@ version: 1
 description: Reads of different chip IDs are all recorded independently.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-A
 read CHIP-B

@@ -1,3 +1,4 @@
+#include "../../firmware-core/tests/claim_fixture.hpp"
 // Host verification of the BLE GATT request router (issue #6).
 //
 // No NimBLE/ESP-IDF: the router is exercised with raw frames exactly as the
@@ -134,6 +135,7 @@ void router_public_and_auth() {
     auto core = f.make_core();
     f.clock.set_wall_clock(miezmerker::ClockStatus::SYNCED, 1790899200000ULL);
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("276098106000001") == miezmerker::RecordResult::RECORDED);
     CHECK(core->record_chip_read("276098106000002") == miezmerker::RecordResult::RECORDED);
     miezmerker::IdentityRecord id;
@@ -302,6 +304,7 @@ void router_foreign_no_leak() {
     auto core = f.make_core();
     f.clock.set_wall_clock(miezmerker::ClockStatus::SYNCED, 1790899200000ULL);
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     CHECK(core->record_chip_read("276098106000001") == miezmerker::RecordResult::RECORDED);
     miezmerker::IdentityRecord id;
     CHECK(f.identity.load(id) == miezmerker::IdentityLoadResult::OK);
@@ -360,12 +363,14 @@ void router_fragmented_auth() {
     Fixture f;
     auto core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     miezmerker::IdentityRecord id;
     CHECK(f.identity.load(id) == miezmerker::IdentityLoadResult::OK);
     id.claim_state = miezmerker::ClaimState::CLAIMED;
     CHECK(f.identity.store(id));
     core = f.make_core();
     CHECK(core->initialize());
+    claim_capture_fixture(*core, f.identity);
     SyncServer server(*core, f.auth, f.rtc, f.signer, f.config);
     miezmerker::ble_gatt::GattRouter router(server, f.owner);
     constexpr std::int64_t now = 1790899300;

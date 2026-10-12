@@ -4,6 +4,7 @@ version: 1
 description: Power loss after sequence reservation but before append; gap created, no duplicate.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 crash_identity_store 1

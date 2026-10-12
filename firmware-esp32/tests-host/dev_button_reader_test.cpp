@@ -24,14 +24,15 @@ struct Cell : AtomicBlob {
     bool replace(const Bytes& value) override { data = value; return true; }
 };
 struct Crypto : NodeCrypto {
+    VerifiedClaim claim;
     bool generate_keypair(std::span<std::byte, 65> pub, std::span<std::byte, 32> priv) override {
         std::fill(pub.begin(), pub.end(), std::byte{1}); pub[0] = std::byte{4};
         std::fill(priv.begin(), priv.end(), std::byte{1}); return true;
     }
     bool sign(std::span<const std::byte, 32>, std::span<const std::byte>, std::span<std::byte, 64>) override { return false; }
-    bool verify_claim(const std::string&, VerifiedClaim&) override { return false; }
+    bool verify_claim(const std::string& receipt, VerifiedClaim& out) override { out = claim; return receipt == "fixture-receipt"; }
 };
-struct Mode : ClaimMode { bool active() const override { return false; } };
+struct Mode : ClaimMode { bool active() const override { return true; } };
 struct Time : ClaimClock { std::uint64_t epoch_ms() const override { return 0; } };
 void debounce() {
     ManualClock clock; Input input; Random random;
@@ -65,7 +66,6 @@ void selection() {
         input.level = false; assert(!reader.poll()); clock.advance_monotonic_ms(50);
         const auto chip = reader.poll();
         assert(chip && *chip == std::to_string(value % 5 + 1));
-        assert(reader.selected_chip() == *chip);
         assert(!reader.poll());
     }
     assert(random.calls == 256);
@@ -86,6 +86,18 @@ void capture() {
         assert(!sample(true, 0)); assert(!sample(true, 50));
         assert(!sample(false, 0)); return sample(false, 50);
     };
+    assert(press() == RecordResult::REJECTED_UNCLAIMED);
+    assert(core.observation_count() == 0 && core.next_sequence() == 1);
+    assert(!sample(false, 5000)); // Denied press is consumed, not queued until claim.
+    assert(core.record_chip_read("SYNTHETIC-MM-1") == RecordResult::REJECTED_UNCLAIMED);
+    clock.set_wall_clock(ClockStatus::SYNCED, 1700000000000ULL);
+    assert(press() == RecordResult::REJECTED_UNCLAIMED);
+    assert(core.observation_count() == 0 && core.next_sequence() == 1);
+    clock.set_wall_clock(ClockStatus::UNKNOWN, std::nullopt);
+    crypto.claim = {identity.identity().node_id, identity.identity().public_key,
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Test", ""};
+    assert(identity.apply_claim("fixture-receipt"));
+    assert(!sample(false, 5000));
     assert(press() == RecordResult::RECORDED);
     assert(!sample(false, 500));
     assert(press() == RecordResult::DEBOUNCED);
@@ -108,7 +120,7 @@ void capture() {
     NodeIdentityManager reloaded_identity(reloaded_id, mode, identity_random, crypto, time);
     Core reboot(clock, reloaded_log, reloaded_log, reloaded_identity, identity_random);
     assert(reboot.initialize() && reboot.node_id() == node && reboot.next_sequence() == 4);
-    assert(reloaded_identity.identity().private_key == key && !reloaded_identity.claimed());
+    assert(reloaded_identity.identity().private_key == key && reloaded_identity.claimed());
     assert(reboot.ack_watermark() == 0 && reboot.observation_count() == 3);
     for (std::size_t i = 0; i < records.size(); ++i)
         assert(ble::encode_record(reboot.load_observations()[i]) == ble::encode_record(records[i]));

@@ -94,8 +94,11 @@ extern "C" void app_main() {
     require(identity_blob.open() && observation_blob.open(), "persistent partitions");
     PersistentIdentity identity_store(identity_blob);
     PersistentObservations observations(observation_blob);
+    NvsBlob evidence_blob("node_state", "time_v1");
+    require(evidence_blob.open(), "time evidence storage");
+    PersistentTimeEvidence evidence(evidence_blob);
     NodeIdentityManager identity(identity_store, physical, random, crypto, clock);
-    Core core(clock, observations, observations, identity, random);
+    Core core(clock, observations, observations, identity, random, CoreConfig{2000, &evidence});
     require(miezmerker::esp32::initialize(core) && identity.ready(), "firmware-core initialization");
     require(crypto.keypair_valid(identity.identity()), "persisted keypair consistency");
     status(core, identity.identity());
@@ -161,8 +164,8 @@ extern "C" void app_main() {
         }
 #if CONFIG_MM_DEV_GPIO_RFID
         if (const auto result = core.poll_reader(mock_reader)) {
-            ESP_LOGI(tag, "demo chip=%s capture=%s claimed=%s clock=UNKNOWN attribution=UNCONFIRMED",
-                mock_reader.selected_chip().c_str(), to_string(*result).data(), identity.claimed() ? "yes" : "no");
+            ESP_LOGI(tag, "demo capture=%s claimed=%s clock=UNKNOWN attribution=UNCONFIRMED",
+                to_string(*result).data(), identity.claimed() ? "yes" : "no");
         }
 #endif
         const bool claim = identity.in_claim_mode();

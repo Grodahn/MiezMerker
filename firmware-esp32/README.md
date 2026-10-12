@@ -310,9 +310,11 @@ Rejection sampling chooses among the literal strings **"1", "2", "3", "4", "5"**
 A real reader can implement the same `RfidReader` port without changing capture,
 storage, synchronization or backend logic.
 
-Logs give chip, named capture result, claimed state, `clock=UNKNOWN` and
+Logs give the named capture result, claimed state, `clock=UNKNOWN` and
 `attribution=UNCONFIRMED`. The firmware cannot inspect backend deployment history.
-An unclaimed Node may buffer raw reads; those are not confirmed visits.
+An unclaimed Node drops RFID inputs without buffering or reserving sequences.
+GPIO3 and synthetic commands share the Core gate; diagnostics omit chip IDs.
+The mock reader retains no selected chip after returning a consumed input.
 `RECORDED` means durable NVS append. Repeating a chip within **2000 ms of that
 chip's last recorded read** returns `DEBOUNCED`, allocates no sequence and does
 not refresh the window. Intervening other-chip reads do not remove its window.

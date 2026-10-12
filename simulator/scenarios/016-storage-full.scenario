@@ -5,6 +5,7 @@ capacity: 4
 description: Store reaches FULL; further reads rejected with REJECTED_FULL; no silent deletion.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read C1
 read C2

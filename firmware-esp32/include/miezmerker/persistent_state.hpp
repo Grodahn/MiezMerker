@@ -1,5 +1,6 @@
 #pragma once
 #include "miezmerker/node_identity.hpp"
+#include "miezmerker/time_evidence.hpp"
 
 namespace miezmerker::esp32 {
 using Bytes = std::vector<std::uint8_t>;
@@ -41,6 +42,23 @@ private:
     AtomicBlob& blob_;
     std::vector<RawObservation> records_;
     std::uint64_t high_{0}, ack_{0};
+    bool ready_{false};
+};
+class PersistentTimeEvidence final : public TimeEvidenceStore {
+public:
+    static constexpr std::size_t kMaxBoots = 128, kMaxAnchors = 16, kMaxBytes = 20000;
+    explicit PersistentTimeEvidence(AtomicBlob& blob) : blob_(blob) {}
+    bool open() override;
+    PutResult append_boot(const BootEpochV1&) override;
+    PutResult append_anchor(const TimeAnchorV1&) override;
+    std::vector<BootEpochV1> boots() const override { return boots_; }
+    std::vector<TimeAnchorV1> anchors() const override { return anchors_; }
+    bool clear_for_factory_reset() override;
+private:
+    PutResult commit(const std::vector<BootEpochV1>&, const std::vector<TimeAnchorV1>&);
+    AtomicBlob& blob_;
+    std::vector<BootEpochV1> boots_;
+    std::vector<TimeAnchorV1> anchors_;
     bool ready_{false};
 };
 } // namespace miezmerker::esp32

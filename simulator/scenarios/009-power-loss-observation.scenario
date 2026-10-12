@@ -4,6 +4,7 @@ version: 1
 description: Power loss after append commits; record survives, sequence continues.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 crash_append 1

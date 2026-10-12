@@ -4,6 +4,7 @@ version: 1
 description: Sync resumes at ack+1 after link loss; lost ACK handled idempotently.
 
 boot
+capture_claim_fixture
 sync_claim
 rtc SYNCED 1700000000000
 read CHIP-001

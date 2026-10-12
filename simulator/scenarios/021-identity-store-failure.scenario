@@ -4,6 +4,7 @@ version: 1
 description: Identity store failure during sequence reservation returns IO_ERROR.
 
 boot
+capture_claim_fixture
 read CHIP-001
 fail_identity_store 1
 read CHIP-002

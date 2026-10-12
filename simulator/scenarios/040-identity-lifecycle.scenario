@@ -38,9 +38,9 @@ assert observations 0
 assert next_sequence 1
 assert claim_state UNCLAIMED
 assert owner_org empty
-# New identity records under the new lifetime only.
-read CHIP-C
-assert observations 1
-assert observation 0 sequence 1
+# The new lifetime cannot capture until it has been registered again.
+expect_read CHIP-C REJECTED_UNCLAIMED
+assert observations 0
+assert next_sequence 1
 assert sequences_unique
 assert sequences_monotonic

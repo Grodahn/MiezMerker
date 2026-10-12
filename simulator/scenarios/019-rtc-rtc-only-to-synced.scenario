@@ -4,6 +4,7 @@ version: 1
 description: RTC correction from RTC_ONLY to SYNCED affects future reads only.
 
 boot
+capture_claim_fixture
 rtc RTC_ONLY 1700000000000
 read CHIP-001
 assert observation 0 clock_status RTC_ONLY

@@ -4,6 +4,7 @@ version: 1
 description: node_id remains unchanged across normal reboot; boot_counter increments.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read CHIP-001
 reboot

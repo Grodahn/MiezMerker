@@ -5,6 +5,7 @@ capacity: 10
 description: Store reaches NEARLY_FULL at 90% capacity; next read still succeeds.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 repeat 9
   read CHIP

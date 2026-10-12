@@ -37,6 +37,7 @@ std::string format_record_result(RecordResult r) {
         case RecordResult::REJECTED_INVALID: return "REJECTED_INVALID";
         case RecordResult::NOT_READY: return "NOT_READY";
         case RecordResult::IO_ERROR: return "IO_ERROR";
+        case RecordResult::REJECTED_UNCLAIMED: return "REJECTED_UNCLAIMED";
     }
     return "IO_ERROR";
 }
@@ -334,6 +335,15 @@ bool ScenarioRunner::execute_event(const ScenarioEvent& event) {
         if (event.type == "rtc") return execute_rtc(event.args);
         if (event.type == "rtc_invalid") return execute_rtc_invalid();
         if (event.type == "rtc_correct_ms") return execute_rtc_correct_ms(event.args[0]);
+        if (event.type == "capture_claim_fixture") {
+            // Explicit legacy capture test setup only. Signed-claim scenarios
+            // use the real manager; no fixture can change an attached key/owner.
+            if (!core_ || !core_->ready() || node_manager_) return false;
+            IdentityRecord id;
+            if (identity_.load(id) != IdentityLoadResult::OK) return false;
+            id.claim_state = ClaimState::CLAIMED;
+            return identity_.store(id) && core_->refresh_identity();
+        }
         if (event.type == "read") return execute_read(event.args[0]);
         if (event.type == "read_absent") return execute_read_absent();
         if (event.type == "expect_read") return execute_expect_read(event.args);

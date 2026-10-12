@@ -4,6 +4,7 @@ version: 1
 description: One RFID read is recorded with sequence 1 and SYNCED timestamp.
 
 boot
+capture_claim_fixture
 rtc SYNCED 1700000000000
 read E28011700000000000000001
 assert last_result RECORDED

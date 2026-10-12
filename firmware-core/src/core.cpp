@@ -1,4 +1,5 @@
 #include "miezmerker/core.hpp"
+#include "miezmerker/time_evidence.hpp"
 
 #include <limits>
 #include <span>
@@ -9,7 +10,7 @@ bool Core::refresh_identity() {
     if (!ready_ || !identity_store_ || identity_store_->load(current) != IdentityLoadResult::OK ||
         current.node_id != identity_.node_id || current.incarnation != identity_.incarnation ||
         current.next_sequence != identity_.next_sequence || current.boot_counter != identity_.boot_counter ||
-        current.reset_pending) { ready_ = false; return false; }
+        !current.valid() || current.reset_pending) { ready_ = false; last_recorded_ms_.clear(); return false; }
     identity_ = current;
     return true;
 }
@@ -63,6 +64,7 @@ bool Core::complete_pending_reset() {
     // Persisting the fresh identity first makes this two-store operation
     // resumable. Until the journal is cleared, no read or sync is permitted.
     if (!observations_->clear()) return false;
+    if (config_.evidence && !config_.evidence->clear_for_factory_reset()) return false;
     IdentityRecord completed = identity_;
     completed.reset_pending = false;
     if (!identity_store_->store(completed)) return false;
@@ -80,6 +82,7 @@ bool Core::reconcile_after_load() {
         // Sequence belongs to node_id's lifetime, even if incarnation metadata
         // differs. A fresh lifetime is permitted only with a fresh node_id.
         if (obs.node_id == identity_.node_id) {
+            if (obs.boot_counter > identity_.boot_counter) return false;
             if (obs.sequence > max_seen) max_seen = obs.sequence;
         }
     }
@@ -101,6 +104,7 @@ bool Core::reconcile_after_load() {
 
 bool Core::initialize() {
     ready_ = false;
+    last_recorded_ms_.clear();
     if (legacy_mode_) {
         // Preserved #2 boot gate.
         ready_ = storage_ != nullptr && storage_->open();
@@ -118,6 +122,9 @@ bool Core::initialize() {
         return false;
     }
     started_at_ms_ = clock_->monotonic_ms();
+    last_monotonic_ms_ = started_at_ms_;
+    if (!clock_->monotonic_valid()) return false;
+    if (config_.evidence && !config_.evidence->open()) return false;
 
     IdentityRecord loaded{};
     const auto load = identity_store_->load(loaded);
@@ -125,13 +132,17 @@ bool Core::initialize() {
         // Only a genuinely empty device may be provisioned automatically.
         // An orphaned log/cursor requires explicit recovery or factory reset.
         if (observations_->size() != 0 || observations_->ack_watermark() != 0) return false;
+        // Raw records can already be compacted, but retained time evidence
+        // still proves a prior lifetime. Never replace its missing identity.
+        if (config_.evidence && (!config_.evidence->boots().empty() ||
+                                !config_.evidence->anchors().empty())) return false;
         if (!provision_fresh_identity(false)) {
             ready_ = false;
             return false;
         }
         last_recorded_ms_.clear();
-        ready_ = true;
-        return true;
+        ready_ = persist_boot_evidence();
+        return ready_;
     }
     if (load != IdentityLoadResult::OK || !loaded.valid()) return false;
     identity_ = loaded;
@@ -157,8 +168,24 @@ bool Core::initialize() {
     }
     identity_ = rebooted;
     last_recorded_ms_.clear();
-    ready_ = true;
-    return true;
+    ready_ = persist_boot_evidence();
+    return ready_;
+}
+
+bool Core::persist_boot_evidence() {
+    if (!config_.evidence) return true; // Legacy host compositions; board always supplies it.
+    // Append idempotency is for evidence retries, not permission to reuse an
+    // old epoch after identity rollback. A boot must advance the durable tail.
+    for (const auto& previous : config_.evidence->boots()) {
+        if (previous.node_id == identity_.node_id && previous.incarnation == identity_.incarnation
+            && previous.boot_counter >= identity_.boot_counter) return false;
+    }
+    BootEpochV1 boot;
+    boot.node_id = identity_.node_id; boot.incarnation = identity_.incarnation;
+    boot.boot_counter = identity_.boot_counter;
+    boot.reset_reason = clock_->reset_reason(); boot.started_uptime_ms = started_at_ms_;
+    boot.first_possible_sequence = identity_.next_sequence;
+    return config_.evidence->append_boot(boot) == PutResult::OK;
 }
 
 RecordResult Core::record_chip_read(const std::string& chip_id) {
@@ -166,10 +193,22 @@ RecordResult Core::record_chip_read(const std::string& chip_id) {
     if (!ready_ || clock_ == nullptr || observations_ == nullptr || identity_store_ == nullptr) {
         return RecordResult::NOT_READY;
     }
+    // Re-read the atomic ownership/counter record before touching chip data.
+    // Backend reservations and stale RAM cannot grant capture permission.
+    if (!refresh_identity()) return RecordResult::NOT_READY;
+    if (identity_.claim_state != ClaimState::CLAIMED) {
+        last_recorded_ms_.clear();
+        return RecordResult::REJECTED_UNCLAIMED;
+    }
     if (chip_id.empty() || chip_id.size() > ChipId::kMaxLength) {
         return RecordResult::REJECTED_INVALID;
     }
     const std::uint64_t now_ms = clock_->monotonic_ms();
+    if (!clock_->monotonic_valid() || now_ms < last_monotonic_ms_) {
+        ready_ = false; last_recorded_ms_.clear();
+        return RecordResult::NOT_READY; // Reinitialize to reserve a fresh epoch.
+    }
+    last_monotonic_ms_ = now_ms;
 
     // Technical debounce: fixed-window sampling per identical chip_id on the
     // monotonic clock. Suppressed repeats create nothing and delete nothing;
@@ -208,6 +247,7 @@ RecordResult Core::record_chip_read(const std::string& chip_id) {
     IdentityRecord advanced = identity_;
     advanced.next_sequence = reserved + 1;
     if (!advanced.valid() || !identity_store_->store(advanced)) {
+        ready_ = false; // Commit may have succeeded; never overwrite with stale state.
         return RecordResult::IO_ERROR;
     }
     identity_.next_sequence = reserved + 1;
@@ -250,6 +290,7 @@ std::optional<RecordResult> Core::poll_reader(RfidReader& reader) {
 bool Core::factory_reset() {
     if (legacy_mode_) return false;
     ready_ = false;
+    last_recorded_ms_.clear();
     if (clock_ == nullptr || storage_ == nullptr || observations_ == nullptr ||
         identity_store_ == nullptr || random_ == nullptr) {
         return false;
@@ -259,6 +300,7 @@ bool Core::factory_reset() {
         return false;
     }
     // Read the durable identity even when called before initialize(). Never
+    if (config_.evidence && !config_.evidence->open()) return false;
     // erase it before generating the replacement: it is the collision guard
     // and the journal needed to resume reset after any interruption.
     IdentityRecord loaded{};
@@ -269,8 +311,9 @@ bool Core::factory_reset() {
         if (identity_.valid() && identity_.reset_pending) {
             if (!complete_pending_reset()) return false;
             started_at_ms_ = clock_->monotonic_ms();
-            ready_ = true;
-            return true;
+            last_monotonic_ms_ = started_at_ms_;
+            ready_ = clock_->monotonic_valid() && persist_boot_evidence();
+            return ready_;
         }
     }
     if (!provision_fresh_identity(true)) {
@@ -279,8 +322,9 @@ bool Core::factory_reset() {
     }
     if (!complete_pending_reset()) return false;
     started_at_ms_ = clock_->monotonic_ms();
-    ready_ = true;
-    return true;
+    last_monotonic_ms_ = started_at_ms_;
+    ready_ = clock_->monotonic_valid() && persist_boot_evidence();
+    return ready_;
 }
 
 std::size_t Core::observation_count() const {
