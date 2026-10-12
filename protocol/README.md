@@ -1,5 +1,9 @@
 # BLE boundary (separate from HTTP OpenAPI)
 
+Trusted-time challenge/proof/acceptance fixtures are in `fixtures/node-time-v1.json`.
+See [the backend bootstrap integration contract](../docs/node-time-bootstrap.md)
+and ADR 0017 for canonical signing bytes and #130–#132 responsibilities.
+
 This directory owns versioned BLE/GATT wire definitions, codecs and fixtures.
 The logical observation exchange format is fixed by `raw-observation-v1.schema.json`
 and its shared JSON fixture. No GATT UUID, frame layout, cryptographic algorithm

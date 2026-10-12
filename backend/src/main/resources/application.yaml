@@ -49,6 +49,9 @@ miezmerker:
     default-gap-seconds: ${VISITS_DEFAULT_GAP_SECONDS:60}
   credential:
     ttl-hours: ${CREDENTIAL_TTL_HOURS:168}
+  time-bootstrap:
+    # Operator/monitor attestation, NOT an inferred NTP-health signal. See docs/node-time-bootstrap.md.
+    clock-healthy: ${TIME_BOOTSTRAP_CLOCK_HEALTHY:false}
   issuer:
     private-key-pkcs8-b64: ${ISSUER_PRIVATE_PKCS8_B64:}
     public-key-spki-b64: ${ISSUER_PUBLIC_SPKI_B64:}

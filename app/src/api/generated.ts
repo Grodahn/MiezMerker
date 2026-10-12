@@ -188,6 +188,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/time-bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue challenge-bound UTC proof; ACTIVE owner member or pre-claim ADMIN */
+        post: operations["issueNodeTimeProof"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{nodeId}": {
         parameters: {
             query?: never;
@@ -1021,6 +1038,37 @@ export interface components {
             publicContact?: string | null;
             state?: string;
         };
+        NodeTimeBootstrapRequest: {
+            challenge: components["schemas"]["NodeTimeChallengeV1"];
+            organizationId: string;
+            /** @enum {string} */
+            registrationState: "CLAIMED" | "UNCLAIMED";
+        };
+        NodeTimeChallengeV1: {
+            /** Format: int64 */
+            bootCounter: number;
+            challengeNonce: string;
+            /**
+             * Format: uint64
+             * @description Unsigned 64-bit integer 0..18446744073709551615; clients must preserve integers losslessly
+             */
+            challengeUptimeMs: number;
+            deviceChallengeSignature: string;
+            devicePublicKey: string;
+            devicePublicKeyFingerprint: string;
+            incarnation: string;
+            nodeId: string;
+            /** Format: int32 */
+            version: number;
+        };
+        NodeTimeProofView: {
+            issuer: string;
+            keyId: string;
+            proof: string;
+            tokenType: string;
+            /** Format: int32 */
+            version: number;
+        };
         NodeView: {
             claimedAt?: string;
             /** @description Optional human-readable bowl label (Node.displayName, trimmed; blank means no name; never unique, never part of BLE/crypto identity) */
@@ -1502,6 +1550,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClaimReceiptView"];
+                };
+            };
+        };
+    };
+    issueNodeTimeProof: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeTimeBootstrapRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeTimeProofView"];
                 };
             };
         };
