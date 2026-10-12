@@ -132,6 +132,10 @@ bool Core::initialize() {
         // Only a genuinely empty device may be provisioned automatically.
         // An orphaned log/cursor requires explicit recovery or factory reset.
         if (observations_->size() != 0 || observations_->ack_watermark() != 0) return false;
+        // Raw records can already be compacted, but retained time evidence
+        // still proves a prior lifetime. Never replace its missing identity.
+        if (config_.evidence && (!config_.evidence->boots().empty() ||
+                                !config_.evidence->anchors().empty())) return false;
         if (!provision_fresh_identity(false)) {
             ready_ = false;
             return false;

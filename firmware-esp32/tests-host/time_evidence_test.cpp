@@ -133,5 +133,23 @@ void invalid_timer_and_rollback() {
     assert(core.record_chip_read("reused-epoch") == RecordResult::NOT_READY);
     assert(evidence.boots().size() == 2 && log.size() == 1);
 }
+void missing_identity_with_retained_evidence() {
+    for (bool with_anchor : {false, true}) {
+        Cell cell; PersistentTimeEvidence evidence(cell); Storage storage; Clock clock;
+        InMemoryObservationStore log; InMemoryIdentityStore identity; FixedRandomSource random;
+        Core core(clock, storage, log, identity, random, CoreConfig{0, &evidence});
+        assert(core.initialize()); // Truly empty first boot remains supported.
+        if (with_anchor) assert(evidence.append_anchor(anchor(evidence.boots().front())) == PutResult::OK);
+        assert(log.size() == 0 && log.ack_watermark() == 0);
+        const auto saved = cell.data;
+        const auto writes = cell.writes;
+        const auto identity_writes = identity.store_attempts();
+        identity.set_has_record(false); // Missing key/identity blob despite durable lifetime evidence.
+        assert(!core.initialize() && !core.ready());
+        assert(!identity.has_record() && identity.store_attempts() == identity_writes);
+        assert(cell.writes == writes && cell.data == saved);
+        assert(core.record_chip_read("orphan") == RecordResult::NOT_READY);
+    }
 }
-int main() { evidence_lifecycle(); crash_boundaries(); bounded_storage_and_corruption(); invalid_timer_and_rollback(); std::cout << "time evidence durability passed\n"; }
+}
+int main() { evidence_lifecycle(); crash_boundaries(); bounded_storage_and_corruption(); invalid_timer_and_rollback(); missing_identity_with_retained_evidence(); std::cout << "time evidence durability passed\n"; }
