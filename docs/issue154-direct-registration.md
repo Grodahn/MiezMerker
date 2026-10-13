@@ -56,3 +56,20 @@ real pinned proof verification, replay/expiry/boot failures, backend role/tenant
 key/ownership/race checks, PWA durable receipt recovery and uint64 transport.
 Host fault injection and production compilation do not establish physical
 Android/ESP32 acceptance or measured oscillator accuracy.
+
+## Browser connection lifecycle
+
+Registration retains the validated public-probe connection through signed
+identity verification and receipt delivery. A failed public probe always closes
+its connection; successful preflight closes at operation cleanup. Default public
+discovery still disconnects, and post-claim ownership confirmation still rereads
+state over a fresh connection.
+
+Chrome on Android can return from `gatt.disconnect()` before its underlying
+connection teardown finishes. Successive transport instances for the same device
+wait for `gattserverdisconnected`, with a two-second cleanup bound if that event
+does not arrive. Cancellation invalidates pending connection/discovery work, so
+late callbacks cannot open a cancelled visit or disconnect its replacement.
+Preflight failure clears its busy hint instead of continuing to display that
+identity verification is running. Regression tests and mobile browser tests
+model delayed teardown rather than assuming an instantaneous disconnect.

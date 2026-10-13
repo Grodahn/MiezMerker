@@ -112,6 +112,7 @@ test('missing security prerequisites never display registration confirmation', a
   vi.mocked(verifyRegistrationCandidate).mockRejectedValue(new Error('Vertrauenswürdige UTC fehlt.'));
   await selectUnclaimed();
   await screen.findByText('Vertrauenswürdige UTC fehlt.');
+  expect(screen.queryByText('Napf verbunden. Signierter Identitätsnachweis wird geprüft …')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Napf registrieren' })).toBeNull();
   expect(provisionNode).not.toHaveBeenCalled();
 });

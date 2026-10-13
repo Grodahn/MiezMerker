@@ -239,6 +239,11 @@ export class FrameChannel {
 }
 
 // Real Web Bluetooth transport behind the NodeTransport interface.
+// Android closes the underlying link asynchronously after disconnect(). Share
+// teardown completion across successive transport instances for the same device.
+const pendingDisconnects = new WeakMap<object, Promise<void>>();
+const GATT_DISCONNECT_TIMEOUT_MS = 2000;
+
 export class WebBluetoothTransport implements NodeTransport {
   private server: AnyBluetooth = null;
   private characteristics = new Map<string, AnyBluetooth>();
@@ -246,6 +251,7 @@ export class WebBluetoothTransport implements NodeTransport {
   private disconnectListeners = new Set<() => void>();
   private connectedFlag = false;
   private disconnectHandler: (() => void) | null = null;
+  private connectionGeneration = 0;
 
   constructor(private readonly device: AnyBluetooth) {}
 
@@ -263,9 +269,17 @@ export class WebBluetoothTransport implements NodeTransport {
   }
 
   async connect(): Promise<void> {
+    const generation = ++this.connectionGeneration;
+    const assertCurrent = () => {
+      if (generation !== this.connectionGeneration) {
+        throw new BluetoothTransportError('disconnected', 'BLE-Verbindungsaufbau abgebrochen. Bitte erneut starten.');
+      }
+    };
     const bt = bluetooth();
     if (!bt) throw new BluetoothTransportError('unsupported', bluetoothSupportMessage('unsupported'));
     try {
+      await pendingDisconnects.get(this.device);
+      assertCurrent();
       // Remove any listener from a previous connection before adding a fresh
       // one so reconnects do not stack duplicate disconnect handlers.
       if (this.disconnectHandler) {
@@ -277,11 +291,15 @@ export class WebBluetoothTransport implements NodeTransport {
       // pending browser algorithms even while connected is still false.
       this.server = this.device.gatt;
       await withTimeout(this.server.connect(), GATT_OP_TIMEOUT_MS, 'Verbinden zeitüberschritten.');
+      assertCurrent();
       const service: AnyBluetooth = await withTimeout(this.server.getPrimaryService(BLE_SERVICE_UUID), GATT_OP_TIMEOUT_MS, 'Service-Suche zeitüberschritten.');
+      assertCurrent();
       this.characteristics.clear();
       for (const [name, uuid] of Object.entries(BLE_CHAR_UUIDS)) {
         try {
-          this.characteristics.set(uuid, await withTimeout(service.getCharacteristic(uuid), GATT_OP_TIMEOUT_MS, 'Characteristic-Suche zeitüberschritten.'));
+          const characteristic = await withTimeout(service.getCharacteristic(uuid), GATT_OP_TIMEOUT_MS, 'Characteristic-Suche zeitüberschritten.');
+          assertCurrent();
+          this.characteristics.set(uuid, characteristic);
         } catch (error) {
           if (!error || typeof error !== 'object' || !('name' in error) || error.name !== 'NotFoundError') throw error;
           if (name !== 'claimAdvertisement' && name !== 'claimReceipt') {
@@ -298,7 +316,7 @@ export class WebBluetoothTransport implements NodeTransport {
       this.channel = new FrameChannel(ops);
       this.connectedFlag = true;
     } catch (error) {
-      await this.disconnect();
+      if (generation === this.connectionGeneration) await this.disconnect();
       if (error instanceof BluetoothTransportError) throw error;
       throw new BluetoothTransportError('connection-failed',
         'BLE-Verbindung fehlgeschlagen. Näher herangehen und erneut versuchen.', error);
@@ -306,21 +324,44 @@ export class WebBluetoothTransport implements NodeTransport {
   }
 
   async disconnect(): Promise<void> {
+    ++this.connectionGeneration;
+    const server = this.server;
+    const wasConnected = Boolean(server?.connected);
     this.connectedFlag = false;
     try {
       if (this.disconnectHandler) this.device?.removeEventListener?.('gattserverdisconnected', this.disconnectHandler);
     } catch {
       // Ignore cleanup failures.
     }
-    try {
-      this.server?.disconnect();
-    } catch {
-      // Disconnect is best-effort.
-    }
     this.server = null;
     this.disconnectHandler = null;
     this.characteristics.clear();
     this.channel = null;
+    if (!server) {
+      await pendingDisconnects.get(this.device);
+      return;
+    }
+    if (!wasConnected || !this.device?.addEventListener) {
+      try { server.disconnect(); } catch { /* Best-effort cancellation of a pending connect. */ }
+      return;
+    }
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => {
+      let finished = false;
+      const timer = setTimeout(() => finish(), GATT_DISCONNECT_TIMEOUT_MS);
+      finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        try { this.device.removeEventListener?.('gattserverdisconnected', finish); } catch { /* Best-effort cleanup. */ }
+        resolve();
+      };
+      try { this.device.addEventListener('gattserverdisconnected', finish, { once: true }); } catch { finish(); }
+    });
+    pendingDisconnects.set(this.device, pending);
+    try { server.disconnect(); } catch { finish(); }
+    await pending;
+    if (pendingDisconnects.get(this.device) === pending) pendingDisconnects.delete(this.device);
   }
 
   async write(message: Uint8Array): Promise<void> {

@@ -396,7 +396,10 @@ export function CollectorShell(props: {
         }
       }
     } catch (error) {
-      if (orgStillActive()) setBatchNotice(bluetoothErrorMessage(error));
+      if (orgStillActive()) {
+        setFreigebenMessage(''); // Preflight is finished; do not retain its busy hint.
+        setBatchNotice(bluetoothErrorMessage(error));
+      }
     } finally {
       if (batchController.current === operation) {
         batchController.current = null;

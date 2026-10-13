@@ -24,7 +24,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     return frame.payload;
   };
   try {
-    const hello = await new PublicProbeTransport(transport).readPublicHello();
+    const hello = await new PublicProbeTransport(transport).readPublicHello({ keepConnected: true });
     if (hello.nodeId !== nodeId) throw new ClaimError('backend', 'Node-Identität hat sich geändert. Bitte neu auswählen.');
     if (hello.claimState === 1 && hello.owner?.organizationId !== organizationId) {
       throw new ClaimError('conflict-foreign', 'Node gehört einer anderen Organisation.');
@@ -33,7 +33,6 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     const receipt = (await db.nodeMeta.get(nodeId));
     let savedReceipt = receipt?.organizationId === organizationId ? receipt.claimReceipt : undefined;
     let issuanceWaitMs = 2100;
-    await transport.connect();
     // Even cached receipt recovery needs fresh trusted time after a node reboot.
     await transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode: Opcode.ClaimAdvertisementRequest, payload: new Uint8Array() }));
     let frame = decodeFrame(await transport.read());
