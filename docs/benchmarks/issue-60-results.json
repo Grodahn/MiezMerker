@@ -1,0 +1,908 @@
+{
+  "base_commit": "a1f3424",
+  "measured_date": "2026-10-13",
+  "measurements": {
+    "full_h2_before": {
+      "report_directory": "test-results/compact/20261013T073403Z-wydjwu3a",
+      "invocation_wall_s": 106.3,
+      "tests": 412,
+      "failures": 0,
+      "boot_starts": 14,
+      "jdbc_pool_starts": 14,
+      "http_server_starts": 11,
+      "compilation": false,
+      "sum_class_s": 97.721,
+      "sum_testcase_s": 60.175,
+      "classes": {
+        "AdminObservationsVisitsControllerTest": {
+          "tests": 3,
+          "class_s": 1.941
+        },
+        "AdminCatsTest": {
+          "tests": 13,
+          "class_s": 16.713
+        },
+        "AdminMembersTest": {
+          "tests": 12,
+          "class_s": 1.241
+        },
+        "AdminNodesTest": {
+          "tests": 11,
+          "class_s": 1.155
+        },
+        "AdminObservationsVisitsTest": {
+          "tests": 7,
+          "class_s": 1.095
+        },
+        "AdminOrganizationSettingsTest": {
+          "tests": 15,
+          "class_s": 1.601
+        },
+        "AdminOrganizationsTest": {
+          "tests": 16,
+          "class_s": 1.203
+        },
+        "AdminShellTest": {
+          "tests": 15,
+          "class_s": 4.861
+        },
+        "AdminSitesTest": {
+          "tests": 17,
+          "class_s": 1.132
+        },
+        "BootstrapTest": {
+          "tests": 8,
+          "class_s": 2.516
+        },
+        "CatPhotoTest": {
+          "tests": 19,
+          "class_s": 4.467
+        },
+        "CookieSecurityTest": {
+          "tests": 2,
+          "class_s": 3.257
+        },
+        "CrossOrgSecurityAcceptanceTest": {
+          "tests": 8,
+          "class_s": 2.732
+        },
+        "DatabaseSchemaTest": {
+          "tests": 1,
+          "class_s": 0.011
+        },
+        "DeploymentAuthorizationTest": {
+          "tests": 8,
+          "class_s": 1.223
+        },
+        "DevDemoCommandTest": {
+          "tests": 1,
+          "class_s": 2.61
+        },
+        "DevDemoTest": {
+          "tests": 8,
+          "class_s": 1.429
+        },
+        "DisplayNameTest": {
+          "tests": 14,
+          "class_s": 1.9
+        },
+        "FeedingSiteCatActivityTest": {
+          "tests": 5,
+          "class_s": 2.514
+        },
+        "FoundationTest": {
+          "tests": 2,
+          "class_s": 0.079
+        },
+        "InteropVectorTest": {
+          "tests": 1,
+          "class_s": 0.039
+        },
+        "Issue100CatVisitsTest": {
+          "tests": 9,
+          "class_s": 0.842
+        },
+        "Issue10VisitsTest": {
+          "tests": 22,
+          "class_s": 3.341
+        },
+        "Issue9IngestTest": {
+          "tests": 35,
+          "class_s": 5.192
+        },
+        "IssuerConfigurationTest": {
+          "tests": 2,
+          "class_s": 0.057
+        },
+        "NodeClaimTest": {
+          "tests": 14,
+          "class_s": 1.137
+        },
+        "NodeDisplayNameTest": {
+          "tests": 9,
+          "class_s": 0.961
+        },
+        "NodeProvisionSetupTest": {
+          "tests": 8,
+          "class_s": 0.626
+        },
+        "NodeTimeBootstrapTest": {
+          "tests": 13,
+          "class_s": 6.964
+        },
+        "NodeTimeProtocolTest": {
+          "tests": 8,
+          "class_s": 2.394
+        },
+        "OfflineCredentialTest": {
+          "tests": 11,
+          "class_s": 1.773
+        },
+        "OrganizationSharingTest": {
+          "tests": 16,
+          "class_s": 1.654
+        },
+        "PasswordEncoderStrengthTest": {
+          "tests": 4,
+          "class_s": 3.191
+        },
+        "SharedCareTest": {
+          "tests": 19,
+          "class_s": 2.09
+        },
+        "SystemControllerTest": {
+          "tests": 1,
+          "class_s": 0.004
+        },
+        "SystemPrivilegeTest": {
+          "tests": 9,
+          "class_s": 3.119
+        },
+        "SystemRoleMaintenanceTest": {
+          "tests": 4,
+          "class_s": 0.855
+        },
+        "SystemRoleMigrationTest": {
+          "tests": 1,
+          "class_s": 0.245
+        },
+        "TemporalProjectionEngineTest": {
+          "tests": 11,
+          "class_s": 0.305
+        },
+        "TenancyAuthTest": {
+          "tests": 14,
+          "class_s": 4.612
+        },
+        "TimeEvidenceTest": {
+          "tests": 16,
+          "class_s": 4.64
+        }
+      }
+    },
+    "auth_h2_before": {
+      "report_directory": "test-results/compact/20261013T073638Z-o9ojzils",
+      "invocation_wall_s": 140.5,
+      "tests": 320,
+      "failures": 0,
+      "boot_starts": 13,
+      "jdbc_pool_starts": 13,
+      "http_server_starts": 10,
+      "compilation": false,
+      "sum_class_s": 126.903,
+      "sum_testcase_s": 73.177,
+      "classes": {
+        "AdminCatsTest": {
+          "tests": 13,
+          "class_s": 29.987
+        },
+        "AdminMembersTest": {
+          "tests": 12,
+          "class_s": 2.943
+        },
+        "AdminNodesTest": {
+          "tests": 11,
+          "class_s": 2.28
+        },
+        "AdminObservationsVisitsTest": {
+          "tests": 7,
+          "class_s": 2.053
+        },
+        "AdminOrganizationSettingsTest": {
+          "tests": 15,
+          "class_s": 2.505
+        },
+        "AdminOrganizationsTest": {
+          "tests": 16,
+          "class_s": 1.644
+        },
+        "AdminShellTest": {
+          "tests": 15,
+          "class_s": 6.272
+        },
+        "AdminSitesTest": {
+          "tests": 17,
+          "class_s": 1.655
+        },
+        "BootstrapTest": {
+          "tests": 8,
+          "class_s": 3.471
+        },
+        "CatPhotoTest": {
+          "tests": 19,
+          "class_s": 6.344
+        },
+        "CookieSecurityTest": {
+          "tests": 2,
+          "class_s": 7.126
+        },
+        "CrossOrgSecurityAcceptanceTest": {
+          "tests": 8,
+          "class_s": 5.362
+        },
+        "DeploymentAuthorizationTest": {
+          "tests": 8,
+          "class_s": 1.74
+        },
+        "DevDemoCommandTest": {
+          "tests": 1,
+          "class_s": 4.709
+        },
+        "DevDemoTest": {
+          "tests": 8,
+          "class_s": 3.064
+        },
+        "DisplayNameTest": {
+          "tests": 14,
+          "class_s": 3.631
+        },
+        "FoundationTest": {
+          "tests": 2,
+          "class_s": 0.11
+        },
+        "InteropVectorTest": {
+          "tests": 1,
+          "class_s": 0.057
+        },
+        "IssuerConfigurationTest": {
+          "tests": 2,
+          "class_s": 0.083
+        },
+        "NodeClaimTest": {
+          "tests": 14,
+          "class_s": 1.184
+        },
+        "NodeDisplayNameTest": {
+          "tests": 9,
+          "class_s": 1.11
+        },
+        "NodeProvisionSetupTest": {
+          "tests": 8,
+          "class_s": 0.821
+        },
+        "NodeTimeBootstrapTest": {
+          "tests": 13,
+          "class_s": 9.713
+        },
+        "NodeTimeProtocolTest": {
+          "tests": 8,
+          "class_s": 7.766
+        },
+        "OfflineCredentialTest": {
+          "tests": 11,
+          "class_s": 1.782
+        },
+        "OrganizationSharingTest": {
+          "tests": 16,
+          "class_s": 1.906
+        },
+        "SharedCareTest": {
+          "tests": 19,
+          "class_s": 1.979
+        },
+        "SystemPrivilegeTest": {
+          "tests": 9,
+          "class_s": 4.17
+        },
+        "SystemRoleMaintenanceTest": {
+          "tests": 4,
+          "class_s": 1.007
+        },
+        "TenancyAuthTest": {
+          "tests": 14,
+          "class_s": 5.191
+        },
+        "TimeEvidenceTest": {
+          "tests": 16,
+          "class_s": 5.238
+        }
+      }
+    },
+    "auth_h2_after": {
+      "report_directory": "test-results/compact/20261013T074518Z-vopr57ue",
+      "invocation_wall_s": 87.9,
+      "tests": 320,
+      "failures": 0,
+      "boot_starts": 12,
+      "jdbc_pool_starts": 12,
+      "http_server_starts": 9,
+      "compilation": false,
+      "sum_class_s": 74.185,
+      "sum_testcase_s": 44.708,
+      "classes": {
+        "AdminCatsTest": {
+          "tests": 13,
+          "class_s": 18.407
+        },
+        "AdminMembersTest": {
+          "tests": 12,
+          "class_s": 1.498
+        },
+        "AdminNodesTest": {
+          "tests": 11,
+          "class_s": 1.243
+        },
+        "AdminObservationsVisitsTest": {
+          "tests": 7,
+          "class_s": 1.035
+        },
+        "AdminOrganizationSettingsTest": {
+          "tests": 15,
+          "class_s": 1.745
+        },
+        "AdminOrganizationsTest": {
+          "tests": 16,
+          "class_s": 1.099
+        },
+        "AdminShellTest": {
+          "tests": 15,
+          "class_s": 4.126
+        },
+        "AdminSitesTest": {
+          "tests": 17,
+          "class_s": 0.945
+        },
+        "BootstrapTest": {
+          "tests": 8,
+          "class_s": 1.508
+        },
+        "CatPhotoTest": {
+          "tests": 19,
+          "class_s": 3.897
+        },
+        "CookieSecurityTest": {
+          "tests": 2,
+          "class_s": 2.967
+        },
+        "CrossOrgSecurityAcceptanceTest": {
+          "tests": 8,
+          "class_s": 3.616
+        },
+        "DeploymentAuthorizationTest": {
+          "tests": 8,
+          "class_s": 0.936
+        },
+        "DevDemoCommandTest": {
+          "tests": 1,
+          "class_s": 1.89
+        },
+        "DevDemoTest": {
+          "tests": 8,
+          "class_s": 1.426
+        },
+        "DisplayNameTest": {
+          "tests": 14,
+          "class_s": 1.99
+        },
+        "FoundationTest": {
+          "tests": 2,
+          "class_s": 0.118
+        },
+        "InteropVectorTest": {
+          "tests": 1,
+          "class_s": 0.042
+        },
+        "IssuerConfigurationTest": {
+          "tests": 2,
+          "class_s": 0.054
+        },
+        "NodeClaimTest": {
+          "tests": 14,
+          "class_s": 0.707
+        },
+        "NodeDisplayNameTest": {
+          "tests": 9,
+          "class_s": 0.591
+        },
+        "NodeProvisionSetupTest": {
+          "tests": 8,
+          "class_s": 0.434
+        },
+        "NodeTimeBootstrapTest": {
+          "tests": 13,
+          "class_s": 6.452
+        },
+        "NodeTimeProtocolTest": {
+          "tests": 8,
+          "class_s": 3.559
+        },
+        "OfflineCredentialTest": {
+          "tests": 11,
+          "class_s": 1.574
+        },
+        "OrganizationSharingTest": {
+          "tests": 16,
+          "class_s": 1.535
+        },
+        "SharedCareTest": {
+          "tests": 19,
+          "class_s": 1.45
+        },
+        "SystemPrivilegeTest": {
+          "tests": 9,
+          "class_s": 3.094
+        },
+        "SystemRoleMaintenanceTest": {
+          "tests": 4,
+          "class_s": 0.573
+        },
+        "TenancyAuthTest": {
+          "tests": 14,
+          "class_s": 2.003
+        },
+        "TimeEvidenceTest": {
+          "tests": 16,
+          "class_s": 3.671
+        }
+      }
+    },
+    "full_h2_after": {
+      "report_directory": "test-results/compact/20261013T075009Z-m274k_ms",
+      "invocation_wall_s": 110.7,
+      "tests": 412,
+      "failures": 0,
+      "boot_starts": 13,
+      "jdbc_pool_starts": 13,
+      "http_server_starts": 10,
+      "compilation": false,
+      "sum_class_s": 99.55,
+      "sum_testcase_s": 60.398,
+      "classes": {
+        "AdminObservationsVisitsControllerTest": {
+          "tests": 3,
+          "class_s": 4.191
+        },
+        "AdminCatsTest": {
+          "tests": 13,
+          "class_s": 19.263
+        },
+        "AdminMembersTest": {
+          "tests": 12,
+          "class_s": 1.607
+        },
+        "AdminNodesTest": {
+          "tests": 11,
+          "class_s": 1.425
+        },
+        "AdminObservationsVisitsTest": {
+          "tests": 7,
+          "class_s": 1.939
+        },
+        "AdminOrganizationSettingsTest": {
+          "tests": 15,
+          "class_s": 2.104
+        },
+        "AdminOrganizationsTest": {
+          "tests": 16,
+          "class_s": 1.501
+        },
+        "AdminShellTest": {
+          "tests": 15,
+          "class_s": 4.278
+        },
+        "AdminSitesTest": {
+          "tests": 17,
+          "class_s": 1.098
+        },
+        "BootstrapTest": {
+          "tests": 8,
+          "class_s": 2.115
+        },
+        "CatPhotoTest": {
+          "tests": 19,
+          "class_s": 5.744
+        },
+        "CookieSecurityTest": {
+          "tests": 2,
+          "class_s": 3.334
+        },
+        "CrossOrgSecurityAcceptanceTest": {
+          "tests": 8,
+          "class_s": 3.303
+        },
+        "DatabaseSchemaTest": {
+          "tests": 1,
+          "class_s": 0.009
+        },
+        "DeploymentAuthorizationTest": {
+          "tests": 8,
+          "class_s": 1.453
+        },
+        "DevDemoCommandTest": {
+          "tests": 1,
+          "class_s": 3.145
+        },
+        "DevDemoTest": {
+          "tests": 8,
+          "class_s": 2.057
+        },
+        "DisplayNameTest": {
+          "tests": 14,
+          "class_s": 3.447
+        },
+        "FeedingSiteCatActivityTest": {
+          "tests": 5,
+          "class_s": 4.118
+        },
+        "FoundationTest": {
+          "tests": 2,
+          "class_s": 0.325
+        },
+        "InteropVectorTest": {
+          "tests": 1,
+          "class_s": 0.041
+        },
+        "Issue100CatVisitsTest": {
+          "tests": 9,
+          "class_s": 1.153
+        },
+        "Issue10VisitsTest": {
+          "tests": 22,
+          "class_s": 3.361
+        },
+        "Issue9IngestTest": {
+          "tests": 35,
+          "class_s": 4.664
+        },
+        "IssuerConfigurationTest": {
+          "tests": 2,
+          "class_s": 0.105
+        },
+        "NodeClaimTest": {
+          "tests": 14,
+          "class_s": 0.912
+        },
+        "NodeDisplayNameTest": {
+          "tests": 9,
+          "class_s": 0.861
+        },
+        "NodeProvisionSetupTest": {
+          "tests": 8,
+          "class_s": 0.531
+        },
+        "NodeTimeBootstrapTest": {
+          "tests": 13,
+          "class_s": 5.082
+        },
+        "NodeTimeProtocolTest": {
+          "tests": 8,
+          "class_s": 1.037
+        },
+        "OfflineCredentialTest": {
+          "tests": 11,
+          "class_s": 1.634
+        },
+        "OrganizationSharingTest": {
+          "tests": 16,
+          "class_s": 1.491
+        },
+        "PasswordEncoderStrengthTest": {
+          "tests": 4,
+          "class_s": 1.326
+        },
+        "SharedCareTest": {
+          "tests": 19,
+          "class_s": 1.054
+        },
+        "SystemControllerTest": {
+          "tests": 1,
+          "class_s": 0.001
+        },
+        "SystemPrivilegeTest": {
+          "tests": 9,
+          "class_s": 2.013
+        },
+        "SystemRoleMaintenanceTest": {
+          "tests": 4,
+          "class_s": 0.632
+        },
+        "SystemRoleMigrationTest": {
+          "tests": 1,
+          "class_s": 0.205
+        },
+        "TemporalProjectionEngineTest": {
+          "tests": 11,
+          "class_s": 0.239
+        },
+        "TenancyAuthTest": {
+          "tests": 14,
+          "class_s": 1.913
+        },
+        "TimeEvidenceTest": {
+          "tests": 16,
+          "class_s": 4.839
+        }
+      }
+    },
+    "full_postgresql_after": {
+      "report_directory": "test-results/compact/20261013T075200Z-nel3_az8",
+      "invocation_wall_s": 189.0,
+      "tests": 412,
+      "failures": 0,
+      "boot_starts": 13,
+      "jdbc_pool_starts": 13,
+      "http_server_starts": 10,
+      "compilation": false,
+      "sum_class_s": 178.244,
+      "sum_testcase_s": 140.191,
+      "classes": {
+        "AdminObservationsVisitsControllerTest": {
+          "tests": 3,
+          "class_s": 2.371
+        },
+        "AdminCatsTest": {
+          "tests": 13,
+          "class_s": 26.722
+        },
+        "AdminMembersTest": {
+          "tests": 12,
+          "class_s": 4.15
+        },
+        "AdminNodesTest": {
+          "tests": 11,
+          "class_s": 4.383
+        },
+        "AdminObservationsVisitsTest": {
+          "tests": 7,
+          "class_s": 3.91
+        },
+        "AdminOrganizationSettingsTest": {
+          "tests": 15,
+          "class_s": 5.94
+        },
+        "AdminOrganizationsTest": {
+          "tests": 16,
+          "class_s": 4.828
+        },
+        "AdminShellTest": {
+          "tests": 15,
+          "class_s": 7.556
+        },
+        "AdminSitesTest": {
+          "tests": 17,
+          "class_s": 4.125
+        },
+        "BootstrapTest": {
+          "tests": 8,
+          "class_s": 2.283
+        },
+        "CatPhotoTest": {
+          "tests": 19,
+          "class_s": 8.592
+        },
+        "CookieSecurityTest": {
+          "tests": 2,
+          "class_s": 4.085
+        },
+        "CrossOrgSecurityAcceptanceTest": {
+          "tests": 8,
+          "class_s": 7.498
+        },
+        "DatabaseSchemaTest": {
+          "tests": 1,
+          "class_s": 0.06
+        },
+        "DeploymentAuthorizationTest": {
+          "tests": 8,
+          "class_s": 2.548
+        },
+        "DevDemoCommandTest": {
+          "tests": 1,
+          "class_s": 2.501
+        },
+        "DevDemoTest": {
+          "tests": 8,
+          "class_s": 2.663
+        },
+        "DisplayNameTest": {
+          "tests": 14,
+          "class_s": 2.756
+        },
+        "FeedingSiteCatActivityTest": {
+          "tests": 5,
+          "class_s": 5.016
+        },
+        "FoundationTest": {
+          "tests": 2,
+          "class_s": 0.049
+        },
+        "InteropVectorTest": {
+          "tests": 1,
+          "class_s": 0.025
+        },
+        "Issue100CatVisitsTest": {
+          "tests": 9,
+          "class_s": 2.287
+        },
+        "Issue10VisitsTest": {
+          "tests": 22,
+          "class_s": 8.172
+        },
+        "Issue9IngestTest": {
+          "tests": 35,
+          "class_s": 17.686
+        },
+        "IssuerConfigurationTest": {
+          "tests": 2,
+          "class_s": 0.032
+        },
+        "NodeClaimTest": {
+          "tests": 14,
+          "class_s": 1.949
+        },
+        "NodeDisplayNameTest": {
+          "tests": 9,
+          "class_s": 1.48
+        },
+        "NodeProvisionSetupTest": {
+          "tests": 8,
+          "class_s": 1.54
+        },
+        "NodeTimeBootstrapTest": {
+          "tests": 13,
+          "class_s": 6.485
+        },
+        "NodeTimeProtocolTest": {
+          "tests": 8,
+          "class_s": 0.736
+        },
+        "OfflineCredentialTest": {
+          "tests": 11,
+          "class_s": 2.239
+        },
+        "OrganizationSharingTest": {
+          "tests": 16,
+          "class_s": 5.181
+        },
+        "PasswordEncoderStrengthTest": {
+          "tests": 4,
+          "class_s": 2.656
+        },
+        "SharedCareTest": {
+          "tests": 19,
+          "class_s": 9.225
+        },
+        "SystemControllerTest": {
+          "tests": 1,
+          "class_s": 0.002
+        },
+        "SystemPrivilegeTest": {
+          "tests": 9,
+          "class_s": 4.399
+        },
+        "SystemRoleMaintenanceTest": {
+          "tests": 4,
+          "class_s": 1.189
+        },
+        "SystemRoleMigrationTest": {
+          "tests": 1,
+          "class_s": 0.362
+        },
+        "TemporalProjectionEngineTest": {
+          "tests": 11,
+          "class_s": 0.368
+        },
+        "TenancyAuthTest": {
+          "tests": 14,
+          "class_s": 4.184
+        },
+        "TimeEvidenceTest": {
+          "tests": 16,
+          "class_s": 6.011
+        }
+      }
+    },
+    "focused_h2_before": [
+      {
+        "command": [
+          "backend/mvnw.cmd",
+          "-B",
+          "-ntp",
+          "test",
+          "-Dtest=AdminShellTest,TenancyAuthTest",
+          "-Dtest.reportsDirectory=<fresh-absolute-directory>"
+        ],
+        "elapsed_s": 31.625,
+        "tests": 29,
+        "failures": 0,
+        "exit_code": 0,
+        "contexts": 2,
+        "class_s": {
+          "org.miezmerker.backend.AdminShellTest": 17.348,
+          "org.miezmerker.backend.TenancyAuthTest": 4.649
+        },
+        "testcase_s": 7.326,
+        "compiling": false,
+        "report_directory": "test-results/issue60/before-1"
+      },
+      {
+        "command": [
+          "backend/mvnw.cmd",
+          "-B",
+          "-ntp",
+          "test",
+          "-Dtest=AdminShellTest,TenancyAuthTest",
+          "-Dtest.reportsDirectory=<fresh-absolute-directory>"
+        ],
+        "elapsed_s": 32.891,
+        "tests": 29,
+        "failures": 0,
+        "exit_code": 0,
+        "contexts": 2,
+        "class_s": {
+          "org.miezmerker.backend.AdminShellTest": 17.694,
+          "org.miezmerker.backend.TenancyAuthTest": 5.304
+        },
+        "testcase_s": 7.976,
+        "compiling": false,
+        "report_directory": "test-results/issue60/before-2"
+      }
+    ],
+    "focused_h2_after": [
+      {
+        "command": [
+          "backend/mvnw.cmd",
+          "-B",
+          "-ntp",
+          "test",
+          "-Dtest=AdminShellTest,TenancyAuthTest",
+          "-Dtest.reportsDirectory=<fresh-absolute-directory>"
+        ],
+        "elapsed_s": 29.203,
+        "tests": 29,
+        "failures": 0,
+        "exit_code": 0,
+        "contexts": 1,
+        "class_s": {
+          "org.miezmerker.backend.AdminShellTest": 17.638,
+          "org.miezmerker.backend.TenancyAuthTest": 3.415
+        },
+        "testcase_s": 8.139,
+        "compiling": false,
+        "report_directory": "test-results/issue60/after-1"
+      },
+      {
+        "command": [
+          "backend/mvnw.cmd",
+          "-B",
+          "-ntp",
+          "test",
+          "-Dtest=AdminShellTest,TenancyAuthTest",
+          "-Dtest.reportsDirectory=<fresh-absolute-directory>"
+        ],
+        "elapsed_s": 34.813,
+        "tests": 29,
+        "failures": 0,
+        "exit_code": 0,
+        "contexts": 1,
+        "class_s": {
+          "org.miezmerker.backend.AdminShellTest": 22.513,
+          "org.miezmerker.backend.TenancyAuthTest": 2.55
+        },
+        "testcase_s": 8.356,
+        "compiling": false,
+        "report_directory": "test-results/issue60/after-2"
+      }
+    ]
+  }
+}

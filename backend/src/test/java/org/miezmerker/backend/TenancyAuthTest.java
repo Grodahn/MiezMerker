@@ -25,17 +25,13 @@ import org.miezmerker.backend.repo.AppUserRepository;
 import org.miezmerker.backend.repo.MembershipRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.support.TestDatabaseCleaner;
+import org.miezmerker.backend.support.SessionExpiryTestConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
-import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -46,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@Import(TenancyAuthTest.SessionTestConfiguration.class)
+@Import(SessionExpiryTestConfiguration.class)
 @Tag("auth")
 class TenancyAuthTest {
     @Value("${local.server.port}") int port;
@@ -60,22 +56,6 @@ class TenancyAuthTest {
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
     CookieManager cookies;
-
-    @TestConfiguration
-    static class SessionTestConfiguration {
-        @Bean ExpiryProbe expiryProbe() { return new ExpiryProbe(); }
-    }
-
-    @RestController
-    static class ExpiryProbe {
-        @GetMapping("/api/v1/test/expire-session")
-        int expire(HttpServletRequest request) {
-            var session = request.getSession(false);
-            int configuredTimeout = session.getMaxInactiveInterval();
-            session.setMaxInactiveInterval(1);
-            return configuredTimeout;
-        }
-    }
 
     @BeforeEach
     void http() {
