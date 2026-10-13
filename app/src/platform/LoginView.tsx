@@ -40,7 +40,7 @@ export function LoginView({ online }: { online: boolean }) {
       <Graphic src={assets.brand.logo} alt="MiezMerker" className="login-logo"/>
       <p className="login-welcome">Schön, dass du da bist.</p>
       <h1>Anmelden</h1>
-      <p className="login-intro">Gemeinsam für glückliche Katzen an jedem Futterplatz.</p>
+      <p className="login-intro">Keiner wird vergessen.</p>
       {!online && <Status {...statusMessages.offline}/>}
       <form aria-label="Anmelden" onSubmit={event => void submit(event)}>
         <label>E-Mail<input type="email" name="email" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={email}
