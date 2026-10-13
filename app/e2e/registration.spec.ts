@@ -44,12 +44,25 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
   });
   await page.addInitScript(({ hello, claimedHello, owner, claimedOwner, proof, receiptAck }) => {
     let claimed = false, permitted = false;
+    let disconnecting = false;
+    const connectionEvents = new EventTarget();
     const events = { chooser: 0, activation: false, connects: 0 };
     Object.assign(window, { registrationEvents: events });
-    const device = { id: 'browser-bowl', name: 'Untrusted BLE label', gatt: {
+    const device = { id: 'browser-bowl', name: 'Untrusted BLE label',
+      addEventListener: connectionEvents.addEventListener.bind(connectionEvents),
+      removeEventListener: connectionEvents.removeEventListener.bind(connectionEvents), gatt: {
       connected: false,
-      async connect() { events.connects++; this.connected = true; return this; },
-      disconnect() { this.connected = false; },
+      async connect() {
+        if (disconnecting) throw new DOMException('Previous GATT connection is closing', 'NetworkError');
+        events.connects++; this.connected = true; return this;
+      },
+      disconnect() {
+        if (!this.connected) return;
+        this.connected = false; disconnecting = true;
+        setTimeout(() => {
+          disconnecting = false; connectionEvents.dispatchEvent(new Event('gattserverdisconnected'));
+        }, 50);
+      },
       async getPrimaryService() { return { async getCharacteristic(uuid: string) { return {
         async writeValueWithResponse() { if (uuid.endsWith('5b0b')) claimed = true; },
         async readValue() {
@@ -86,6 +99,7 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
   await dialog.getByRole('button', { name: 'Einrichtung abschließen' }).click();
   await expect(dialog.getByText(/kann beim nächsten Auslesen mitmachen/)).toBeVisible();
   expect(claims).toBe(1); expect(deployments).toBe(1); expect(displayName).toBe('Der Grüne');
+  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { connects: number } }).registrationEvents.connects)).toBe(6);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('miezmerker-last-setup-node'))).toBeNull();
   expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

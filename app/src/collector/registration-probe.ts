@@ -15,9 +15,8 @@ export async function verifyRegistrationCandidate(transport: NodeTransport, node
   assertAdminMayClaim(organizationId);
   const operation = bindNodeOperation(transport, getAuthState().user!.userId, organizationId, signal, 'ADMIN');
   try {
-    const hello = await new PublicProbeTransport(operation.transport).readPublicHello();
+    const hello = await new PublicProbeTransport(operation.transport).readPublicHello({ keepConnected: true });
     if (hello.nodeId !== nodeId || hello.claimState !== 0) throw new Error('Napf-Status geändert. Bitte erneut auswählen.');
-    await operation.transport.connect();
     await operation.transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode: Opcode.ClaimAdvertisementRequest, payload: new Uint8Array() }));
     let frame = decodeFrame(await operation.transport.read());
     if (frame?.opcode === Opcode.Error) {

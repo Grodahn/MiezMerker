@@ -34,8 +34,12 @@ afterEach(async () => { await new CollectorDatabase().delete(); });
 
 class ClaimTransport {
   claimed = false; trustedTime = true; dropReceipt = false; bootstrapAvailable = true; rejectReceiptOnce = false;
+  rejectReconnect = false; connections = 0;
   last = new Uint8Array(); operations: Opcode[] = [];
-  async connect() {} async disconnect() {} async read() { return this.last; }
+  async connect() {
+    if (++this.connections > 1 && this.rejectReconnect) throw new Error('Previous GATT connection is closing');
+  }
+  async disconnect() {} async read() { return this.last; }
   async write(bytes: Uint8Array) {
     const request = decodeFrame(bytes)!; this.operations.push(request.opcode);
     let opcode: Opcode; let payload: Uint8Array;
@@ -80,6 +84,19 @@ test('claims from node-signed advertisement, persists receipt before delivery, v
   expect(transport.claimed).toBe(true);
   expect(post.mock.calls[0][1].body.timestampMillis).toBe(1790899200000);
   const db = new CollectorDatabase(); expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
+});
+
+test('public identity discovery and receipt delivery use one connection before post-claim confirmation', async () => {
+  const transport = new ClaimTransport(); transport.rejectReconnect = true;
+  // Post-claim verification legitimately reconnects after explicit teardown.
+  const write = transport.write.bind(transport);
+  transport.write = async bytes => {
+    await write(bytes);
+    if (transport.claimed) transport.rejectReconnect = false;
+  };
+  await provisionNode(transport, NODE, 'org-a');
+  expect(transport.claimed).toBe(true);
+  expect(transport.connections).toBe(2);
 });
 test('interrupted receipt delivery resumes without another backend reservation', async () => {
   const transport = new ClaimTransport(); transport.dropReceipt = true;
