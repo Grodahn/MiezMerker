@@ -26,6 +26,9 @@ export default defineConfig(({ mode }) => {
   return {
     build: { assetsInlineLimit: 0 }, // Replaceable artwork stays external and precached, including small SVGs.
     plugins: [react(), VitePWA({
+      // Enable the manifest and dev service worker for Android HTTPS installation tests.
+      // Keep standard HTTP development free of service-worker caching.
+      devOptions: { enabled: mode === 'local-https' },
       registerType: 'prompt',
       injectRegister: false,
       manifest: {
