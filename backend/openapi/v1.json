@@ -1,6 +1,88 @@
 {
   "components": {
     "schemas": {
+      "Boot": {
+        "additionalProperties": false,
+        "properties": {
+          "bootCounter": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "firstPossibleSequence": {
+            "format": "uint64",
+            "type": "integer"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "incarnation": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "resetReason": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startedUptimeMs": {
+            "format": "uint64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bootCounter",
+          "firstPossibleSequence",
+          "formatVersion",
+          "incarnation",
+          "nodeId",
+          "resetReason",
+          "startedUptimeMs"
+        ],
+        "type": "object"
+      },
+      "BootReceipt": {
+        "properties": {
+          "bootCounter": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "incarnation": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BootRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "boot": {
+            "$ref": "#/components/schemas/Boot"
+          },
+          "organizationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "boot",
+          "organizationId"
+        ],
+        "type": "object"
+      },
       "CatPhotoMeta": {
         "properties": {
           "byteSize": {
@@ -770,6 +852,55 @@
         },
         "type": "object"
       },
+      "NodeTimeAcceptanceV1": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptedUptimeMs": {
+            "description": "Unsigned integer 0..18446744073709551615; preserve losslessly",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "anchorId": {
+            "type": "string"
+          },
+          "bootCounter": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "challengeNonceDigest": {
+            "type": "string"
+          },
+          "incarnation": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "proofDigest": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "acceptedUptimeMs",
+          "anchorId",
+          "bootCounter",
+          "challengeNonceDigest",
+          "incarnation",
+          "nodeId",
+          "proofDigest",
+          "signature",
+          "version"
+        ],
+        "type": "object"
+      },
       "NodeTimeBootstrapRequest": {
         "additionalProperties": false,
         "properties": {
@@ -958,6 +1089,27 @@
         },
         "type": "object"
       },
+      "Page": {
+        "properties": {
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Projection"
+            },
+            "type": "array"
+          },
+          "nextAfterSequence": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PolicyView": {
         "properties": {
           "audience": {
@@ -986,6 +1138,107 @@
               "PHOTO"
             ],
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Projection": {
+        "properties": {
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "anchorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "approximateUtcMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "attributionProvenance": {
+            "type": "string"
+          },
+          "bootCounter": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "derivedDeploymentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "derivedFeedingSiteId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "earliestUtcMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "incarnation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latestUtcMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "monotonicMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "observationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quality": {
+            "enum": [
+              "VERIFIED",
+              "RECONSTRUCTED",
+              "BOUNDED",
+              "ESTIMATED",
+              "UNKNOWN",
+              "CONFLICT"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "uncertaintyPolicies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -1035,6 +1288,28 @@
           "sequence": {
             "pattern": "^[0-9]+$",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Receipt": {
+        "properties": {
+          "anchorId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "boundedUtc": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "trustStatus": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -1129,6 +1404,42 @@
         "required": [
           "publicKeyX",
           "publicKeyY"
+        ],
+        "type": "object"
+      },
+      "Request": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/NodeTimeAcceptanceV1"
+          },
+          "acceptanceBytes": {
+            "type": "string"
+          },
+          "boot": {
+            "$ref": "#/components/schemas/Boot"
+          },
+          "challenge": {
+            "$ref": "#/components/schemas/NodeTimeChallengeV1"
+          },
+          "challengeBytes": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "acceptance",
+          "acceptanceBytes",
+          "boot",
+          "challenge",
+          "challengeBytes",
+          "organizationId",
+          "proof"
         ],
         "type": "object"
       },
@@ -1839,6 +2150,37 @@
         ]
       }
     },
+    "/api/v1/nodes/boot-evidence": {
+      "post": {
+        "operationId": "ingestNodeBootEvidence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Persist owner-uploaded boot diagnostics; does not certify UTC",
+        "tags": [
+          "time-evidence-controller"
+        ]
+      }
+    },
     "/api/v1/nodes/claim": {
       "post": {
         "operationId": "claimNode",
@@ -1898,6 +2240,37 @@
         "summary": "Issue challenge-bound UTC proof; ACTIVE owner member or pre-claim ADMIN",
         "tags": [
           "node-time-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/time-evidence": {
+      "post": {
+        "operationId": "ingestNodeTimeEvidence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Receipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Persist exact verified Node acceptance independently of raw ACK",
+        "tags": [
+          "time-evidence-controller"
         ]
       }
     },
@@ -2002,6 +2375,67 @@
         "summary": "Public claimed-node hint; owner metadata only for active discoverable organizations",
         "tags": [
           "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/{nodeId}/temporal-projections": {
+      "get": {
+        "operationId": "listNodeTemporalProjections",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "afterSequence",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner-only immutable observation UTC intervals ordered by sequence",
+        "tags": [
+          "time-evidence-controller"
         ]
       }
     },

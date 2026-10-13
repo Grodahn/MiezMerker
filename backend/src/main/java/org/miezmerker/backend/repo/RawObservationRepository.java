@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface RawObservationRepository extends JpaRepository<RawObservation, UUID> {
+    @Query("select o from RawObservation o left join fetch o.feedingSite left join fetch o.deployment where o.organization.id=:org and o.node.nodeId=:node and o.sequence>:after order by o.sequence")
+    List<RawObservation> temporalPage(UUID org,UUID node,long after,org.springframework.data.domain.Pageable page);
     Optional<RawObservation> findByNodeNodeIdAndSequence(UUID nodeId, long sequence);
 
     List<RawObservation> findByOrganizationIdAndFeedingSiteId(UUID organizationId,

@@ -171,6 +171,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/boot-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Persist owner-uploaded boot diagnostics; does not certify UTC */
+        post: operations["ingestNodeBootEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/claim": {
         parameters: {
             query?: never;
@@ -205,6 +222,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/time-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Persist exact verified Node acceptance independently of raw ACK */
+        post: operations["ingestNodeTimeEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{nodeId}": {
         parameters: {
             query?: never;
@@ -232,6 +266,23 @@ export interface paths {
         };
         /** Public claimed-node hint; owner metadata only for active discoverable organizations */
         get: operations["getNodeOwner"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{nodeId}/temporal-projections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner-only immutable observation UTC intervals ordered by sequence */
+        get: operations["listNodeTemporalProjections"];
         put?: never;
         post?: never;
         delete?: never;
@@ -771,6 +822,34 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Boot: {
+            /** Format: int64 */
+            bootCounter: number;
+            /** Format: uint64 */
+            firstPossibleSequence: number;
+            /** Format: int32 */
+            formatVersion: number;
+            incarnation: string;
+            nodeId: string;
+            /** Format: int64 */
+            resetReason: number;
+            /** Format: uint64 */
+            startedUptimeMs: number;
+        };
+        BootReceipt: {
+            /** Format: int64 */
+            bootCounter?: number;
+            incarnation?: string;
+            nodeId?: string;
+            provenance?: string;
+            status?: string;
+            /** Format: int32 */
+            version?: number;
+        };
+        BootRequest: {
+            boot: components["schemas"]["Boot"];
+            organizationId: string;
+        };
         CatPhotoMeta: {
             /** Format: int32 */
             byteSize?: number;
@@ -1038,6 +1117,23 @@ export interface components {
             publicContact?: string | null;
             state?: string;
         };
+        NodeTimeAcceptanceV1: {
+            /**
+             * Format: uint64
+             * @description Unsigned integer 0..18446744073709551615; preserve losslessly
+             */
+            acceptedUptimeMs: number;
+            anchorId: string;
+            /** Format: int64 */
+            bootCounter: number;
+            challengeNonceDigest: string;
+            incarnation: string;
+            nodeId: string;
+            proofDigest: string;
+            signature: string;
+            /** Format: int32 */
+            version: number;
+        };
         NodeTimeBootstrapRequest: {
             challenge: components["schemas"]["NodeTimeChallengeV1"];
             organizationId: string;
@@ -1100,6 +1196,12 @@ export interface components {
             slug?: string;
             status?: string;
         };
+        Page: {
+            algorithmVersion?: string;
+            items?: components["schemas"]["Projection"][];
+            /** Format: int64 */
+            nextAfterSequence?: number | null;
+        };
         PolicyView: {
             /** @enum {string} */
             audience?: "PRIVATE" | "ALL_DISCOVERABLE" | "ALLOWLIST";
@@ -1108,6 +1210,34 @@ export interface components {
             revision?: number;
             /** @enum {string} */
             scope?: "CARE" | "VISITS" | "SITE_LABEL" | "PHOTO";
+        };
+        Projection: {
+            algorithmVersion?: string;
+            anchorIds?: string[];
+            /** Format: int64 */
+            approximateUtcMs?: number | null;
+            attributionProvenance?: string;
+            /** Format: int32 */
+            bootCounter?: number | null;
+            /** Format: uuid */
+            derivedDeploymentId?: string | null;
+            /** Format: uuid */
+            derivedFeedingSiteId?: string | null;
+            /** Format: int64 */
+            earliestUtcMs?: number | null;
+            incarnation?: string | null;
+            /** Format: int64 */
+            latestUtcMs?: number | null;
+            /** Format: int64 */
+            monotonicMs?: number | null;
+            /** Format: uuid */
+            observationId?: string;
+            /** @enum {string} */
+            quality?: "VERIFIED" | "RECONSTRUCTED" | "BOUNDED" | "ESTIMATED" | "UNKNOWN" | "CONFLICT";
+            reason?: string;
+            /** Format: int64 */
+            sequence?: number;
+            uncertaintyPolicies?: string[];
         };
         RawObservationView: {
             /** Format: int32 */
@@ -1125,6 +1255,15 @@ export interface components {
             organizationId?: string;
             receivedAt?: string;
             sequence?: string;
+        };
+        Receipt: {
+            /** Format: uuid */
+            anchorId?: string;
+            boundedUtc?: boolean;
+            status?: string;
+            trustStatus?: string;
+            /** Format: int32 */
+            version?: number;
         };
         RecipientView: {
             displayName?: string;
@@ -1159,6 +1298,15 @@ export interface components {
             label?: string;
             publicKeyX: string;
             publicKeyY: string;
+        };
+        Request: {
+            acceptance: components["schemas"]["NodeTimeAcceptanceV1"];
+            acceptanceBytes: string;
+            boot: components["schemas"]["Boot"];
+            challenge: components["schemas"]["NodeTimeChallengeV1"];
+            challengeBytes: string;
+            organizationId: string;
+            proof: string;
         };
         ResolveSharedCareRequest: {
             /** Format: int32 */
@@ -1530,6 +1678,30 @@ export interface operations {
             };
         };
     };
+    ingestNodeBootEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BootRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BootReceipt"];
+                };
+            };
+        };
+    };
     claimNode: {
         parameters: {
             query?: never;
@@ -1574,6 +1746,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeTimeProofView"];
+                };
+            };
+        };
+    };
+    ingestNodeTimeEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Request"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Receipt"];
                 };
             };
         };
@@ -1644,6 +1840,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeOwnerView"];
+                };
+            };
+        };
+    };
+    listNodeTemporalProjections: {
+        parameters: {
+            query: {
+                organizationId: string;
+                afterSequence?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                nodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
                 };
             };
         };
