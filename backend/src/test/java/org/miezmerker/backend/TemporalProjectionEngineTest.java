@@ -7,7 +7,7 @@ import org.miezmerker.backend.service.*;
 import static org.miezmerker.backend.service.TemporalProjectionEngine.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@Tag("node")
+@Tag("visits") @Tag("node")
 class TemporalProjectionEngineTest {
     static BigInteger u(long value) { return BigInteger.valueOf(value); }
     static Evidence a(long boot,long uptime,long lower,long upper,long ppm) {

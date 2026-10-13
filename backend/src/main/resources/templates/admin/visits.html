@@ -6,8 +6,9 @@
 <div th:replace="~{admin/layout :: nav('visits')}"></div>
 <main>
 <h1>Besuche</h1>
+<p><a href="/admin/visits/temporal">Rekonstruierte Zeitfenster und unbekannte Beobachtungen nach Chip anzeigen</a></p>
 <p>Vom Backend abgeleitete Besuche, getrennt von Rohbeobachtungen. Zeit und Futterstelle werden aus den gespeicherten DerivedVisits angezeigt; ein Chip ohne zugeordnete Katze ist gültig.</p>
-<p>Alle Zeiten in UTC. Historische Futterstellen stammen aus der gespeicherten Zuordnung.</p>
+<p>Anzeige in Ihrer lokalen Zeitzone, ohne JavaScript in UTC. Zeitraumfilter verwenden UTC. Historische Futterstellen stammen aus der gespeicherten Zuordnung.</p>
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}"></div>
 <div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}"></div>
 <form class="card" method="get" th:action="${route}" th:object="${filters}">
@@ -33,8 +34,8 @@
 <div th:unless="${#lists.isEmpty(rows)}" class="card table-scroll" role="region" aria-label="Besuche" tabindex="0">
 <style>.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1000px}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}td small{display:block}th{background:#f9fafb}</style>
 <table><caption>Besuche der aktiven Organisation</caption>
-<thead><tr><th scope="col">Start / Ende (UTC)</th><th scope="col">Dauer (ISO 8601)</th><th scope="col">Historische Futterstelle</th><th scope="col">Katze / Chip</th><th scope="col">Beobachtungen</th><th scope="col">Algorithmus / Gap</th><th scope="col">Provenance</th></tr></thead>
-<tbody><tr th:each="r : ${rows}"><td><span th:text="${r.start}"></span><small th:text="${r.end}"></small></td><td th:text="${r.duration}"></td>
+<thead><tr><th scope="col">Start / Ende</th><th scope="col">Dauer (ISO 8601)</th><th scope="col">Historische Futterstelle</th><th scope="col">Katze / Chip</th><th scope="col">Beobachtungen</th><th scope="col">Algorithmus / Gap</th><th scope="col">Provenance</th></tr></thead>
+<tbody><tr th:each="r : ${rows}"><td><time th:attr="data-utc=${r.start}" th:text="${r.start}"></time><small><time th:attr="data-utc=${r.end}" th:text="${r.end}"></time></small></td><td th:text="${r.duration}"></td>
 <td th:text="${r.site}"></td><td><span th:text="${r.cat}"></span><small th:text="${r.chip}"></small></td>
 <td th:text="${r.count}"></td><td><span th:text="${r.algorithm}"></span><small th:text="'Gap: ' + ${r.gap} + ' s'"></small></td>
 <td><small th:text="'Besuch: ' + ${r.id}"></small><small th:text="'Erste Beobachtung: ' + ${r.first}"></small><small th:text="'Letzte Beobachtung: ' + ${r.last}"></small></td></tr></tbody>
@@ -45,5 +46,6 @@
 <a th:if="${next != null}" th:href="${next}" rel="next">Nächste Seite</a>
 </nav>
 </main>
+<script src="/admin-temporal-times.js" defer></script>
 <div th:replace="~{admin/layout :: footer}"></div>
 </body></html>

@@ -1633,6 +1633,194 @@
         ],
         "type": "object"
       },
+      "TemporalVisitItem": {
+        "properties": {
+          "ambiguousGap": {
+            "type": "boolean"
+          },
+          "chipId": {
+            "type": "string"
+          },
+          "earliestUtcMs": {
+            "pattern": "^-?[0-9]+$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "feedingSiteId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "latestUtcMs": {
+            "pattern": "^-?[0-9]+$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observationCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/TemporalVisitRead"
+            },
+            "type": "array"
+          },
+          "quality": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TemporalVisitPage": {
+        "properties": {
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "gapSeconds": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TemporalVisitItem"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timeProjectionVersion": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TemporalVisitRead": {
+        "properties": {
+          "chipId": {
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "time": {
+            "$ref": "#/components/schemas/TemporalVisitTime"
+          }
+        },
+        "type": "object"
+      },
+      "TemporalVisitTime": {
+        "properties": {
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "anchorIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "attributionProvenance": {
+            "type": "string"
+          },
+          "bootCounter": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "derivedDeploymentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "derivedFeedingSiteId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "earliestUtcMs": {
+            "pattern": "^-?[0-9]+$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "incarnation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latestUtcMs": {
+            "pattern": "^-?[0-9]+$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "monotonicMs": {
+            "pattern": "^[0-9]+$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quality": {
+            "enum": [
+              "VERIFIED",
+              "RECONSTRUCTED",
+              "BOUNDED",
+              "ESTIMATED",
+              "UNKNOWN",
+              "CONFLICT"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sequence": {
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "uncertaintyPolicies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "UpdateCatRequest": {
         "properties": {
           "chipId": {
@@ -4274,6 +4462,66 @@
         "summary": "ADMIN rebuilds visits from stored raw observations (no raw re-ingest, raw rows unchanged)",
         "tags": [
           "visit-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/visits/temporal": {
+      "get": {
+        "operationId": "listTemporalVisits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chipId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemporalVisitPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner-only interval visits and uncertain observations; rebuilt from immutable evidence",
+        "tags": [
+          "temporal-visit-controller"
         ]
       }
     },

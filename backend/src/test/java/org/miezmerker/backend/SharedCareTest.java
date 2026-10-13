@@ -115,6 +115,20 @@ class SharedCareTest {
     Map<String, Object> resolveBody() { return Map.of("ownObservationRefs", List.of(proof.getId())); }
     Map<String, Object> visitBody() { return Map.of("ownObservationRef", proof.getId(), "sourceOrganizationId", b.getId()); }
 
+    @Test void temporalHistoryIsOwnerOnlyEvenWithAllSharedCareScopes() throws Exception {
+        login(reader);
+        String foreign="/api/v1/organizations/"+b.getId()+"/visits/temporal?chipId="+proof.getChipId();
+        assertEquals(403,get(foreign).statusCode());
+        grant(ShareScope.CARE,ShareScope.VISITS,ShareScope.SITE_LABEL);
+        assertFalse(page(0).items().isEmpty());
+        var response=get(foreign);
+        assertEquals(403,response.statusCode());
+        assertFalse(response.body().contains("earliestUtcMs"));
+        assertFalse(response.body().contains("anchorIds"));
+        var own=get("/api/v1/organizations/"+a.getId()+"/visits/temporal?chipId="+proof.getChipId());
+        assertEquals(200,own.statusCode());
+        assertEquals("no-store",own.headers().firstValue("Cache-Control").orElseThrow());
+    }
     @Test void defaultDenyAndHiddenOwnerAreIndistinguishable() {
         assertEquals(new SharedCareViews.ProfilePage(List.of(), null), resolve());
         assertEquals(new SharedCareViews.VisitPage(List.of(), null), page(0));

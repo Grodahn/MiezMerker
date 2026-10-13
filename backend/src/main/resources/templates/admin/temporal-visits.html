@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head th:replace="~{admin/layout :: head('Zeitfenster und Beobachtungen')}"><title>Zeitfenster</title></head>
+<body><div th:replace="~{admin/layout :: topbar}"></div><div th:replace="~{admin/layout :: nav('visits')}"></div>
+<main><h1>Zeitfenster und Beobachtungen</h1>
+<p>Eine RFID-Beobachtung ist noch kein bestätigter Besuch. Zeitfenster bewahren die Unsicherheit; eine genaue Dauer ist daraus nicht bekannt. Futterstellen stammen ausschließlich aus gespeicherter historischer Zuordnung.</p>
+<p>Zeiten werden in Ihrer lokalen Zeitzone angezeigt; ohne JavaScript in UTC. Reihenfolge nach Napf, Boot und Beobachtungsfolge, nicht nach Empfangszeit.</p>
+<p th:if="${error != null}" role="alert" th:text="${error}"></p>
+<form method="get"><label for="chip">Chip-ID</label><input id="chip" name="chipId" maxlength="64" required th:value="${chipId}"/><button class="btn">Anzeigen</button></form>
+<section th:if="${page != null}" aria-label="Zeitfensterverlauf">
+<p th:if="${#lists.isEmpty(page.items)}">Keine weiteren Beobachtungen.</p>
+<article class="card" th:each="r : ${page.items}" style="overflow-wrap:anywhere">
+<h2 th:text="${r.kind == 'VISIT' ? 'Besuch mit rekonstruiertem Zeitfenster' : 'Einzelne RFID-Beobachtung'}"></h2>
+<p th:text="${r.quality == 'CONFLICT' ? 'Zeitbelege widersprechen sich – Zeitpunkt unbekannt' : r.quality == 'UNKNOWN' ? 'Zeitpunkt unbekannt' : r.quality == 'BOUNDED' ? 'Nur zeitlich eingegrenzt' : r.quality == 'VERIFIED' ? 'Bestätigte Zeit mit Unsicherheit' : r.quality == 'ESTIMATED' ? 'Schätzung – nicht bestätigt' : 'Rekonstruiert mit Unsicherheit'}"></p>
+<p>Frühestens: <time th:if="${r.earliestUtcMs != null and r.earliestUtcMs > 0}" th:attr="data-utc-ms=${r.earliestUtcMs}" th:text="${T(java.time.Instant).ofEpochMilli(r.earliestUtcMs)}"></time><span th:if="${r.earliestUtcMs == null or r.earliestUtcMs <= 0}">Keine belegte Untergrenze</span></p>
+<p>Spätestens: <time th:if="${r.latestUtcMs != null and r.latestUtcMs > 0}" th:attr="data-utc-ms=${r.latestUtcMs}" th:text="${T(java.time.Instant).ofEpochMilli(r.latestUtcMs)}"></time><span th:if="${r.latestUtcMs == null or r.latestUtcMs <= 0}">Keine belegte Obergrenze</span></p>
+<p th:if="${r.ambiguousGap}">Ob diese Beobachtungen zu einem gemeinsamen Besuch gehören, ist unklar.</p>
+<p th:text="${r.feedingSiteId == null ? 'Futterstelle nicht bestätigt' : 'Historische Futterstellen-ID: ' + r.feedingSiteId}"></p>
+<p th:text="${r.observationCount + ' RFID-Beobachtung(en)'}"></p>
+<details><summary>Herkunft und relative Reihenfolge</summary><p th:text="${page.algorithmVersion + ' / ' + page.timeProjectionVersion}"></p>
+<ul><li th:each="o : ${r.observations}"><span th:text="${'Napf: ' + o.nodeId + ', Boot: ' + o.time.bootCounter + ', Folge: ' + o.time.sequence + ', Laufzeit (ms): ' + o.time.monotonicMs}"></span><p th:text="${o.time.reason}"></p><p th:text="${o.time.anchorIds}"></p><p th:text="${o.time.uncertaintyPolicies}"></p><p th:text="${o.time.attributionProvenance}"></p></li></ul></details>
+</article>
+<nav aria-label="Zeitfensterseiten"><a th:if="${offset > 0}" th:href="@{/admin/visits/temporal(chipId=${chipId},offset=${T(java.lang.Math).max(0,offset - 20)})}">Vorherige Seite</a> <a th:if="${page.nextOffset != null}" th:href="@{/admin/visits/temporal(chipId=${chipId},offset=${page.nextOffset})}">Nächste Seite</a></nav>
+</section><a href="/admin/visits">Historische Besuche (v1)</a></main>
+<script src="/admin-temporal-times.js" defer></script><div th:replace="~{admin/layout :: footer}"></div></body></html>

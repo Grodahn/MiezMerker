@@ -42,12 +42,22 @@ public class TemporalProjectionService {
         var node=nodes.findByIdLocked(nodeId).orElseThrow(TimeEvidenceService::denied);
         if(node.getState()!=NodeState.CLAIMED || node.getOrganization()==null || !org.equals(node.getOrganization().getId())) throw TimeEvidenceService.denied();
         var rows=observations.temporalPage(org,nodeId,after,PageRequest.of(0,limit+1));
+        var views=projectRows(user,org,nodeId,rows.subList(0,Math.min(limit,rows.size())));
+        return new Page(TemporalProjectionEngine.VERSION,views,rows.size()>limit?views.getLast().sequence():null);
+    }
+    /** Reuse the authoritative #132 projection for selected immutable rows, without cursor loss. */
+    @Transactional
+    public List<Projection> projectRows(UUID user,UUID org,UUID nodeId,List<RawObservation> rows) {
+        tenants.requireActive(user,org);
+        var node=nodes.findByIdLocked(nodeId).orElseThrow(TimeEvidenceService::denied);
+        if(node.getState()!=NodeState.CLAIMED || node.getOrganization()==null || !org.equals(node.getOrganization().getId())) throw TimeEvidenceService.denied();
+        if(rows.stream().anyMatch(r->!org.equals(r.getOrganization().getId()) || !nodeId.equals(r.getNode().getNodeId()))) throw TimeEvidenceService.denied();
         var engines=new HashMap<String,TemporalProjectionEngine>();
         var policies=new HashMap<String,List<String>>();
         var history=deployments.temporalHistory(org,nodeId,PageRequest.of(0,4097));
         if(history.size()>4096) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Deployment projection capacity exceeded");
         var views=new ArrayList<Projection>();
-        for(var raw:rows.subList(0,Math.min(limit,rows.size()))) {
+        for(var raw:rows) {
             String inc=raw.getIncarnation();
             TemporalProjectionEngine.Result result=new TemporalProjectionEngine.Result(TemporalProjectionEngine.Quality.UNKNOWN,null,null,List.of(),"MISSING_BOOT_EVIDENCE");
             if(inc!=null && raw.getBootCounter()!=null && raw.getBootCounter()>0 && raw.getMonotonicMs()!=null && raw.getMonotonicMs()>=0) {
@@ -99,7 +109,6 @@ public class TemporalProjectionService {
             views.add(new Projection(raw.getId(),raw.getSequence(),inc,raw.getBootCounter(),raw.getMonotonicMs(),TemporalProjectionEngine.VERSION,
                 result.quality(),result.earliestUtcMs(),result.latestUtcMs(),null,result.anchorIds(),result.reason(),policies.getOrDefault(inc,List.of()),site,deployment,attribution));
         }
-        return new Page(TemporalProjectionEngine.VERSION,List.copyOf(views),rows.size()>limit?views.getLast().sequence():null);
+        return List.copyOf(views);
     }
 }
-
