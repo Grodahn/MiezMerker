@@ -133,8 +133,9 @@ class DevIssuerTest(unittest.TestCase):
         def quote(value):
             return "'" + str(value).replace("'", "''") + "'"
         command = "$OutputEncoding = [Text.UTF8Encoding]::new($true); "
+        command += "[Console]::InputEncoding = [Text.UTF8Encoding]::new($true); "
         command += f"& {quote(SCRIPT)} -KeyDirectory {quote(self.directory)}; "
-        command += "if (!$OutputEncoding.GetPreamble().Length) { throw 'caller encoding changed' }"
+        command += "if (!$OutputEncoding.GetPreamble().Length -or ![Console]::InputEncoding.GetPreamble().Length) { throw 'caller encoding changed' }"
         result = subprocess.run(['powershell', '-NoProfile', '-Command', command], env=self.env,
                                 capture_output=True, text=True)
         self.success(result)

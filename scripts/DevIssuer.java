@@ -32,8 +32,11 @@ class DevIssuer {
     public static void main(String[] args) {
         String phase = "input";
         try {
-            var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.US_ASCII));
+            var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
             String privateText = input.readLine(), publicText = input.readLine();
+            // .NET Framework's redirected stdin writer may emit the console's
+            // UTF-8 preamble before the caller writes its exact ASCII lines.
+            if (privateText != null && privateText.startsWith("\uFEFF")) privateText = privateText.substring(1);
             var generator = KeyPairGenerator.getInstance("EC");
             generator.initialize(new ECGenParameterSpec("secp256r1"));
             KeyPair pair;
