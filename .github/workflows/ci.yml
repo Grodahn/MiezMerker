@@ -86,6 +86,12 @@ jobs:
         run: npm run api:check
       - working-directory: app
         run: npm test
+      # Local mkcert CA transfer helper (#150): Node built-ins, no Android
+      # or certificate installation required in CI. Must remain separate
+      # from the production backend/PWA bundle.
+      - name: Local development CA endpoint safety tests
+        working-directory: app
+        run: npm run test:dev-ca
       - working-directory: app
         run: npm run build
       - name: Start packaged backend
