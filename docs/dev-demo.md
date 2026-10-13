@@ -151,3 +151,73 @@ Windows Firewall private-network access to TCP 5173 if the phone cannot connect.
 The HTTPS files are optional and **not needed** for production builds or CI.
 For production use deploy a publicly trusted HTTPS certificate; never deploy
 the local `mkcert` private keys.
+
+### Optional: Download the public mkcert CA directly on your own Android device (#150)
+
+For developer-owned devices on a trusted local WLAN only, a standalone **HTTP**
+helper can transfer the public CA file without manually copying it over USB.
+This does **not** install the CA or make the browser trust it automatically.
+For external testers use the future publicly trusted HTTPS/staging solution
+(#149 / #152), not this workaround.
+
+Prerequisite: finish `mkcert -install` and the `app/.cert/dev-cert.pem` /
+`app/.cert/dev-key.pem` generation described above. You do **not** need to
+copy a root CA file into the repository: the helper obtains the current mkcert
+CA location using `mkcert -CAROOT`, reads only `rootCA.pem`, and converts the
+public certificate to Android-friendly DER `.crt` bytes in memory.
+
+In a **second** IntelliJ terminal, from `app/`:
+
+```powershell
+npm run test:dev-ca
+npm run dev:ca -- --host 192.168.68.155
+```
+
+Replace that address with the actual Wi-Fi IP of **your own development
+computer**. The helper binds only that explicit RFC1918 IPv4 address on
+port **5174**, never `0.0.0.0` or a public IP, and does not start during
+`npm run dev`, `npm run dev:https`, builds, CI or backend startup. It serves
+only one read-only URL; all other routes return 404, with no directory listing,
+app/backend proxy or private-key access.
+
+On the Android phone on the same trusted WLAN, **type directly into Chrome**:
+
+```text
+http://192.168.68.155:5174/__dev/cert/rootCA.crt
+```
+
+This intentionally uses **HTTP** for the one-time transfer because Android
+does not yet trust the development HTTPS certificate. If the file doesn't
+download, verify that the computer is reachable from the phone, the IP hasn't
+changed, and the Windows firewall permits the selected private-network port
+5174 (do not forward it on the router). The script logs the public CA's
+**SHA-256 certificate fingerprint** locally in the IntelliJ terminal.
+
+**Important trust step:** local HTTP can be tampered with by another device on
+the network. Before granting CA trust, verify the downloaded certificate's
+SHA-256 fingerprint against the value from the developer's computer **over a
+separate trusted channel**. Merely displaying a fingerprint on the same HTTP
+download page would not verify anything. If the phone cannot verify the
+fingerprint reliably, transfer the file via a trusted cable instead or use the
+proper domain-based staging setup in #152.
+
+Then navigate Android Settings (names vary by device) to **Security / More
+security settings / Encryption & credentials / Install a certificate / CA
+certificate**, choose the downloaded `.crt`, and explicitly confirm Android's
+security warning and device unlock. A webpage cannot approve this on behalf
+of the user. Chrome may need to be restarted. After installation open:
+
+```text
+https://192.168.68.155:5173/
+```
+
+Chrome must show a valid certificate **without warnings**, with
+`window.isSecureContext === true`. If Bluetooth is still missing, investigate
+browser support and permissions separately.
+
+Stop the CA transfer helper with **Ctrl+C** as soon as the download finishes.
+Remove the privately installed CA from the Android trusted credentials when
+development testing is complete. Never transfer `rootCA-key.pem`,
+`dev-key.pem`, or `app/.cert/` to a test phone. The endpoint must not be
+present in released deployment artifacts; see mandatory release gate **#151**
+and the parent production release gate **#113**.
