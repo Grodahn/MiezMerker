@@ -77,7 +77,7 @@ class DevCaControllerTest {
         HttpResponse<byte[]> page = get("/admin/login");
         assertEquals(200, page.statusCode());
         String html = new String(page.body(), StandardCharsets.UTF_8);
-        Matcher m = Pattern.compile("name=\\\"_csrf\\\"[^>]*value=\\\"([^\\\"]+)\\\"").matcher(html);
+        Matcher m = Pattern.compile("name=\"_csrf\"[^>]*value=\"([^\"]+)\"").matcher(html);
         assertTrue(m.find(), "CSRF token must be present");
         String form = "email=" + URLEncoder.encode(email, StandardCharsets.UTF_8)
                 + "&password=" + URLEncoder.encode(password, StandardCharsets.UTF_8)
@@ -111,8 +111,7 @@ class DevCaControllerTest {
         X509Certificate ca = (X509Certificate) CertificateFactory.getInstance("X.509")
                 .generateCertificate(new java.io.ByteArrayInputStream(response.body()));
         assertTrue(ca.getBasicConstraints() >= 0);
-        assertArrayEquals(Files.readAllBytes(Path.of("src/test/resources/dev-ca/rootCA.pem"))
-                .length > 0 ? ca.getEncoded() : new byte[0], response.body());
+        assertArrayEquals(ca.getEncoded(), response.body());
 
         for (String path : new String[] {
                 "/admin/dev/rootCA-key.pem", "/admin/dev/dev-key.pem",
