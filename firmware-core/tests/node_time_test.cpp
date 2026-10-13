@@ -38,6 +38,7 @@ struct FakeEvidence : TimeEvidenceStore {
     PutResult append_boot(const BootEpochV1&) override { return PutResult::OK; }
     PutResult append_anchor(const TimeAnchorV1&) override { return PutResult::IO_ERROR; }
     PutResult append_verified(const VerifiedAnchor& v) override {
+        if (fail_verified) return PutResult::IO_ERROR;
         saved.push_back(v.anchor());
         return PutResult::OK;
     }
@@ -48,6 +49,7 @@ struct FakeEvidence : TimeEvidenceStore {
         return true;
     }
     std::vector<TimeAnchorV1> saved;
+    bool fail_verified{false};
 };
 bool fake_verify(std::string_view proof, std::span<const unsigned char, 65>,
                  TimeProofClaims& out) {
@@ -116,6 +118,13 @@ void interval_tv5() {
     assert(!compute_acceptance_interval(1000, 0, 2000, 1000, 0, interval));
     assert(!compute_acceptance_interval(1000, -1, 1000, 1000, 0, interval));
     assert(!compute_acceptance_interval(0, 100, 1000, 1300, 0, interval));
+    // The delay bound honors configuration instead of the default 30 s.
+    AcceptanceInterval custom;
+    assert(!compute_acceptance_interval(1791748800000LL, 100, 1000, 11000, 0, custom,
+                                        5000));
+    assert(compute_acceptance_interval(1791748800000LL, 100, 1000, 5000, 0, custom,
+                                       5000));
+    assert(compute_acceptance_interval(1791748800000LL, 100, 1000, 11000, 0, custom));
 }
 
 void clock_advancement_and_drift() {
@@ -346,6 +355,63 @@ void evidence_trust_boundary() {
     FakeEvidence evidence;
     assert(evidence.append_anchor(anchor) == PutResult::IO_ERROR);
 }
+
+void failed_rebootstrap_preserves_trust() {
+    // Regression for the re-bootstrap invalidation flaw: a failed proof for
+    // a new pending challenge must not destroy a live anchor, nor may a
+    // failed persistence attempt.
+    g_boot = 42;
+    ManualClock clock;
+    clock.set_monotonic_ms(1000);
+    FixedRandomSource random{21};
+    FakeCrypto crypto;
+    FakeEvidence evidence;
+    auto issuer = test_issuer();
+    NodeTimeConfig cfg;  // Zero drift keeps interval assertions exact here.
+    cfg.drift_ppm_bound = 0;
+    NodeTimeBootstrapManager manager(clock, random, crypto, evidence, fake_verify,
+                                     std::span<const unsigned char, 65>(issuer), cfg);
+    assert(manager.on_boot(test_node(), test_incarn(), 42));
+    NodeTimeChallenge challenge;
+    assert(manager.create_challenge(test_pubkey(), test_privkey(), challenge));
+    g_nonce_b64 = base64url_encode(
+        std::span<const std::uint8_t>(challenge.nonce.data(), 32));
+    g_dpf_b64 = base64url_encode(
+        std::span<const std::uint8_t>(challenge.fingerprint.data(), 32));
+    clock.set_monotonic_ms(1300);
+    std::string acceptance;
+    assert(manager.submit_proof("valid-proof", test_pubkey(), test_privkey(), acceptance));
+    assert(manager.state() == SecurityTimeState::BOUNDED);
+    std::int64_t lower_before = 0, upper_before = 0;
+    assert(manager.current_interval(lower_before, upper_before));
+    // Bogus proof for a fresh challenge: denied, trust and interval intact.
+    NodeTimeChallenge retry;
+    assert(manager.create_challenge(test_pubkey(), test_privkey(), retry));
+    clock.set_monotonic_ms(1400);
+    std::string denied;
+    assert(!manager.submit_proof("bogus-proof", test_pubkey(), test_privkey(), denied));
+    assert(manager.state() == SecurityTimeState::BOUNDED);
+    std::int64_t lower_after = 0, upper_after = 0;
+    assert(manager.current_interval(lower_after, upper_after));
+    assert(lower_after == lower_before + 100 && upper_after == upper_before + 100);
+    assert(evidence.saved.size() == 1);
+    // Persistence failure likewise preserves the live anchor.
+    NodeTimeChallenge persist_retry;
+    assert(manager.create_challenge(test_pubkey(), test_privkey(), persist_retry));
+    g_nonce_b64 = base64url_encode(
+        std::span<const std::uint8_t>(persist_retry.nonce.data(), 32));
+    g_dpf_b64 = base64url_encode(
+        std::span<const std::uint8_t>(persist_retry.fingerprint.data(), 32));
+    evidence.fail_verified = true;
+    clock.set_monotonic_ms(1500);
+    std::string failed_accept;
+    assert(!manager.submit_proof("valid-proof", test_pubkey(), test_privkey(),
+                                 failed_accept));
+    assert(manager.state() == SecurityTimeState::BOUNDED);
+    assert(evidence.saved.size() == 1);
+    std::int64_t lower_final = 0, upper_final = 0;
+    assert(manager.current_interval(lower_final, upper_final));
+}
 }  // namespace
 
 int main() {
@@ -356,6 +422,7 @@ int main() {
     full_lifecycle_with_fake_verifier();
     security_clock_states();
     evidence_trust_boundary();
+    failed_rebootstrap_preserves_trust();
     std::cout << "node-time portable security-clock tests passed\n";
     return 0;
 }

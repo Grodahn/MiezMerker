@@ -77,6 +77,8 @@ target_include_directories(node-time-bootstrap-test PRIVATE
   ../components/offline-auth/include ../components/ble-sync/include
   ../include "${CORE_ROOT}/include")
 target_link_libraries(node-time-bootstrap-test PRIVATE test-crypto)
+# Test-only verified-anchor factory for the storage-full fixture below.
+target_compile_definitions(node-time-bootstrap-test PRIVATE MIEZMERKER_TEST_ANCHOR_ACCESS)
 if(MSVC)
   target_compile_options(node-time-bootstrap-test PRIVATE /UNDEBUG /W4 /WX)
 else()

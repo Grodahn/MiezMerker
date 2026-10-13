@@ -128,12 +128,16 @@ struct AcceptanceInterval {
 };
 
 // acceptance interval [S-E-sampling, S+E+D+sampling], D = U_accept-U_challenge.
+// max_delay_ms bounds D (defaults to the provisional 30 s challenge
+// lifetime); callers pass their configured NodeTimeConfig lifetime so a
+// re-measured transport bound is honored instead of the default.
 // Returns false (fail closed) on invalid inputs or any overflow.
 bool compute_acceptance_interval(std::int64_t server_utc_ms, std::int64_t server_error_ms,
                                  std::uint64_t challenge_uptime_ms,
                                  std::uint64_t accepted_uptime_ms,
                                  std::uint64_t sampling_ms,
-                                 AcceptanceInterval& out);
+                                 AcceptanceInterval& out,
+                                 std::uint64_t max_delay_ms = kChallengeLifetimeMs);
 
 // Current [L,U] at now_uptime: anchor bounds advanced by elapsed monotonic
 // time plus growing drift. Returns false when expired, rolled back,

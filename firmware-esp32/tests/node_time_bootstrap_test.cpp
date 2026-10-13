@@ -103,6 +103,23 @@ struct FixtureRandom : RandomSource {
         first = false;
     }
 };
+// Returns the fixture nonce on every 32-byte call (for the storage-full
+// preserve test, where each re-bootstrap must bind to the same proof),
+// with varying anchor IDs.
+struct StickyFixtureRandom : RandomSource {
+    unsigned calls{0};
+    void fill_random(std::span<std::uint8_t> out) override {
+        if (out.size() == 32) {
+            for (std::size_t i = 0; i < 32; ++i) out[i] = static_cast<std::uint8_t>(i);
+            return;
+        }
+        std::fill(out.begin(), out.end(), 0xAA);
+        if (!out.empty()) {
+            out[0] = static_cast<std::uint8_t>(0x10 + (calls++ % 200));
+            if (out[0] == 0) out[0] = 0x10;
+        }
+    }
+};
 struct Fixture {
     std::string proof;
     std::string nonce_b64, dpf_b64, pubkey_b64;
@@ -509,6 +526,70 @@ int main(int argc, char** argv) {
         assert(identity.store(id) && core.refresh_identity());
         assert(core.record_chip_read("claimed-unknown") == RecordResult::RECORDED);
         assert(!core.load_observations().front().observed_at_epoch_ms);
+    }
+
+    // Failed re-bootstrap preserves a live anchor (bogus proof, then FULL).
+    {
+        ManualClock clock;
+        clock.set_monotonic_ms(1000);
+        StickyFixtureRandom random;
+        FakeDeviceCrypto crypto;
+        Cell cell;
+        PersistentTimeEvidence evidence(cell);
+        assert(evidence.open());
+        append_boot_for(evidence, 42);
+        NodeTimeBootstrapManager manager(
+            clock, random, crypto, evidence, verify_time_proof,
+            std::span<const unsigned char, 65>(fixture.issuer));
+        assert(manager.on_boot(fixture_node(), fixture_incarn(), 42));
+        NodeTimeChallenge challenge;
+        assert(manager.create_challenge(fixture.device_pub, fixture.device_priv, challenge));
+        clock.set_monotonic_ms(1300);
+        std::string acceptance;
+        assert(manager.submit_proof(fixture.proof, fixture.device_pub,
+                                    fixture.device_priv, acceptance));
+        assert(manager.state() == SecurityTimeState::BOUNDED);
+        std::int64_t lower_before = 0, upper_before = 0;
+        assert(manager.current_interval(lower_before, upper_before));
+        // Bogus proof for a fresh challenge: denied, trust and interval intact.
+        NodeTimeChallenge retry;
+        assert(manager.create_challenge(fixture.device_pub, fixture.device_priv, retry));
+        clock.set_monotonic_ms(1400);
+        std::string denied;
+        assert(!manager.submit_proof("bogus-proof", fixture.device_pub,
+                                     fixture.device_priv, denied));
+        assert(manager.state() == SecurityTimeState::BOUNDED);
+        std::int64_t lower_after = 0, upper_after = 0;
+        assert(manager.current_interval(lower_after, upper_after));
+        assert(lower_after > lower_before && upper_after > upper_before);
+        assert(evidence.anchors().size() == 1);
+        // Fill the store: 15 more successful bootstraps bind to the same
+        // proof nonce (sticky RNG) with distinct anchor IDs.
+        for (unsigned i = 0; i < 15; ++i) {
+            NodeTimeChallenge fill;
+            assert(manager.create_challenge(fixture.device_pub, fixture.device_priv, fill));
+            std::string fill_accept;
+            assert(manager.submit_proof(fixture.proof, fixture.device_pub,
+                                        fixture.device_priv, fill_accept));
+            assert(manager.state() == SecurityTimeState::BOUNDED);
+        }
+        assert(evidence.anchors().size() == 16);
+        const auto full_bytes = cell.data;
+        // One more valid proof: persistence is FULL, but the live anchor and
+        // its interval survive the failed re-bootstrap.
+        NodeTimeChallenge overflow;
+        assert(manager.create_challenge(fixture.device_pub, fixture.device_priv, overflow));
+        std::string overflow_accept;
+        assert(!manager.submit_proof(fixture.proof, fixture.device_pub,
+                                     fixture.device_priv, overflow_accept));
+        assert(manager.state() == SecurityTimeState::BOUNDED);
+        assert(evidence.anchors().size() == 16);
+        assert(cell.data == full_bytes);
+        // Trust is live on the newest anchor (accepted at 1400 with D=0).
+        std::int64_t lower_final = 0, upper_final = 0;
+        assert(manager.current_interval(lower_final, upper_final));
+        assert(lower_final == fixture.expected_utc - 1000 - 2);
+        assert(upper_final == fixture.expected_utc + 1000 + 0 + 2);
     }
 
     std::cout << "node-time bootstrap lifecycle passed\n";

@@ -1,5 +1,6 @@
 // Portable RTC-free time bootstrap (issue #130, ADR 0017).
 // Portable checked arithmetic throughout (no compiler-specific 128-bit type) so MSVC and RV32-GCC build.
+// See PR #142: this file supersedes the workspace-local node_time.cpp draft.
 #include "miezmerker/node_time.hpp"
 #include "miezmerker/ports.hpp"
 #include "miezmerker/node_identity.hpp"
@@ -237,13 +238,15 @@ bool compute_acceptance_interval(std::int64_t server_utc_ms, std::int64_t server
                                  std::uint64_t challenge_uptime_ms,
                                  std::uint64_t accepted_uptime_ms,
                                  std::uint64_t sampling_ms,
-                                 AcceptanceInterval& out) {
+                                 AcceptanceInterval& out,
+                                 std::uint64_t max_delay_ms) {
     out = {};
     if (server_utc_ms <= 0 || server_error_ms < 0) return false;
     if (accepted_uptime_ms < challenge_uptime_ms) return false;
     const std::uint64_t elapsed = accepted_uptime_ms - challenge_uptime_ms;
-    // D is bounded by the caller (challenge lifetime); reject absurd delays.
-    if (elapsed > kChallengeLifetimeMs) return false;
+    // D is bounded by the configured challenge lifetime (default 30 s);
+    // reject absurd delays.
+    if (elapsed > max_delay_ms) return false;
     // Checked: lower = S - E - sampling, upper = S + E + D + sampling.
     std::int64_t elapsed_i64 = 0, sampling_i64 = 0;
     if (!to_i64(elapsed, elapsed_i64) || !to_i64(sampling_ms, sampling_i64)) return false;
@@ -565,6 +568,8 @@ bool NodeTimeBootstrapManager::submit_proof(
     if (device_public_key[0] != std::byte{4} || !private_nonzero(device_private_key))
         return false;
     if (!clock_->monotonic_valid()) {
+        // Timer discontinuity is a genuine security event: pending and trust
+        // share the same monotonic base, so invalidate unconditionally.
         security_.invalidate();
         return false;
     }
@@ -572,24 +577,32 @@ bool NodeTimeBootstrapManager::submit_proof(
     NodeTimeChallenge pending;
     // Single-use: consumes pending even when the proof is invalid.
     if (!security_.take_pending_for_verify(now, pending)) return false;
+    // A failed proof for a new pending challenge must not destroy a
+    // previously verified, still-valid anchor in the same boot. Every failure
+    // below preserves live trust and only latches INVALIDATED when no anchor
+    // is active: a failed re-bootstrap denies the new proof but keeps serving
+    // the old interval until it expires.
+    const auto fail_preserving_trust = [this]() {
+        if (!security_.has_trust()) security_.invalidate();
+    };
     if (!byte_pubkey_equal(device_public_key, pending.device_public_key)) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     TimeProofClaims claims;
     std::span<const unsigned char, 65> issuer(issuer_key_.data(), 65);
     if (!verifier_(jws, issuer, claims)) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     // Binding to the consumed challenge (all fields, canonical encodings).
     if (claims.version != 1 || claims.boot != pending.boot_counter) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     if (claims.node_id != pending.node_id.to_string() ||
         claims.incarnation != pending.incarnation.to_string()) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     if (claims.nonce_b64u !=
@@ -597,18 +610,19 @@ bool NodeTimeBootstrapManager::submit_proof(
         claims.dpf_b64u !=
             base64url_encode(
                 std::span<const std::uint8_t>(pending.fingerprint.data(), 32))) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     if (claims.utc_ms <= 0 || claims.jti.empty()) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     AcceptanceInterval interval;
     if (!compute_acceptance_interval(claims.utc_ms, config_.server_error_bound_ms,
                                      pending.challenge_uptime_ms, now,
-                                     config_.sampling_uncertainty_ms, interval)) {
-        security_.invalidate();
+                                     config_.sampling_uncertainty_ms, interval,
+                                     config_.challenge_lifetime_ms)) {
+        fail_preserving_trust();
         return false;
     }
     // Asymmetric uncertainty for evidence: minus = E + sampling,
@@ -616,7 +630,7 @@ bool NodeTimeBootstrapManager::submit_proof(
     const std::uint64_t elapsed = now - pending.challenge_uptime_ms;
     // Portable checked sums (no compiler-specific 128-bit integer type).
     if (config_.server_error_bound_ms < 0) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     {
@@ -624,11 +638,11 @@ bool NodeTimeBootstrapManager::submit_proof(
             static_cast<std::uint64_t>(config_.server_error_bound_ms);
         const auto sampling = config_.sampling_uncertainty_ms;
         if (bound > std::numeric_limits<std::uint64_t>::max() - sampling) {
-            security_.invalidate();
+            fail_preserving_trust();
             return false;
         }
         if (elapsed > std::numeric_limits<std::uint64_t>::max() - (bound + sampling)) {
-            security_.invalidate();
+            fail_preserving_trust();
             return false;
         }
     }
@@ -643,7 +657,7 @@ bool NodeTimeBootstrapManager::submit_proof(
     NodeId anchor_id;
     std::copy(anchor_raw.begin(), anchor_raw.end(), anchor_id.bytes.begin());
     if (!anchor_id.is_set()) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     // Device-signed acceptance over the exact received proof.
@@ -663,7 +677,7 @@ bool NodeTimeBootstrapManager::submit_proof(
     if (!crypto_->sign(std::span<const std::byte, 32>(device_private_key.data(), 32),
                        accept_msg,
                        std::span<std::byte, 64>(accept_sig.data(), 64))) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     std::array<std::uint8_t, 64> accept_sig_u8{};
@@ -684,7 +698,7 @@ bool NodeTimeBootstrapManager::submit_proof(
                              ",\"anchorId\":\"" + anchor_id.to_string() +
                              "\",\"signature\":\"" + accept_sig_b64 + "\",\"version\":1}";
     if (acceptance.size() > 512) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     TimeAnchorV1 anchor;
@@ -703,25 +717,33 @@ bool NodeTimeBootstrapManager::submit_proof(
     anchor.proof.assign(jws.begin(), jws.end());
     anchor.acceptance = acceptance;
     if (!anchor.valid_verified()) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     // Durably commit before activating the security clock (fail closed on
     // ambiguous persistence outcome).
     const PutResult stored = evidence_->append_verified(VerifiedAnchor(std::move(anchor)));
     if (stored != PutResult::OK) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
-    // Reload the committed anchor for transport (byte-exact, incl. NUL).
+    // Reload the committed anchor for transport (byte-exact, incl. NUL) and
+    // confirm it is the anchor just committed (same id and exact proof bytes)
+    // rather than trusting store ordering blindly.
     const auto anchors = evidence_->anchors();
     if (anchors.empty()) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     const TimeAnchorV1& committed = anchors.back();
+    if (!(committed.anchor_id == anchor_id &&
+          committed.proof.size() == jws.size() &&
+          std::equal(committed.proof.begin(), committed.proof.end(), jws.begin()))) {
+        fail_preserving_trust();
+        return false;
+    }
     if (!security_.activate(interval, config_.drift_ppm_bound)) {
-        security_.invalidate();
+        fail_preserving_trust();
         return false;
     }
     stored_anchor_ = committed;

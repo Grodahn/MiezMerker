@@ -34,13 +34,39 @@ bool decode(std::string_view value, Bytes& out) {
     return (accumulator & ((1U << bits) - 1)) == 0;
 }
 
+// Canonical re-encoding must reproduce the exact input: rejects noncanonical
+// spellings of the same bytes (aligned with the node-time verifier, #130).
+std::string encode(const Bytes& bytes) {
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    std::string out;
+    unsigned accumulator = 0;
+    int bits = 0;
+    for (auto b : bytes) {
+        accumulator = (accumulator << 8) | b;
+        bits += 8;
+        while (bits >= 6) {
+            bits -= 6;
+            out += kAlphabet[(accumulator >> bits) & 63];
+        }
+    }
+    if (bits) out += kAlphabet[(accumulator << (6 - bits)) & 63];
+    return out;
+}
+
 Json parse(const Bytes& bytes) {
     // cJSON strings are C strings; embedded NUL would make comparisons ambiguous.
     std::string text(bytes.begin(), bytes.end());
     if (text.find('\0') != std::string::npos || text.find("\\u0000") != std::string::npos)
         return Json(nullptr, cJSON_Delete);
-    Json result(cJSON_ParseWithLengthOpts(text.c_str(), text.size() + 1, nullptr, true), cJSON_Delete);
-    if (!cJSON_IsObject(result.get())) return Json(nullptr, cJSON_Delete);
+    const char* end = nullptr;
+    Json result(cJSON_ParseWithLengthOpts(text.c_str(), text.size() + 1, &end, true), cJSON_Delete);
+    if (!result || !cJSON_IsObject(result.get())) return Json(nullptr, cJSON_Delete);
+    // No trailing tokens beyond optional JSON whitespace.
+    if (end) {
+        while (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r') ++end;
+        if (*end != '\0') return Json(nullptr, cJSON_Delete);
+    }
     // Duplicate members can disagree across implementations; never accept them.
     for (auto a = result->child; a; a = a->next)
         for (auto b = a->next; b; b = b->next)
@@ -65,7 +91,11 @@ bool uuid(std::string_view v) {
         if (i == 8 || i == 13 || i == 18 || i == 23) { if (v[i] != '-') return false; }
         else if (!((v[i] >= '0' && v[i] <= '9') || (v[i] >= 'a' && v[i] <= 'f'))) return false;
     }
-    return true;
+    // All system identifiers are RFC 4122 UUIDv4 (see NodeTimeProtocol.uuid);
+    // require version 4 + variant 10xx like the node-time verifier (#130).
+    if (v[14] != '4') return false;
+    const char variant = v[19];
+    return variant == '8' || variant == '9' || variant == 'a' || variant == 'b';
 }
 bool sha256(std::span<const unsigned char> input, unsigned char* hash) {
 #ifdef ESP_PLATFORM
@@ -120,8 +150,17 @@ Json verified_payload(std::string_view credential, std::span<const unsigned char
     if (!decode(credential.substr(0, first), header_bytes)
         || !decode(credential.substr(first + 1, second - first - 1), payload_bytes)
         || !decode(credential.substr(second + 1), signature)) return reject();
+    // Canonical base64url: re-encoding must reproduce the exact input, and
+    // decoded parts stay within transport bounds (aligned with #130).
+    if (encode(header_bytes) != credential.substr(0, first)
+        || encode(payload_bytes) != credential.substr(first + 1, second - first - 1)
+        || encode(signature) != credential.substr(second + 1)) return reject();
+    if (signature.size() != 64 || header_bytes.size() > 512 || payload_bytes.size() > 3072)
+        return reject();
     auto header = parse(header_bytes);
-    if (!header || string(header.get(), "alg") != "ES256"
+    int header_fields = 0;
+    for (auto c = header ? header->child : nullptr; c; c = c->next) ++header_fields;
+    if (!header || header_fields != 2 || string(header.get(), "alg") != "ES256"
         || string(header.get(), "kid") != "miezmerker-issuer-v1"
         || item(header.get(), "crit") || item(header.get(), "b64")) return reject();
     auto signed_bytes = std::span(reinterpret_cast<const unsigned char*>(credential.data()), second);

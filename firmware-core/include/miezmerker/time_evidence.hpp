@@ -64,18 +64,24 @@ class NodeTimeBootstrapManager;
 struct VerifiedAnchorTestAccess;
 struct VerifiedAnchor {
     friend class node_time::NodeTimeBootstrapManager;
+#ifdef MIEZMERKER_TEST_ANCHOR_ACCESS
     friend struct VerifiedAnchorTestAccess;
+#endif
     const TimeAnchorV1& anchor() const { return anchor_; }
    private:
     explicit VerifiedAnchor(TimeAnchorV1 anchor) : anchor_(std::move(anchor)) {}
     TimeAnchorV1 anchor_;
 };
-// Test-only factory for store-level idempotency/conflict tests. Production
-// code must use the bootstrap manager; direct wrapping does not create trust
-// (trust requires SecurityClock activation, not just storage).
+// Test-only factory for store-level idempotency/conflict tests. Only visible
+// when MIEZMERKER_TEST_ANCHOR_ACCESS is defined (set solely by the
+// node-time persistence test target); production translation units cannot
+// mint verified anchors without the verifier path. Wrapping alone grants no
+// trust: trust requires SecurityClock activation, not just storage.
+#ifdef MIEZMERKER_TEST_ANCHOR_ACCESS
 struct VerifiedAnchorTestAccess {
     static VerifiedAnchor wrap(TimeAnchorV1 anchor) { return VerifiedAnchor(std::move(anchor)); }
 };
+#endif
 // This is persistence only, with no path into Clock/ClaimClock or authorization.
 // #130 verifier-owned acceptance uses append_verified; append_anchor still
 // rejects verified_security_time=true so arbitrary callers cannot declare

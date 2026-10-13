@@ -50,6 +50,9 @@ if(BUILD_TESTING)
   set_tests_properties(esp32-ble-gatt PROPERTIES LABELS "ble;auth;lifecycle")
   add_executable(node-time-persistence-test tests-host/node_time_persistence_test.cpp)
   target_link_libraries(node-time-persistence-test PRIVATE firmware-esp32-scaffold firmware-core)
+  # Test-only verified-anchor factory (see time_evidence.hpp); never defined
+  # for production translation units.
+  target_compile_definitions(node-time-persistence-test PRIVATE MIEZMERKER_TEST_ANCHOR_ACCESS)
   if(MSVC)
     target_compile_options(node-time-persistence-test PRIVATE /UNDEBUG /W4 /WX)
   else()
