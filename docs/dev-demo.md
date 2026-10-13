@@ -152,72 +152,72 @@ The HTTPS files are optional and **not needed** for production builds or CI.
 For production use deploy a publicly trusted HTTPS certificate; never deploy
 the local `mkcert` private keys.
 
-### Optional: Download the public mkcert CA directly on your own Android device (#150)
+### Optional: public mkcert CA download through the existing Admin backend (#150)
 
-For developer-owned devices on a trusted local WLAN only, a standalone **HTTP**
-helper can transfer the public CA file without manually copying it over USB.
-This does **not** install the CA or make the browser trust it automatically.
-For external testers use the future publicly trusted HTTPS/staging solution
-(#149 / #152), not this workaround.
+The dedicated port-5174 helper was replaced by a **dev-only endpoint on
+the existing Spring Admin backend (port 8080)**. No additional download
+server, npm dependency or Vite plugin is required.
 
-Prerequisite: finish `mkcert -install` and the `app/.cert/dev-cert.pem` /
-`app/.cert/dev-key.pem` generation described above. You do **not** need to
-copy a root CA file into the repository: the helper obtains the current mkcert
-CA location using `mkcert -CAROOT`, reads only `rootCA.pem`, and converts the
-public certificate to Android-friendly DER `.crt` bytes in memory.
+**Only for a local, isolated test WLAN and your own Android devices.**
+The HTTP admin login is *not TLS protected*: both the password and the
+downloaded certificate can be observed or manipulated by others on the LAN.
+A protected Admin route restricts access but cannot authenticate a CA over
+HTTP. Never use this on untrusted networks, expose port 8080 to the Internet,
+or give regular external testers Admin credentials. Prefer a trusted file
+transfer or the proper staging/HTTPS pipeline (#152) for outside testers.
 
-In a **second** IntelliJ terminal, from `app/`:
+To start the existing backend in PowerShell with the feature explicitly
+enabled, keeping your usual **local development database configuration**:
 
 ```powershell
-npm run test:dev-ca
-npm run dev:ca -- --host 192.168.68.155
+# From the repo root (mkcert must already be installed and initialized):
+$env:SPRING_PROFILES_ACTIVE = 'dev'
+$env:MIEZMERKER_DEV_CA_ENABLED = 'true'
+$env:MIEZMERKER_DEV_CA_PUBLIC_CERT_PATH = Join-Path (mkcert -CAROOT) 'rootCA.pem'
+$env:COOKIE_SECURE = 'false' # local HTTP only, NEVER production
+cd backend
+./mvnw.cmd spring-boot:run
 ```
 
-Replace that address with the actual Wi-Fi IP of **your own development
-computer**. The helper binds only that explicit RFC1918 IPv4 address on
-port **5174**, never `0.0.0.0` or a public IP, and does not start during
-`npm run dev`, `npm run dev:https`, builds, CI or backend startup. It serves
-only one read-only URL; all other routes return 404, with no directory listing,
-app/backend proxy or private-key access.
+If the backend already runs, restart it with these settings. The route
+`GET /admin/dev/root-ca.crt` exists **only** when the Spring `dev` profile
+and explicit opt-in are BOTH active; a missing or malformed public certificate
+fails startup. The route is protected by the unchanged `/admin/**` Spring
+Security active-ADMIN authorization gate and is linked from the Admin dashboard
+only when enabled. It reads only the explicitly configured regular
+`rootCA.pem`, validates an X.509 CA certificate, and sends public DER bytes
+with an attachment filename. The private `rootCA-key.pem` and Vite's
+`dev-key.pem` are **never read or served**.
 
-On the Android phone on the same trusted WLAN, **type directly into Chrome**:
+On your Android phone, connected to the same WLAN, open
+`http://192.168.68.155:8080/admin/` (substitute the laptop's real WLAN IP,
+**not localhost on the phone**). Log in with an existing authorized *development*
+Admin account, select **Öffentliches CA-Zertifikat herunterladen**, and save
+the `.crt` file.
 
-```text
-http://192.168.68.155:5174/__dev/cert/rootCA.crt
+**Security:** Because this first download is over HTTP, compare the
+certificate SHA-256 fingerprint with the value printed in the **backend's local
+terminal** through a *separate trusted channel* before approving it as a
+trusted CA on Android. A checksum shown by the same HTTP connection would
+not prove authenticity. If you cannot check the downloaded certificate
+independently, use a trusted USB file transfer instead. The server logs only
+the fingerprint, not any private key.
+
+Then on Android: Settings → Security / More security settings →
+Encryption & credentials → Install a certificate → CA certificate;
+select the downloaded file, confirm the Android warning and unlock
+the device as requested. Menu names vary. Close/reopen Chrome and visit
+`https://192.168.68.155:5173/` while `npm run dev:https` runs.
+Chrome must accept the certificate without a warning; verify
+`window.isSecureContext === true` before Web Bluetooth.
+
+**After download**, disable the option and restart the backend:
+```powershell
+Remove-Item Env:MIEZMERKER_DEV_CA_ENABLED -ErrorAction SilentlyContinue
+Remove-Item Env:MIEZMERKER_DEV_CA_PUBLIC_CERT_PATH -ErrorAction SilentlyContinue
 ```
 
-This intentionally uses **HTTP** for the one-time transfer because Android
-does not yet trust the development HTTPS certificate. If the file doesn't
-download, verify that the computer is reachable from the phone, the IP hasn't
-changed, and the Windows firewall permits the selected private-network port
-5174 (do not forward it on the router). The script logs the public CA's
-**SHA-256 certificate fingerprint** locally in the IntelliJ terminal.
-
-**Important trust step:** local HTTP can be tampered with by another device on
-the network. Before granting CA trust, verify the downloaded certificate's
-SHA-256 fingerprint against the value from the developer's computer **over a
-separate trusted channel**. Merely displaying a fingerprint on the same HTTP
-download page would not verify anything. If the phone cannot verify the
-fingerprint reliably, transfer the file via a trusted cable instead or use the
-proper domain-based staging setup in #152.
-
-Then navigate Android Settings (names vary by device) to **Security / More
-security settings / Encryption & credentials / Install a certificate / CA
-certificate**, choose the downloaded `.crt`, and explicitly confirm Android's
-security warning and device unlock. A webpage cannot approve this on behalf
-of the user. Chrome may need to be restarted. After installation open:
-
-```text
-https://192.168.68.155:5173/
-```
-
-Chrome must show a valid certificate **without warnings**, with
-`window.isSecureContext === true`. If Bluetooth is still missing, investigate
-browser support and permissions separately.
-
-Stop the CA transfer helper with **Ctrl+C** as soon as the download finishes.
-Remove the privately installed CA from the Android trusted credentials when
-development testing is complete. Never transfer `rootCA-key.pem`,
-`dev-key.pem`, or `app/.cert/` to a test phone. The endpoint must not be
-present in released deployment artifacts; see mandatory release gate **#151**
-and the parent production release gate **#113**.
+The feature is never registered in ordinary test or production profiles.
+Do not install its CA on regular users' phones; remove the CA from Android
+after testing. Before public/production Go-live, release gates **#151**
+and **#113** forbid shipping this endpoint or private development materials.
