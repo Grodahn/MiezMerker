@@ -35,8 +35,9 @@ export default defineConfig(({ mode }) => {
         id: '/', name: 'MiezMerker', short_name: 'MiezMerker', lang: 'de',
         start_url: '/', scope: '/', display: 'standalone',
         theme_color: '#24584b', background_color: '#fafaf3',
-        icons: [{ src: pwaBrandAssets.icon192, sizes: '192x192', type: 'image/png' },
-                { src: pwaBrandAssets.icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+        icons: [{ src: pwaBrandAssets.icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+                { src: pwaBrandAssets.icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+                { src: pwaBrandAssets.iconMaskable512, sizes: '512x512', type: 'image/png', purpose: 'maskable' }],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,ico,svg,webp}'],

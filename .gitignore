@@ -17,3 +17,8 @@ __pycache__/
 .vscode/
 # Local mkcert certificates and private keys for Android Web Bluetooth testing.
 /app/.cert/
+
+# Generated PWA icons (source: app/src/assets/branding/logo.png)
+/app/public/icon-192.png
+/app/public/icon-512.png
+/app/public/icon-maskable-512.png

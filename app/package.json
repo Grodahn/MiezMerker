@@ -7,6 +7,9 @@
     "node": ">=24.15.0"
   },
   "scripts": {
+    "predev": "python scripts/generate-icons.py",
+    "predev:https": "python scripts/generate-icons.py",
+    "prebuild": "python scripts/generate-icons.py",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
