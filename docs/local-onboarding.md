@@ -149,6 +149,12 @@ claim receipt. Firmware verifies/stores it; no physical claim gesture is needed.
 Continue reading/synchronizing: normal offline credentials, device proof,
 ownership, protected BLE batch/ACK and server upload gates still apply.
 
+The ADMIN preflight retains the UNCLAIMED public-discovery connection through
+the signed time/identity check, then closes it before the confirmation dialog.
+This avoids an immediate Android reconnect/service-discovery transition. A
+failure during connection setup now names GATT connection, service discovery,
+or characteristic discovery; this diagnostic alone does not prove a hardware fix.
+
 Expected: registration completes and normal sync succeeds. Time bootstrap alone
 grants no ownership or observation access. Test an interrupted claim/reboot with
 the same ADMIN and exact device key; same-owner recovery remains supported.

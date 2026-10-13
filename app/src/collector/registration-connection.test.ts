@@ -1,10 +1,12 @@
 // @vitest-environment node
 import { beforeEach, expect, test, vi } from 'vitest';
+import 'fake-indexeddb/auto';
 import { toBase64Url } from '../platform/device-keys';
 import { encodeClaimAdvertisement, encodeFrame, encodeHelloPublic, encodeOwnerResponse, decodeFrame, Opcode } from './ble-codec';
 const { auth } = vi.hoisted(() => ({ auth: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getAuthState: auth, subscribeAuth: () => () => {} }));
 import { verifyRegistrationCandidate } from './registration-probe';
+import { runFieldSync } from './collector-sync';
 
 const NODE = '44444444-4444-4444-8444-444444444444';
 beforeEach(() => {
@@ -55,6 +57,17 @@ test('real public probe and signature verification share one connection until cl
   expect(ble.connect).toHaveBeenCalledTimes(1);
   expect(ble.disconnect).toHaveBeenCalledTimes(1);
   expect(ble.operations).toEqual([Opcode.HelloRequest, Opcode.OwnerRequest, Opcode.ClaimAdvertisementRequest]);
+  expect(ble.connected).toBe(false);
+});
+
+test('discovery hands the open connection to registration without a second Android service discovery', async () => {
+  const ble = await transport();
+  const result = await runFieldSync({ createTransport: () => ble, onUpdate: () => {},
+    onUnclaimed: (connected, hello) => verifyRegistrationCandidate(connected, hello.nodeId, 'org', undefined, true) });
+  expect(result.unclaimed).toBe(true);
+  expect(ble.connect).toHaveBeenCalledTimes(1);
+  expect(ble.operations).toEqual([Opcode.HelloRequest, Opcode.OwnerRequest, Opcode.HelloRequest,
+    Opcode.OwnerRequest, Opcode.ClaimAdvertisementRequest]);
   expect(ble.connected).toBe(false);
 });
 test('forged identity still rejects and closes the retained connection', async () => {

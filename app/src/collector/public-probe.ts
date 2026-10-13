@@ -21,10 +21,10 @@ export interface PublicNodeInfo {
 export class PublicProbeTransport {
   constructor(private readonly transport: NodeTransport) {}
 
-  async readPublicHello(options: { keepConnected?: boolean } = {}): Promise<PublicNodeInfo> {
+  async readPublicHello(options: { keepConnected?: boolean; keepUnclaimedConnected?: boolean; alreadyConnected?: boolean } = {}): Promise<PublicNodeInfo> {
     let keepConnected = false;
     try {
-      await this.transport.connect();
+      if (!options.alreadyConnected) await this.transport.connect();
       const helloResp = await this.roundTrip(encodeFrame({
         version: PROTOCOL_VERSION, opcode: Opcode.HelloRequest,
         payload: encodeHelloRequest({ clientVer: PROTOCOL_VERSION, caps: CAP_ALL_V1 }),
@@ -43,7 +43,7 @@ export class PublicProbeTransport {
         ? decodeOwnerResponse(ownerFrame.payload) : null;
       if (!owner || ownerFrame?.version !== PROTOCOL_VERSION || owner.nodeId !== hello.nodeId ||
           owner.claimState !== hello.claimState) throw new Error('Ungültige öffentliche Node-Identität.');
-      keepConnected = options.keepConnected === true;
+      keepConnected = options.keepConnected === true || (options.keepUnclaimedConnected === true && hello.claimState === 0);
       return {
         nodeId: hello.nodeId, incarnation: hello.incarnation,
         claimState: hello.claimState, serverVer: hello.serverVer, owner,

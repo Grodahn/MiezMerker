@@ -146,4 +146,13 @@ describe('runEngineWithDiscovery node identity resolution', () => {
     expect(credential).not.toHaveBeenCalled();
     expect(transport.opcodes).toEqual([Opcode.HelloRequest, Opcode.OwnerRequest]);
   });
+  test('MEMBER cannot enter the retained ADMIN registration preflight', async () => {
+    authAs('org-a');
+    const preflight = vi.fn();
+    const transport = new ProbeOnlyTransport('org-a', 0);
+    const outcome = await runFieldSync({ createTransport: () => transport, onUpdate: () => {}, onUnclaimed: preflight });
+    expect(outcome.unclaimed).toBe(true);
+    expect(preflight).not.toHaveBeenCalled();
+    expect(transport.opcodes).toEqual([Opcode.HelloRequest, Opcode.OwnerRequest]);
+  });
 });

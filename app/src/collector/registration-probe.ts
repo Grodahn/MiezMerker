@@ -11,11 +11,11 @@ import { decodeClaimAdvertisement, decodeFrame, encodeFrame, Opcode, PROTOCOL_VE
 // never reserves ownership. Backend verification remains authoritative at claim.
 // This proof binds the public UUID to the device key, never to its BLE name.
 export async function verifyRegistrationCandidate(transport: NodeTransport, nodeId: string,
-  organizationId: string, signal?: AbortSignal): Promise<void> {
+  organizationId: string, signal?: AbortSignal, alreadyConnected = false): Promise<void> {
   assertAdminMayClaim(organizationId);
   const operation = bindNodeOperation(transport, getAuthState().user!.userId, organizationId, signal, 'ADMIN');
   try {
-    const hello = await new PublicProbeTransport(operation.transport).readPublicHello({ keepConnected: true });
+    const hello = await new PublicProbeTransport(operation.transport).readPublicHello({ keepConnected: true, alreadyConnected });
     if (hello.nodeId !== nodeId || hello.claimState !== 0) throw new Error('Napf-Status geändert. Bitte erneut auswählen.');
     await operation.transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode: Opcode.ClaimAdvertisementRequest, payload: new Uint8Array() }));
     let frame = decodeFrame(await operation.transport.read());
