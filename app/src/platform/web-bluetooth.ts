@@ -57,6 +57,7 @@ export class BluetoothTransportError extends Error {
     readonly kind: BluetoothFailureKind,
     message: string,
     readonly cause?: unknown,
+    readonly stage?: 'connect' | 'service' | 'characteristic',
   ) {
     super(message);
     this.name = 'BluetoothTransportError';
@@ -269,6 +270,8 @@ export class WebBluetoothTransport implements NodeTransport {
   }
 
   async connect(): Promise<void> {
+    let stage: 'connect' | 'service' | 'characteristic' = 'connect';
+    let discoveryName = '';
     const generation = ++this.connectionGeneration;
     const assertCurrent = () => {
       if (generation !== this.connectionGeneration) {
@@ -292,10 +295,13 @@ export class WebBluetoothTransport implements NodeTransport {
       this.server = this.device.gatt;
       await withTimeout(this.server.connect(), GATT_OP_TIMEOUT_MS, 'Verbinden zeitüberschritten.');
       assertCurrent();
+      stage = 'service';
       const service: AnyBluetooth = await withTimeout(this.server.getPrimaryService(BLE_SERVICE_UUID), GATT_OP_TIMEOUT_MS, 'Service-Suche zeitüberschritten.');
       assertCurrent();
       this.characteristics.clear();
+      stage = 'characteristic';
       for (const [name, uuid] of Object.entries(BLE_CHAR_UUIDS)) {
+        discoveryName = name;
         try {
           const characteristic = await withTimeout(service.getCharacteristic(uuid), GATT_OP_TIMEOUT_MS, 'Characteristic-Suche zeitüberschritten.');
           assertCurrent();
@@ -318,8 +324,10 @@ export class WebBluetoothTransport implements NodeTransport {
     } catch (error) {
       if (generation === this.connectionGeneration) await this.disconnect();
       if (error instanceof BluetoothTransportError) throw error;
+      const step = stage === 'connect' ? 'GATT-Verbindungsaufbau'
+        : stage === 'service' ? 'Dienstsuche' : `Characteristic-Suche (${discoveryName})`;
       throw new BluetoothTransportError('connection-failed',
-        'BLE-Verbindung fehlgeschlagen. Näher herangehen und erneut versuchen.', error);
+        `Bluetooth-Verbindung fehlgeschlagen bei ${step}. Bitte erneut versuchen.`, error, stage);
     }
   }
 

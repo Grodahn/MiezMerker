@@ -86,6 +86,11 @@ export function bluetoothErrorMessage(error: unknown, phase: 'selection' | 'oper
   const outer = error && typeof error === 'object' ? error : undefined;
   const cause = outer && 'cause' in outer && outer.cause && typeof outer.cause === 'object' ? outer.cause : outer;
   const name = cause && 'name' in cause ? cause.name : undefined;
+  // Keep bounded, locally generated GATT phase diagnostics. The browser cause
+  // alone loses the distinction between connecting and service discovery.
+  if (phase === 'operation' && name === 'NetworkError' && outer && 'name' in outer && outer.name === 'BluetoothTransportError'
+      && 'stage' in outer && ['connect', 'service', 'characteristic'].includes(String(outer.stage))
+      && 'message' in outer && typeof outer.message === 'string') return outer.message;
   const causeMessage = cause && 'message' in cause && typeof cause.message === 'string' ? cause.message : '';
   if (/Bluetooth.*(not available|powered off|disabled|nicht verfügbar|ausgeschaltet|deaktiviert)/i.test(causeMessage)) {
     return 'Bluetooth nicht verfügbar. Bitte Bluetooth am Gerät einschalten und erneut versuchen.';
