@@ -30,6 +30,7 @@ class DevIssuer {
         return result;
     }
     public static void main(String[] args) {
+        String phase = "input";
         try {
             var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.US_ASCII));
             String privateText = input.readLine(), publicText = input.readLine();
@@ -39,15 +40,19 @@ class DevIssuer {
             if ((privateText == null || privateText.isEmpty()) && (publicText == null || publicText.isEmpty())) {
                 pair = generator.generateKeyPair();
             } else {
+                phase = "DER framing";
                 var factory = KeyFactory.getInstance("EC");
                 byte[] privateDer = Base64.getDecoder().decode(privateText);
                 byte[] publicDer = Base64.getDecoder().decode(publicText);
                 requireCompleteDer(privateDer); requireCompleteDer(publicDer);
-                pair = new KeyPair(factory.generatePublic(new X509EncodedKeySpec(publicDer)),
-                        factory.generatePrivate(new PKCS8EncodedKeySpec(privateDer)));
+                phase = "public key import";
+                var publicKey = factory.generatePublic(new X509EncodedKeySpec(publicDer));
+                phase = "private key import";
+                pair = new KeyPair(publicKey, factory.generatePrivate(new PKCS8EncodedKeySpec(privateDer)));
                 // JDK providers may normalize valid PKCS8 encodings differently.
                 // Validate framing, curve and signing consistency, not re-encoding equality.
             }
+            phase = "P-256 validation";
             var parameters = AlgorithmParameters.getInstance("EC");
             parameters.init(new ECGenParameterSpec("secp256r1"));
             var expected = parameters.getParameterSpec(ECParameterSpec.class);
@@ -57,6 +62,7 @@ class DevIssuer {
                         || !actual.getGenerator().equals(expected.getGenerator()) || actual.getCofactor() != 1)
                     throw new IllegalArgumentException();
             }
+            phase = "signature consistency";
             var signature = Signature.getInstance("SHA256withECDSA");
             byte[] probe = "miezmerker-local-issuer-check".getBytes(StandardCharsets.US_ASCII);
             signature.initSign(pair.getPrivate()); signature.update(probe);
@@ -73,7 +79,8 @@ class DevIssuer {
             System.out.println(HexFormat.of().formatHex(point));
             System.out.println(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(point)));
         } catch (Exception error) {
-            System.err.println("Invalid/mismatched P-256 issuer pair; no replacement performed.");
+            System.err.println("Invalid/mismatched P-256 issuer pair at " + phase + " ("
+                    + error.getClass().getSimpleName() + "); no replacement performed.");
             System.exit(1);
         }
     }
