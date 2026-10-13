@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  * /admin/** authenticated ADMIN role gate. This is not a trust bootstrap:
  * operators must verify the certificate fingerprint by an independent channel.
  */
-@Profile("dev")
+@Profile("dev & !prod & !production")
 @ConditionalOnProperty(name = "miezmerker.dev-ca.enabled", havingValue = "true")
 @RestController
 @RequestMapping("/admin/dev")
