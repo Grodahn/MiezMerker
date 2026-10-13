@@ -1,7 +1,7 @@
 package org.miezmerker.backend.admin;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
+import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -76,7 +76,11 @@ public class DevCaController {
     }
 
     @GetMapping("/root-ca.crt")
-    public ResponseEntity<byte[]> download() {
+    public ResponseEntity<byte[]> download(HttpServletRequest request) {
+        // No caller-controlled filename/path and no query-driven variants.
+        if (request.getQueryString() != null) {
+            return ResponseEntity.notFound().build();
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType("application/x-x509-ca-cert"));
         headers.setContentDisposition(ContentDisposition.attachment()
