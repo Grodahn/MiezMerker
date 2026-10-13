@@ -33,8 +33,11 @@ public final class NodeTimeProtocol {
     @Schema(name="NodeTimeBootstrapRequest",additionalProperties=Schema.AdditionalPropertiesValue.FALSE,requiredProperties={"organizationId","registrationState","challenge"})
     public record Request(String organizationId,
             @Schema(allowableValues={"CLAIMED","UNCLAIMED"}) String registrationState, Challenge challenge) {}
+    @Schema(name="NodeTimeAcceptanceV1",additionalProperties=Schema.AdditionalPropertiesValue.FALSE,
+        requiredProperties={"nodeId","incarnation","bootCounter","proofDigest","challengeNonceDigest","acceptedUptimeMs","anchorId","signature","version"})
     public record Acceptance(String nodeId, String incarnation, long bootCounter,
-            String proofDigest, String challengeNonceDigest, BigInteger acceptedUptimeMs,
+            String proofDigest, String challengeNonceDigest,
+            @Schema(implementation=Long.class,type="integer",format="uint64",minimum="0",description="Unsigned integer 0..18446744073709551615; preserve losslessly") BigInteger acceptedUptimeMs,
             String anchorId, String signature, int version) {}
 
     public static JsonNode json(byte[] bytes) {

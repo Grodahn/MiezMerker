@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 public interface NodeDeploymentRepository extends JpaRepository<NodeDeployment, UUID> {
+    @Query("select d from NodeDeployment d join fetch d.feedingSite where d.organization.id=:org and d.node.nodeId=:node order by d.validFrom, d.id")
+    List<NodeDeployment> temporalHistory(UUID org,UUID node,org.springframework.data.domain.Pageable page);
     List<NodeDeployment> findByOrganizationId(UUID organizationId);
 
     List<NodeDeployment> findByOrganizationIdAndNodeNodeId(UUID organizationId, UUID nodeId);
