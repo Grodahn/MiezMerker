@@ -40,11 +40,14 @@ class DevIssuer {
             if ((privateText == null || privateText.isEmpty()) && (publicText == null || publicText.isEmpty())) {
                 pair = generator.generateKeyPair();
             } else {
-                phase = "DER framing";
+                phase = "Base64 decoding";
                 var factory = KeyFactory.getInstance("EC");
                 byte[] privateDer = Base64.getDecoder().decode(privateText);
                 byte[] publicDer = Base64.getDecoder().decode(publicText);
-                requireCompleteDer(privateDer); requireCompleteDer(publicDer);
+                phase = "private DER framing";
+                requireCompleteDer(privateDer);
+                phase = "public DER framing";
+                requireCompleteDer(publicDer);
                 phase = "public key import";
                 var publicKey = factory.generatePublic(new X509EncodedKeySpec(publicDer));
                 phase = "private key import";

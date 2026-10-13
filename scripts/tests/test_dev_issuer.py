@@ -127,6 +127,18 @@ class DevIssuerTest(unittest.TestCase):
             self.assertEqual(pair, (self.directory / 'issuer.json').read_bytes())
             self.assertEqual(pin, (self.directory / 'sdkconfig.issuer.defaults').read_bytes())
 
+    @unittest.skipUnless(os.name == 'nt' and shutil.which('powershell'), 'Windows PowerShell required')
+    def test_legacy_pipe_is_independent_of_utf8_bom_output_encoding(self):
+        self.success(self.run_setup())
+        def quote(value):
+            return "'" + str(value).replace("'", "''") + "'"
+        command = "$OutputEncoding = [Text.UTF8Encoding]::new($true); "
+        command += f"& {quote(SCRIPT)} -KeyDirectory {quote(self.directory)}; "
+        command += "if (!$OutputEncoding.GetPreamble().Length) { throw 'caller encoding changed' }"
+        result = subprocess.run(['powershell', '-NoProfile', '-Command', command], env=self.env,
+                                capture_output=True, text=True)
+        self.success(result)
+
 
 if __name__ == '__main__':
     unittest.main()

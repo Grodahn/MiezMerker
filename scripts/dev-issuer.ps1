@@ -80,6 +80,9 @@ function Invoke-LegacyIssuer([string]$private, [string]$public) {
         }
     }
     # Secrets use a captured private pipe, never arguments, terminal output or logs.
+    # Windows PowerShell can otherwise prefix redirected UTF-8 with a BOM.
+    # Both protocol lines contain Base64 ASCII only; keep this function's pipe explicit.
+    $OutputEncoding = [Text.Encoding]::ASCII
     $result = @(@($private, $public) | & $JavaExecutable (Join-Path $PSScriptRoot 'DevIssuer.java') 2>$null)
     if ($LASTEXITCODE -ne 0 -or $result.Count -ne 4) {
         throw 'Issuer crypto validation failed. Check JDK 17+ and the existing matching P-256 pair; no key replacement performed.'
