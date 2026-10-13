@@ -79,14 +79,33 @@ function Invoke-LegacyIssuer([string]$private, [string]$public) {
             $JavaExecutable = $command.Source
         }
     }
-    # Secrets use a captured private pipe, never arguments, terminal output or logs.
-    # Windows PowerShell can otherwise prefix redirected UTF-8 with a BOM.
-    # Both protocol lines contain Base64 ASCII only; keep this function's pipe explicit.
-    $OutputEncoding = [Text.Encoding]::ASCII
-    $result = @(@($private, $public) | & $JavaExecutable (Join-Path $PSScriptRoot 'DevIssuer.java') 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $result.Count -ne 4) {
-        throw 'Issuer crypto validation failed. Check JDK 17+ and the existing matching P-256 pair; no key replacement performed.'
-    }
+    # Write exact ASCII lines directly; never route secrets through PowerShell's
+    # native pipeline formatter/encoding, command arguments or terminal output.
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo.FileName = $JavaExecutable
+    $process.StartInfo.Arguments = '"' + (Join-Path $PSScriptRoot 'DevIssuer.java') + '"'
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardInput = $true
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    try {
+        [void]$process.Start()
+        $outputTask = $process.StandardOutput.ReadToEndAsync()
+        $errorTask = $process.StandardError.ReadToEndAsync()
+        $writer = [IO.StreamWriter]::new($process.StandardInput.BaseStream, [Text.Encoding]::ASCII)
+        try { $writer.WriteLine($private); $writer.WriteLine($public); $writer.Flush() }
+        finally { $writer.Dispose() }
+        if (!$process.WaitForExit(30000)) {
+            $process.Kill()
+            throw 'Issuer JDK helper timed out; no key replacement performed.'
+        }
+        $result = @($outputTask.GetAwaiter().GetResult() -split '\r?\n' | Where-Object { $_.Length -gt 0 })
+        [void]$errorTask.GetAwaiter().GetResult() # Never log arbitrary JVM stderr.
+        if ($process.ExitCode -ne 0 -or $result.Count -ne 4) {
+            throw 'Issuer crypto validation failed. Check JDK 17+ and the existing matching P-256 pair; no key replacement performed.'
+        }
+    } finally { $process.Dispose() }
     return [pscustomobject]@{ private = $result[0]; public = $result[1]; pin = $result[2]; fingerprint = $result[3] }
 }
 if (!$legacyPowerShell) {
