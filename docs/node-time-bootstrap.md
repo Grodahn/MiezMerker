@@ -1,5 +1,8 @@
 # Node time bootstrap (#129)
 
+For Windows/PowerShell, IntelliJ and ESP-IDF provisioning and runtime validation,
+see [local signed UTC onboarding (#157)](local-onboarding.md).
+
 ADR 0017 is the normative byte/trust contract. This implements only the authenticated
 backend issuer and a reusable acceptance verifier; it does not install time, claim a
 Node, persist anchors, or authorize observation access.
@@ -53,6 +56,10 @@ Errors: 400 malformed challenge/schema, 401 unauthenticated (valid CSRF required
 413 body too large, 429 rate limit, 503 clock/key unavailable. Ownership/key failures
 share a generic denial without foreign organization or device key metadata.
 Standard security-filter ordering may reject authentication/CSRF before body checks.
+After all authorization, possession and ownership checks, an ACTIVE ADMIN receives
+`X-MM-Time-Bootstrap: issuer-key-missing` or `utc-unconfirmed` on the corresponding
+503, with `Cache-Control: no-store` and no body. Non-ADMIN callers receive only
+generic 503. Signing failures stay generic; no keys/proof bodies are diagnostics.
 
 ## Authorization and claim races
 

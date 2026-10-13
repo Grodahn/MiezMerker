@@ -1,0 +1,29 @@
+name: Local issuer setup
+on:
+  pull_request:
+    paths:
+      - 'scripts/dev-issuer.ps1'
+      - 'scripts/tests/test_dev_issuer.py'
+      - '.github/workflows/local-issuer.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/dev-issuer.ps1'
+      - 'scripts/tests/test_dev_issuer.py'
+      - '.github/workflows/local-issuer.yml'
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  setup:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Persistent keys, explicit attestation and pin checks
+        shell: pwsh
+        run: python -m unittest discover -s scripts/tests -p test_dev_issuer.py -v

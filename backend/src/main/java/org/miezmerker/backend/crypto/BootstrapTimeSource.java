@@ -13,6 +13,8 @@ public class BootstrapTimeSource {
     @org.springframework.beans.factory.annotation.Autowired
     public BootstrapTimeSource(@Value("${miezmerker.time-bootstrap.clock-healthy:false}") boolean healthy) {
         this(Clock.systemUTC(), healthy);
+        org.slf4j.LoggerFactory.getLogger(BootstrapTimeSource.class).info(
+                "UTC bootstrap operator attestation={}; static configuration is not live NTP monitoring. See docs/local-onboarding.md.", healthy);
     }
 
     public BootstrapTimeSource(Clock clock, boolean healthy) {

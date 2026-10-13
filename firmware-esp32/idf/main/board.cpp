@@ -94,7 +94,12 @@ int hex(char c) {
 }
 BoardCrypto::BoardCrypto(BoardClock& clock) : clock_(clock) {
     const std::string pin = CONFIG_MM_ISSUER_PUBLIC_KEY_HEX;
-    if (pin.empty()) return;
+    if (pin.empty()) {
+        ESP_LOGE("issuer_pin", "missing: configure MM_ISSUER_PUBLIC_KEY_HEX from independent local issuer setup and reflash; trusted UTC/claim/sync denied");
+        return;
+    }
+    ESP_LOGI("issuer_pin", "independent P-256 pin; compare SHA256(point) with local issuer setup before registration");
+    if (pin.size() != 130) ESP_LOGE("issuer_pin", "invalid length: expected 130 hex characters (04||X||Y); rebuild/reflash");
     ESP_ERROR_CHECK(pin.size() == 130 ? ESP_OK : ESP_ERR_INVALID_ARG);
     for (std::size_t i = 0; i < issuer_.size(); ++i) {
         const int a = hex(pin[2*i]), b = hex(pin[2*i+1]);
@@ -106,6 +111,17 @@ BoardCrypto::BoardCrypto(BoardClock& clock) : clock_(clock) {
     psa_set_key_bits(&attr, 256); mbedtls_svc_key_id_t id = 0;
     ESP_ERROR_CHECK(psa_import_key(&attr, issuer_.data(), issuer_.size(), &id) == PSA_SUCCESS ? ESP_OK : ESP_ERR_INVALID_ARG);
     psa_destroy_key(id); psa_reset_key_attributes(&attr);
+    std::array<unsigned char, 32> digest{}; std::size_t digest_len = 0;
+    ESP_ERROR_CHECK(psa_hash_compute(PSA_ALG_SHA_256, issuer_.data(), issuer_.size(),
+        digest.data(), digest.size(), &digest_len) == PSA_SUCCESS && digest_len == digest.size()
+        ? ESP_OK : ESP_FAIL);
+    constexpr char hex_digits[] = "0123456789abcdef";
+    std::array<char, 65> fingerprint{};
+    for (std::size_t i = 0; i < digest.size(); ++i) {
+        fingerprint[2*i] = hex_digits[digest[i] >> 4];
+        fingerprint[2*i+1] = hex_digits[digest[i] & 15];
+    }
+    ESP_LOGI("issuer_pin", "SHA256(point)=%s", fingerprint.data()); // Public trust anchor only.
 }
 bool BoardCrypto::generate_keypair(std::span<std::byte, 65> pub, std::span<std::byte, 32> priv) {
     auto attr = attributes(PSA_KEY_USAGE_EXPORT | PSA_KEY_USAGE_SIGN_MESSAGE);

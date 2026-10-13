@@ -57,6 +57,8 @@ class NodeTimeBootstrapTest {
     @Autowired org.miezmerker.backend.crypto.NodeTimeProofVerifier verifier;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     org.miezmerker.backend.security.TenantService tenantGate;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    CredentialIssuerService issuerGate;
     static final String PATH = "/api/v1/nodes/time-bootstrap";
     static final long UTC = 1791748800123L;
     org.miezmerker.backend.crypto.NodeTimeProtocol.Challenge challenge(NodeKeys n) {
@@ -107,6 +109,40 @@ class NodeTimeBootstrapTest {
         assertEquals(200,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
         assertEquals(org.miezmerker.backend.domain.NodeState.UNCLAIMED,nodes.findById(n.nodeId()).orElseThrow().getState());
         assertNull(nodes.findById(n.nodeId()).orElseThrow().getOrganization());
+    }
+    @Test void freshAdminBootstrapThenClaimEnablesNormalSyncIdentityAndCredential() throws Exception {
+        var s=seed(); var n=NodeKeys.fresh(); var c=challenge(n);
+        login("admin-a@example.org","supersecret-password-a");
+        long now=Instant.now().toEpochMilli();
+        org.mockito.Mockito.when(time.issuanceMillis()).thenReturn(now);
+        var issued=post(PATH,request(s,"UNCLAIMED",c));
+        assertEquals(200,issued.statusCode(),issued.body());
+        long trustedUtc=verifier.verify(mapper.readTree(issued.body()).path("proof").asText(),c).path("utc_ms").asLong();
+        assertEquals(0,nodes.count()); // Time alone reserves no ownership.
+        String claim=mapper.writeValueAsString(java.util.Map.of(
+                "nodeId",n.nodeId().toString(),"organizationId",s.orgA().getId().toString(),
+                "publicKeyX",n.x(),"publicKeyY",n.y(),"firmwareVersion","test-157",
+                "timestampMillis",trustedUtc,"claimSignature",NodeClaimVerifier.signClaim(
+                        n.kp().getPrivate(),n.nodeId(),n.x(),n.y(),trustedUtc)));
+        var registered=post("/api/v1/nodes/claim",claim);
+        assertEquals(200,registered.statusCode(),registered.body());
+        var receipt=issuer.verify(mapper.readTree(registered.body()).path("receipt").asText());
+        assertEquals("claim",receipt.getStringClaim("kind"));
+        assertEquals(s.orgA().getId().toString(),receipt.getStringClaim("org"));
+        assertEquals(org.miezmerker.backend.domain.NodeState.CLAIMED,nodes.findById(n.nodeId()).orElseThrow().getState());
+        var key=get("/api/v1/nodes/"+n.nodeId()+"?organizationId="+s.orgA().getId());
+        assertEquals(200,key.statusCode(),key.body());
+        assertEquals(n.x(),mapper.readTree(key.body()).path("publicKeyX").asText());
+        var phone=(ECPublicKey)EcKeyUtils.generateP256().getPublic();
+        var device=post("/api/v1/devices",mapper.writeValueAsString(java.util.Map.of(
+                "publicKeyX",EcKeyUtils.xOf(phone),"publicKeyY",EcKeyUtils.yOf(phone),"label","157")));
+        assertEquals(200,device.statusCode(),device.body());
+        var credential=post("/api/v1/devices/"+mapper.readTree(device.body()).path("id").asText()+"/credentials",
+                mapper.writeValueAsString(java.util.Map.of("organizationId",s.orgA().getId().toString())));
+        assertEquals(200,credential.statusCode(),credential.body());
+        var claims=issuer.verify(mapper.readTree(credential.body()).path("credential").asText());
+        assertEquals(java.util.List.of("node:sync"),claims.getStringListClaim("scope"));
+        assertEquals(s.orgA().getId().toString(),claims.getStringClaim("org"));
     }
     @Test void unauthenticatedDisabledAccountsMembershipsAndOrganizationsFailClosed() throws Exception {
         var s=seed(); var c=challenge(NodeKeys.fresh());
@@ -194,10 +230,32 @@ class NodeTimeBootstrapTest {
     @Test void unhealthyClockFailsClosedAndUnclaimedRetryLimitIsEnforced() throws Exception {
         var s=seed(); var c=challenge(NodeKeys.fresh()); login("admin-a@example.org","supersecret-password-a");
         org.mockito.Mockito.when(time.issuanceMillis()).thenThrow(new IllegalStateException("unhealthy"));
-        assertEquals(503,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
+        var unavailable = post(PATH,request(s,"UNCLAIMED",c));
+        assertEquals(503,unavailable.statusCode());
+        assertEquals("utc-unconfirmed",unavailable.headers().firstValue("X-MM-Time-Bootstrap").orElseThrow());
+        assertEquals("no-store",unavailable.headers().firstValue("Cache-Control").orElseThrow());
         org.mockito.Mockito.doReturn(UTC).when(time).issuanceMillis();
         for(int i=0;i<4;i++) assertEquals(200,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
         assertEquals(429,post(PATH,request(s,"UNCLAIMED",c)).statusCode()); assertEquals(0,nodes.count());
+    }
+    @Test void missingStableKeyDeniesIssuanceAndOnlyAuthorizedAdminGetsDiagnostic() throws Exception {
+        var s=seed(); var n=NodeKeys.fresh(); var c=challenge(n);
+        org.mockito.Mockito.doReturn(false).when(issuerGate).hasStableKey();
+        login("member-a@example.org","supersecret-password-m");
+        var forbidden=post(PATH,request(s,"UNCLAIMED",c));
+        assertEquals(403,forbidden.statusCode());
+        assertTrue(forbidden.headers().firstValue("X-MM-Time-Bootstrap").isEmpty());
+        login("admin-a@example.org","supersecret-password-a");
+        var unavailable=post(PATH,request(s,"UNCLAIMED",c));
+        assertEquals(503,unavailable.statusCode());
+        assertEquals("issuer-key-missing",unavailable.headers().firstValue("X-MM-Time-Bootstrap").orElseThrow());
+        assertEquals("",unavailable.body());
+        claimed(s,n);
+        login("member-a@example.org","supersecret-password-m");
+        var generic=post(PATH,request(s,"CLAIMED",c));
+        assertEquals(503,generic.statusCode());
+        assertTrue(generic.headers().firstValue("X-MM-Time-Bootstrap").isEmpty());
+        org.mockito.Mockito.verifyNoInteractions(time);
     }
     @Test void concurrentClaimSerializesBootstrapAndOwnershipRecheck() throws Exception {
         var s=seed(); var n=NodeKeys.fresh(); var c=challenge(n);

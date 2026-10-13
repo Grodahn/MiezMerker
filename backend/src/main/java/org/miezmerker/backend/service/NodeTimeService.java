@@ -6,6 +6,7 @@ import org.miezmerker.backend.crypto.CredentialIssuerService;
 import org.miezmerker.backend.crypto.EcKeyUtils;
 import org.miezmerker.backend.crypto.NodeTimeProtocol;
 import org.miezmerker.backend.domain.NodeState;
+import org.miezmerker.backend.domain.MembershipRole;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.security.TenantService;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class NodeTimeService {
+    /** Only emitted after the complete authorization/possession/ownership gate. */
+    public static final class Unavailable extends ResponseStatusException {
+        private final String diagnostic;
+        public Unavailable(String diagnostic) {
+            super(HttpStatus.SERVICE_UNAVAILABLE, "Time issuance unavailable");
+            this.diagnostic = diagnostic;
+        }
+        public String diagnostic() { return diagnostic; }
+    }
     @io.swagger.v3.oas.annotations.media.Schema(name="NodeTimeProofView",requiredProperties={"proof","tokenType","issuer","keyId","version"})
     public record ProofView(String proof, String tokenType, String issuer, String keyId, int version) {}
     private final NodeRepository nodes;
@@ -35,7 +45,7 @@ public class NodeTimeService {
         UUID org = NodeTimeProtocol.uuid(request.organizationId());
         var c = request.challenge();
         // Tenant context first; never return any owning organization's metadata.
-        tenants.requireActive(user,org);
+        var membership = tenants.requireActive(user,org);
         try { NodeTimeProtocol.verifyChallenge(c); }
         catch (IllegalArgumentException e) { throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Time bootstrap denied"); }
         // Same DB lock as claiming: protects absent rows as well as registered identities.
@@ -63,9 +73,14 @@ public class NodeTimeService {
         limits.acquire("node",c.nodeId(),10);
         if (!claimed) limits.acquire("unclaimed-user",user,5);
         // Sample only after validation/lock waits. No async signing or client wall time.
+        boolean admin = membership.getRole() == MembershipRole.ADMIN;
+        if (!issuer.hasStableKey()) throw new Unavailable(admin ? "issuer-key-missing" : null);
+        long utcMillis;
+        try { utcMillis = time.issuanceMillis(); }
+        catch (IllegalStateException e) { throw new Unavailable(admin ? "utc-unconfirmed" : null); }
         String proof;
-        try { proof = issuer.issueTimeProof(c,time.issuanceMillis()); }
-        catch (IllegalStateException e) { throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Time issuance unavailable"); }
+        try { proof = issuer.issueTimeProof(c,utcMillis); }
+        catch (IllegalStateException e) { throw new Unavailable(null); }
         return new ProofView(proof,"Node-Time-ES256-JWS",CredentialIssuerService.ISSUER,CredentialIssuerService.KEY_ID,1);
     }
     private static ResponseStatusException denied() {
