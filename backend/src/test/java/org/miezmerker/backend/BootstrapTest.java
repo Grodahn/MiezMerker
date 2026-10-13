@@ -32,6 +32,11 @@ class BootstrapTest {
         assertTrue(context.getBeansOfType(org.miezmerker.backend.bootstrap.DemoSeedService.class).isEmpty());
         assertFalse(context.containsBean("demoDataSource"));
         assertFalse(context.containsBean("demoPasswordEncoder"));
+        // Session probes must be opt-in even though test support is on the classpath.
+        assertTrue(context.getBeansOfType(
+                org.miezmerker.backend.support.SessionExpiryTestConfiguration.class).isEmpty());
+        assertTrue(context.getBeansOfType(
+                org.miezmerker.backend.support.SessionExpiryTestConfiguration.ExpiryProbe.class).isEmpty());
     }
 
     @Test
