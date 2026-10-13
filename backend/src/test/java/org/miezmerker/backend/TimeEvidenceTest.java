@@ -48,6 +48,7 @@ class TimeEvidenceTest {
     @Autowired MembershipRepository memberships;
     @Autowired NodeRepository nodes;
     @Autowired RawObservationRepository raws;
+    @Autowired CatRepository cats;
     @Autowired BootEpochRepository boots;
     @Autowired TimeAnchorRepository anchors;
     @Autowired TimeEvidenceService evidence;
@@ -179,6 +180,8 @@ class TimeEvidenceTest {
         var v=page(0,1).items().getFirst(); assertEquals(UNKNOWN,v.quality()); assertNull(v.earliestUtcMs()); assertEquals(site.getId(),v.derivedFeedingSiteId());
     }
     @Test void tenantIsolationSameChipSysadminAndIdentityGuessing() {
+        cats.save(new Cat(orgA,"SAME-CHIP","A",null,null));
+        cats.save(new Cat(orgB,"SAME-CHIP","B",null,null));
         var foreignKey=EcKeyUtils.generateP256(); var pub=(ECPublicKey)foreignKey.getPublic();
         var foreign=new NodeDevice(UUID.randomUUID(),EcKeyUtils.xOf(pub),EcKeyUtils.yOf(pub),EcKeyUtils.fingerprintOf(pub),"test");
         foreign.claim(orgB); nodes.save(foreign);
