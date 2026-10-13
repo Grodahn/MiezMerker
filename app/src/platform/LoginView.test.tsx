@@ -17,6 +17,8 @@ function fillAndSubmit() {
 
 test('labels, autocomplete and branding use the central registry', () => {
   const { container } = render(<LoginView online/>);
+  expect(screen.getAllByText('Keiner wird vergessen.', { exact: true })).toHaveLength(1);
+  expect(screen.queryByText('Gemeinsam für glückliche Katzen an jedem Futterplatz.', { exact: true })).toBeNull();
   expect(screen.getByLabelText('E-Mail').getAttribute('autocomplete')).toBe('username');
   expect(screen.getByLabelText('Passwort').getAttribute('autocomplete')).toBe('current-password');
   expect(screen.getByRole('img', { name: 'MiezMerker' }).getAttribute('src')).toBe(assets.brand.logo);

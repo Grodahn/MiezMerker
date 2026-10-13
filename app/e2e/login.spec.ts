@@ -37,6 +37,10 @@ for (const [width, height] of [[320, 740], [390, 844], [430, 932], [768, 1024], 
     await backend(page);
     await page.goto('/cats');
     await expect(page.getByRole('heading', { name: 'Anmelden', exact: true })).toBeVisible();
+    const slogan = page.getByText('Keiner wird vergessen.', { exact: true });
+    await expect(slogan).toHaveCount(1);
+    await expect(slogan).toBeVisible();
+    await expect(page.getByText('Gemeinsam für glückliche Katzen an jedem Futterplatz.', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('navigation')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Katzen', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
