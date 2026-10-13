@@ -176,17 +176,17 @@ changed the existing 37-character accented password into mojibake (74 -> 148 UTF
 bytes). Demonstrated the changed byte count, restored the entire original file from
 UTF-8 git bytes and reapplied only the two exclusion assertions. This preserves the
 original near-BCrypt-limit regression. PASS: all eight BootstrapTest cases rerun on H2 (38.0s, including recompilation) and PostgreSQL (27.0s). Final scoped re-review:
-pending scoped independent confirmation after PR creation.
+PASS: reviewer independently verified the final PR diff, restored 37-character/74-byte literal, both eight-case repair runs, full-suite XML/DB evidence and benchmark calculations. No unresolved known in-scope BLOCKER, MAJOR or MINOR remains.
 
-CI: PENDING, existing required checks will be recorded after PR creation. No merge is authorized or performed.
+GitHub CI: [PR #147 checks](https://github.com/Grodahn/MiezMerker/pull/147/checks). The final check outcomes are recorded in the PR description after completion; CI retains H2 smoke, the authoritative full PostgreSQL suite, firmware, frontend/API and end-to-end checks. No merge is authorized or performed.
 
-Assessment: local functional/security/temporal/resource checks PASS; CI pending. This change reduces initialized application/server/
+Assessment: local functional/security/temporal/resource checks and independent review PASS; GitHub CI outcomes are linked above and recorded in the PR description. This change reduces initialized application/server/
 DB-pool resources while preserving assertions and fidelity. It does not claim
 an isolated memory-byte measurement or a statistically reliable suite speedup.
 Future layer conversions should first prove a larger attributable gain without
 adding enough distinct contexts to offset it.
 
-Efficiency notes: one oversized candidate source read, a PowerShell brace-glob
+Efficiency notes: oversized and repeated candidate source reads, a PowerShell brace-glob
 syntax error, one main-source path guessed under test sources, and a UTF-8 log
 read encountering Windows console encoding were corrected with bounded ranges,
 verified paths and replacement decoding for ASCII metrics. Maven runs were
