@@ -9,6 +9,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -189,6 +190,66 @@ bool OfflineAuthSession::authorize(std::string_view credential,
 bool OfflineAuthSession::can_sync(std::int64_t now) const {
     return now > 0 && issued_ <= now && now < expires_;
 }
+namespace {
+// Strict interval guard shared by credential and claim authorization.
+// A decision is valid only when the entire possible UTC interval lies
+// inside [iat, exp). Checked conversion refuses overflow fail-closed.
+bool interval_covers(std::int64_t issued_s, std::int64_t expires_s,
+                     std::int64_t lower_ms, std::int64_t upper_ms) {
+    if (issued_s <= 0 || expires_s <= 0 || issued_s >= expires_s) return false;
+    if (lower_ms > upper_ms || lower_ms <= 0 || upper_ms <= 0) return false;
+    // Portable division-based overflow checks (no compiler-specific 128-bit
+    // integer type: MSVC and RV32-GCC lack it).
+    if (issued_s > 9223372036854775LL || issued_s < -9223372036854775LL) return false;
+    if (expires_s > 9223372036854775LL || expires_s < -9223372036854775LL) return false;
+    const std::int64_t iat_ms = issued_s * 1000;
+    const std::int64_t exp_ms = expires_s * 1000;
+    if (issued_s != iat_ms / 1000 || expires_s != exp_ms / 1000) return false;
+    return lower_ms >= iat_ms && upper_ms < exp_ms;
+}
+}  // namespace
+bool OfflineAuthSession::authorize_with_bounds(std::string_view credential,
+        std::span<const unsigned char> proof, std::int64_t lower_ms,
+        std::int64_t upper_ms) {
+    bool pending = pending_;
+    pending_ = false;
+    expires_ = 0;
+    issued_ = 0;
+    if (!pending || lower_ms > upper_ms || lower_ms <= 0 || upper_ms <= 0 ||
+        credential.size() > 4096 || proof.size() != 64)
+        return false;
+    auto claims = verified_payload(credential, issuer_key_);
+    if (!claims) return false;
+    auto c = claims.get();
+    std::int64_t version, issued, expires;
+    if (string(c, "iss") != "miezmerker" || string(c, "kind") != "offline"
+        || !integer(c, "ver", version) || version != 1
+        || string(c, "org") != organization_id_ || !uuid(organization_id_)
+        || !uuid(string(c, "sub")) || !uuid(string(c, "dev"))
+        || !integer(c, "iat", issued) || !integer(c, "exp", expires)
+        || !interval_covers(issued, expires, lower_ms, upper_ms)
+        || (string(c, "role") != "MEMBER" && string(c, "role") != "ADMIN")) return false;
+    auto scopes = item(c, "scope");
+    if (!cJSON_IsArray(scopes)) return false;
+    bool sync = false;
+    for (auto scope = scopes->child; scope; scope = scope->next) {
+        if (!cJSON_IsString(scope)) return false;
+        if (std::strcmp(scope->valuestring, "node:sync") == 0) sync = true;
+    }
+    if (!sync) return false;
+    std::array<unsigned char, 65> device_key{};
+    if (!point(c, "dpk_x", "dpk_y", "dpf", device_key)
+        || !verify(device_key, challenge_, proof)) return false;
+    issued_ = issued;
+    expires_ = expires;
+    return true;
+}
+
+bool OfflineAuthSession::can_sync_with_bounds(std::int64_t lower_ms,
+                                              std::int64_t upper_ms) const {
+    if (issued_ <= 0 || expires_ <= 0) return false;
+    return interval_covers(issued_, expires_, lower_ms, upper_ms);
+}
 void OfflineAuthSession::disconnect() {
     pending_ = false; expires_ = 0; issued_ = 0; challenge_.fill(0);
 }
@@ -218,6 +279,39 @@ bool verify_claim_receipt(std::string_view receipt, std::span<const unsigned cha
         || !decode(string(c, "ipk_y"), y) || y.size() != 32
         || !std::equal(x.begin(), x.end(), issuer_key.begin() + 1)
         || !std::equal(y.begin(), y.end(), issuer_key.begin() + 33)) return false;
+    out = std::move(candidate);
+    return true;
+}
+bool verify_claim_receipt_with_bounds(std::string_view receipt,
+                                      std::span<const unsigned char, 65> issuer_key,
+                                      std::int64_t lower_ms, std::int64_t upper_ms,
+                                      ClaimReceiptInfo& out) {
+    if (lower_ms > upper_ms || lower_ms <= 0 || upper_ms <= 0) return false;
+    auto claims = verified_payload(receipt, issuer_key);
+    if (!claims) return false;
+    const auto c = claims.get();
+    std::int64_t version, issued, expires;
+    if (string(c, "iss") != "miezmerker" || string(c, "kind") != "claim"
+        || !integer(c, "ver", version) || version != 1
+        || !uuid(string(c, "sub")) || !uuid(string(c, "org"))
+        || !integer(c, "iat", issued) || !integer(c, "exp", expires)
+        || !interval_covers(issued, expires, lower_ms, upper_ms))
+        return false;
+    ClaimReceiptInfo candidate;
+    candidate.node_id = string(c, "sub");
+    candidate.organization_id = string(c, "org");
+    candidate.organization_name = string(c, "org_name");
+    candidate.public_contact = string(c, "contact");
+    if (candidate.organization_name.empty() || candidate.organization_name.size() > 255 * 4
+        || candidate.public_contact.size() > 500 * 4
+        || !point(c, "ndpk_x", "ndpk_y", "ndpf", candidate.public_key))
+        return false;
+    Bytes x, y;
+    if (!decode(string(c, "ipk_x"), x) || x.size() != 32
+        || !decode(string(c, "ipk_y"), y) || y.size() != 32
+        || !std::equal(x.begin(), x.end(), issuer_key.begin() + 1)
+        || !std::equal(y.begin(), y.end(), issuer_key.begin() + 33))
+        return false;
     out = std::move(candidate);
     return true;
 }

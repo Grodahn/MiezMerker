@@ -42,6 +42,38 @@ std::uint64_t BoardClock::monotonic_ms() const {
     last_timer_us_ = now;
     return static_cast<std::uint64_t>(now) / 1000;
 }
+node_time::SecurityTimeState BoardClock::security_state() const {
+    if (!bootstrap_) return node_time::SecurityTimeState::UNKNOWN;
+    return bootstrap_->state();
+}
+bool BoardClock::trusted_interval_ms(std::int64_t& lower_ms,
+                                     std::int64_t& upper_ms) const {
+    lower_ms = 0; upper_ms = 0;
+    if (!bootstrap_ || !timer_valid_) return false;
+    // Delegate to the bootstrap manager (mutates failure latch like the
+    // monotonic timer latch above, hence the const_cast on this const query).
+    auto* manager = const_cast<node_time::NodeTimeBootstrapManager*>(bootstrap_);
+    return manager->current_interval(lower_ms, upper_ms);
+}
+bool BoardClock::credential_covers(std::int64_t iat_s, std::int64_t exp_s) const {
+    std::int64_t lower = 0, upper = 0;
+    if (!trusted_interval_ms(lower, upper)) return false;
+    return node_time::credential_covers(iat_s, exp_s, lower, upper);
+}
+std::uint64_t BoardClock::epoch_ms() const {
+    // Nominal midpoint for claim freshness only; authorization uses the
+    // strict interval above, never this point. Returns 0 unless bounded
+    // trust is tight enough for the backend 5-minute freshness rule.
+    std::int64_t lower = 0, upper = 0;
+    if (!trusted_interval_ms(lower, upper)) return 0;
+    if (lower > upper) return 0;
+    const std::uint64_t width =
+        static_cast<std::uint64_t>(upper - lower);
+    if (width > node_time::kClaimFreshnessMs) return 0;
+    const auto midpoint = node_time::nominal_midpoint(lower, upper);
+    if (!midpoint || *midpoint <= 0) return 0;
+    return static_cast<std::uint64_t>(*midpoint);
+}
 std::uint32_t BoardClock::reset_reason() const { return static_cast<std::uint32_t>(esp_reset_reason()); }
 void BoardRandom::fill_random(std::span<std::uint8_t> out) { esp_fill_random(out.data(), out.size()); }
 bool BoardRandom::fill(std::span<unsigned char> out) { esp_fill_random(out.data(), out.size()); return true; }
@@ -114,8 +146,12 @@ bool BoardCrypto::sign(std::span<const std::byte, 32> priv, std::span<const std:
     return status == PSA_SUCCESS && length == signature.size();
 }
 bool BoardCrypto::verify_claim(const std::string& receipt, VerifiedClaim& claim) {
+    if (!pinned()) return false;
+    std::int64_t lower = 0, upper = 0;
+    if (!clock_.trusted_interval_ms(lower, upper)) return false;
     ClaimReceiptInfo verified;
-    if (!pinned() || !verify_claim_receipt(receipt, issuer_, static_cast<std::int64_t>(clock_.epoch_ms() / 1000), verified)) return false;
+    if (!verify_claim_receipt_with_bounds(receipt, issuer_, lower, upper, verified))
+        return false;
     const auto node = NodeId::parse(verified.node_id);
     if (!node) return false;
     std::transform(node->bytes.begin(), node->bytes.end(), claim.node_id.begin(), [](auto b) { return static_cast<std::byte>(b); });
@@ -124,14 +160,32 @@ bool BoardCrypto::verify_claim(const std::string& receipt, VerifiedClaim& claim)
     claim.public_contact = verified.public_contact;
     return true;
 }
+bool BoardCrypto::trusted_interval_ms(std::int64_t& lower_ms,
+                                      std::int64_t& upper_ms) const {
+    return clock_.trusted_interval_ms(lower_ms, upper_ms);
+}
 bool BoardAuthorizer::begin(std::array<std::uint8_t, 32>& challenge) {
     disconnect();
     session_ = std::make_unique<OfflineAuthSession>(identity_.identity().organization_id, crypto_.issuer());
     return session_->begin(BoardRandom::fill, challenge);
 }
 bool BoardAuthorizer::authorize(const std::string& credential, const std::array<std::uint8_t, 64>& proof,
-        ble::TrustedEpochSeconds now) { return session_ && session_->authorize(credential, proof, now); }
-bool BoardAuthorizer::can_sync(ble::TrustedEpochSeconds now) const { return session_ && session_->can_sync(now); }
+        ble::TrustedEpochSeconds) {
+    if (!session_) return false;
+    std::int64_t lower = 0, upper = 0;
+    if (!crypto_.trusted_interval_ms(lower, upper)) return false;
+    std::array<unsigned char, 64> proof_bytes{};
+    std::copy(proof.begin(), proof.end(), proof_bytes.begin());
+    return session_->authorize_with_bounds(
+        credential, std::span<const unsigned char>(proof_bytes.data(), 64), lower,
+        upper);
+}
+bool BoardAuthorizer::can_sync(ble::TrustedEpochSeconds) const {
+    if (!session_) return false;
+    std::int64_t lower = 0, upper = 0;
+    if (!crypto_.trusted_interval_ms(lower, upper)) return false;
+    return session_->can_sync_with_bounds(lower, upper);
+}
 void BoardAuthorizer::disconnect() { if (session_) session_->disconnect(); session_.reset(); }
 bool BoardSigner::sign_session(const std::array<std::uint8_t, 32>& challenge, std::array<std::uint8_t, 64>& signature) {
     return identity_.sign_session_challenge(std::as_bytes(std::span(challenge)),

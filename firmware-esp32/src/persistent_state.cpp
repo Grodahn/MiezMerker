@@ -219,6 +219,11 @@ TimeAnchorV1 read_anchor(Reader& r) {
 bool same_boot(const BootEpochV1& b, const TimeAnchorV1& a) {
     return b.node_id == a.node_id && b.incarnation == a.incarnation && b.boot_counter == a.boot_counter;
 }
+bool valid_anchor(const TimeAnchorV1& a) {
+    // Unverified persistence fixtures use valid(); verifier-owned anchors use
+    // valid_verified(). Arbitrary callers still cannot upgrade via append_anchor.
+    return a.valid() || a.valid_verified();
+}
 bool valid_evidence(const std::vector<BootEpochV1>& boots, const std::vector<TimeAnchorV1>& anchors) {
     if (boots.size() > PersistentTimeEvidence::kMaxBoots || anchors.size() > PersistentTimeEvidence::kMaxAnchors) return false;
     for (std::size_t i = 0; i < boots.size(); ++i) {
@@ -229,7 +234,7 @@ bool valid_evidence(const std::vector<BootEpochV1>& boots, const std::vector<Tim
     }
     for (std::size_t i = 0; i < anchors.size(); ++i) {
         const auto& a = anchors[i];
-        if (!a.valid() || std::none_of(boots.begin(), boots.end(), [&](const auto& b) {
+        if (!valid_anchor(a) || std::none_of(boots.begin(), boots.end(), [&](const auto& b) {
             return same_boot(b, a) && a.uptime_ms >= b.started_uptime_ms;
         })) return false;
         for (std::size_t j = 0; j < i; ++j) if (a.anchor_id == anchors[j].anchor_id) return false;
@@ -276,6 +281,13 @@ PutResult PersistentTimeEvidence::append_boot(const BootEpochV1& b) {
 }
 PutResult PersistentTimeEvidence::append_anchor(const TimeAnchorV1& a) {
     if (!ready_ || !a.valid()) return PutResult::IO_ERROR;
+    for (const auto& old : anchors_) if (old.anchor_id == a.anchor_id) return old == a ? PutResult::OK : PutResult::IO_ERROR;
+    if (anchors_.size() == kMaxAnchors) return PutResult::FULL;
+    auto anchors = anchors_; anchors.push_back(a); return commit(boots_, anchors);
+}
+PutResult PersistentTimeEvidence::append_verified(const VerifiedAnchor& verified) {
+    const TimeAnchorV1& a = verified.anchor();
+    if (!ready_ || !a.valid_verified()) return PutResult::IO_ERROR;
     for (const auto& old : anchors_) if (old.anchor_id == a.anchor_id) return old == a ? PutResult::OK : PutResult::IO_ERROR;
     if (anchors_.size() == kMaxAnchors) return PutResult::FULL;
     auto anchors = anchors_; anchors.push_back(a); return commit(boots_, anchors);

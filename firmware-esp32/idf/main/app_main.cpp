@@ -1,6 +1,7 @@
 #include "board.hpp"
 #include "nimble_peripheral.hpp"
 #include "miezmerker/esp32_composition.hpp"
+#include "miezmerker/node_time_verify.hpp"
 #include "sdkconfig.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -101,9 +102,22 @@ extern "C" void app_main() {
     Core core(clock, observations, observations, identity, random, CoreConfig{2000, &evidence});
     require(miezmerker::esp32::initialize(core) && identity.ready(), "firmware-core initialization");
     require(crypto.keypair_valid(identity.identity()), "persisted keypair consistency");
+    // Secure time bootstrap (#130): challenge-bound backend proofs only.
+    // BLE transport of challenge/proof/acceptance belongs to #131; this
+    // manager exposes the minimal pre-auth operation (challenge, proof,
+    // verification result, durable acceptance) without new GATT opcodes.
+    node_time::NodeTimeBootstrapManager time_bootstrap(
+        clock, random, crypto, evidence, verify_time_proof, crypto.issuer());
+    require(time_bootstrap.on_boot(core.node_id(), core.incarnation(), core.boot_counter()),
+            "time bootstrap boot binding");
+    clock.attach_bootstrap(&time_bootstrap);
     status(core, identity.identity());
-    ESP_LOGW(tag, "trusted UTC unavailable (#4); claim proof and offline authorization fail closed; issuer_pin=%s",
-        crypto.pinned() ? "configured" : "missing");
+    ESP_LOGI(tag, "security_time=%s issuer_pin=%s",
+             to_string(time_bootstrap.state()).data(),
+             crypto.pinned() ? "configured" : "missing");
+    ESP_LOGW(tag,
+             "trusted UTC requires backend-signed challenge-bound proof (#130); "
+             "claim proof and offline authorization fail closed until BOUNDED");
     bootloader_random_disable();
     // Never copy the NimBLE example's automatic NVS erase on errors.
     ESP_ERROR_CHECK(nvs_flash_init());

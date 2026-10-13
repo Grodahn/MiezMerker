@@ -6,6 +6,7 @@ add_library(firmware-core
   src/types.cpp
   src/ble_codec.cpp
   src/ble_sync.cpp
+  src/node_time_portable.cpp
 )
 target_include_directories(firmware-core PUBLIC include)
 if(MSVC)
@@ -54,8 +55,17 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME firmware-ble-sync COMMAND ble-sync-test)
   set_tests_properties(firmware-ble-sync PROPERTIES LABELS "ble;storage")
+  add_executable(node-time-test tests/node_time_test.cpp)
+  target_link_libraries(node-time-test PRIVATE firmware-core)
+  if(MSVC)
+    target_compile_options(node-time-test PRIVATE /W4 /WX)
+  else()
+    target_compile_options(node-time-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME firmware-node-time COMMAND node-time-test)
+  set_tests_properties(firmware-node-time PROPERTIES LABELS "auth;lifecycle;storage")
   # Assertions include operations under test; keep them in Release/CI builds.
-  foreach(test_target core-test node-identity-test observation-test recovery-test ble-sync-test capture-epoch-test)
+  foreach(test_target core-test node-identity-test observation-test recovery-test ble-sync-test capture-epoch-test node-time-test)
     if(MSVC)
       target_compile_options(${test_target} PRIVATE /UNDEBUG)
     else()
