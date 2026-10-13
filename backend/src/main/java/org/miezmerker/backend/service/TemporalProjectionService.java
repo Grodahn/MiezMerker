@@ -11,14 +11,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Service
 public class TemporalProjectionService {
-    public record Projection(UUID observationId,long sequence,String incarnation,Integer bootCounter,Long monotonicMs,
-            String algorithmVersion,TemporalProjectionEngine.Quality quality,Long earliestUtcMs,Long latestUtcMs,
-            Long approximateUtcMs,List<UUID> anchorIds,String reason,List<String> uncertaintyPolicies,
-            UUID derivedFeedingSiteId,UUID derivedDeploymentId,String attributionProvenance) {}
-    public record Page(String algorithmVersion,List<Projection> items,Long nextAfterSequence) {}
+    public record Projection(UUID observationId,long sequence,@Schema(nullable=true) String incarnation,
+            @Schema(nullable=true) Integer bootCounter,@Schema(nullable=true) Long monotonicMs,
+            String algorithmVersion,TemporalProjectionEngine.Quality quality,@Schema(nullable=true) Long earliestUtcMs,
+            @Schema(nullable=true) Long latestUtcMs,@Schema(nullable=true) Long approximateUtcMs,List<UUID> anchorIds,
+            String reason,List<String> uncertaintyPolicies,@Schema(nullable=true) UUID derivedFeedingSiteId,
+            @Schema(nullable=true) UUID derivedDeploymentId,String attributionProvenance) {}
+    public record Page(String algorithmVersion,List<Projection> items,@Schema(nullable=true) Long nextAfterSequence) {}
     private final TenantService tenants;
     private final NodeRepository nodes;
     private final TimeAnchorRepository anchors;

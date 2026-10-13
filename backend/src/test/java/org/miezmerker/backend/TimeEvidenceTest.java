@@ -18,14 +18,19 @@ import org.springframework.beans.factory.annotation.*;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.miezmerker.backend.service.TemporalProjectionEngine.Quality.*;
 
-@SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties={"spring.datasource.hikari.maximum-pool-size=2","spring.datasource.hikari.minimum-idle=1"})
 @ActiveProfiles("test") @Tag("node") @Tag("auth")
+// This dedicated signer/uncertainty context cannot be reused by other classes.
+// Release its pool after the class instead of consuming CI PostgreSQL clients.
+@DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 class TimeEvidenceTest {
     static final KeyPair SIGNER=EcKeyUtils.generateP256();
     static final long UTC=1791748800123L;
@@ -273,6 +278,13 @@ class TimeEvidenceTest {
         var r=request(42,1000,1300,UTC); String json=mapper.writeValueAsString(r);
         assertEquals(401,http("POST","/api/v1/nodes/time-evidence",json,true).statusCode());
         assertEquals(200,http("POST","/api/v1/auth/login","{\"email\":\"a@example.org\",\"password\":\"test-password\"}",true).statusCode());
+        raw(1,42,900);
+        var unknown=http("GET","/api/v1/nodes/"+node.getNodeId()+"/temporal-projections?organizationId="+orgA.getId(),null,false);
+        assertEquals(200,unknown.statusCode());
+        var unknownItem=mapper.readTree(unknown.body()).path("items").get(0);
+        assertEquals("UNKNOWN",unknownItem.path("quality").asText());
+        assertTrue(unknownItem.has("earliestUtcMs")); assertTrue(unknownItem.path("earliestUtcMs").isNull());
+        assertTrue(unknownItem.path("latestUtcMs").isNull()); assertTrue(unknownItem.path("approximateUtcMs").isNull());
         assertEquals(403,http("POST","/api/v1/nodes/time-evidence",json,false).statusCode());
         assertEquals(413,http("POST","/api/v1/nodes/time-evidence"," ".repeat(8193),true).statusCode());
         for(String bad:List.of(json.replaceFirst("\\{","{\"verified\":true,"),json+"{}",json.replace("\"bootCounter\":42","\"bootCounter\":42.5"),json.replace("\"acceptedUptimeMs\":1300","\"acceptedUptimeMs\":\"1300\""),json.replaceFirst("\\{","{\"organizationId\":\""+orgA.getId()+"\","))) {
@@ -283,6 +295,13 @@ class TimeEvidenceTest {
         assertEquals(400,http("GET","/api/v1/nodes/"+node.getNodeId()+"/temporal-projections?organizationId="+orgA.getId()+"&limit=101",null,false).statusCode());
         var spec=http("GET","/api/v1/openapi",null,false); assertEquals(200,spec.statusCode());
         assertTrue(spec.body().contains("ingestNodeTimeEvidence")); assertTrue(spec.body().contains("listNodeTemporalProjections"));
+        var schemas=mapper.readTree(spec.body()).at("/components/schemas");
+        for(String field:List.of("earliestUtcMs","latestUtcMs","approximateUtcMs","incarnation","bootCounter","monotonicMs","derivedFeedingSiteId","derivedDeploymentId")) {
+            var property=schemas.path("Projection").path("properties").path(field);
+            assertTrue(property.path("nullable").asBoolean() || property.path("type").toString().contains("\"null\""),property.toString());
+        }
+        var cursor=schemas.path("Page").path("properties").path("nextAfterSequence");
+        assertTrue(cursor.path("nullable").asBoolean() || cursor.path("type").toString().contains("\"null\""),cursor.toString());
         java.nio.file.Files.writeString(java.nio.file.Path.of("target/openapi.json"),spec.body()+"\n");
     }
 }

@@ -1200,7 +1200,7 @@ export interface components {
             algorithmVersion?: string;
             items?: components["schemas"]["Projection"][];
             /** Format: int64 */
-            nextAfterSequence?: number;
+            nextAfterSequence?: number | null;
         };
         PolicyView: {
             /** @enum {string} */
@@ -1215,21 +1215,21 @@ export interface components {
             algorithmVersion?: string;
             anchorIds?: string[];
             /** Format: int64 */
-            approximateUtcMs?: number;
+            approximateUtcMs?: number | null;
             attributionProvenance?: string;
             /** Format: int32 */
-            bootCounter?: number;
+            bootCounter?: number | null;
             /** Format: uuid */
-            derivedDeploymentId?: string;
+            derivedDeploymentId?: string | null;
             /** Format: uuid */
-            derivedFeedingSiteId?: string;
+            derivedFeedingSiteId?: string | null;
             /** Format: int64 */
-            earliestUtcMs?: number;
-            incarnation?: string;
+            earliestUtcMs?: number | null;
+            incarnation?: string | null;
             /** Format: int64 */
-            latestUtcMs?: number;
+            latestUtcMs?: number | null;
             /** Format: int64 */
-            monotonicMs?: number;
+            monotonicMs?: number | null;
             /** Format: uuid */
             observationId?: string;
             /** @enum {string} */

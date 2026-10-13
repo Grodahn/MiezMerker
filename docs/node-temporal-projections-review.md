@@ -15,6 +15,7 @@ security certification or hardware validation.
 | MAJOR | Repeated foreign-boot propagation was quadratic per observation and could cause extremely large work under the Node lock. | Precompute boot constraints once, then propagate events from those summaries. Bound collections at 4096 and each boot at 64 anchors; representative 4096-anchor/100-projection and capacity regression. |
 | MINOR | Initial transaction/retry coverage did not reproduce ingest interruption and valid conflicting acceptance under one stable anchor ID. | Real TransactionTemplate interruption rolls back newly inserted boot and anchor; subsequent retry creates them once. Device-signed changed-acceptance retry returns 409 and retains original. Separate valid nonce-replay regression. |
 | MINOR | Relative durations needed explicit pairwise sampling uncertainty. | Persist server/sampling components separately, include twice the largest justified sampling budget in minimum durations; schema keeps budget fields all-or-none. |
+| MINOR | Generated API types did not represent the null endpoints/cursor actually serialized for UNKNOWN/CONFLICT and final pages. | Mark every nullable projection/cursor field explicitly nullable, regenerate OpenAPI/TypeScript, and assert both real UNKNOWN HTTP nulls and nullable schema. |
 
 The independent reviewer rechecked the corrected algorithms, immutable schema,
 authorization, proof binding, and regressions. No unresolved confirmed in-scope
@@ -44,6 +45,15 @@ are recorded in the PR description.
   documented; no production throughput claim.
 
 ## Verification
+
+Initial PostgreSQL CI exhausted database clients when the new dedicated
+signer/uncertainty test context retained its Hikari pool. Mark that nonreusable
+test context dirty after its class to close the pool before later test contexts,
+and limit its dedicated pool to two connections (the real concurrent-ingest test
+still uses both). The previously green base CI confirms this new retained pool
+was the additional resource that exceeded PostgreSQL's client limit.
+This changes test-resource lifecycle only; production pool configuration and
+test expectations/selection remain unchanged. Final CI status is in the PR.
 
 Local completion: node/auth/schema domain union **333 tests PASS**.
 Focused interval/reconstruction regression: **11 tests PASS**.

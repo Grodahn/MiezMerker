@@ -1102,7 +1102,10 @@
           },
           "nextAfterSequence": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -1153,37 +1156,61 @@
           },
           "approximateUtcMs": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "attributionProvenance": {
             "type": "string"
           },
           "bootCounter": {
             "format": "int32",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "derivedDeploymentId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "derivedFeedingSiteId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "earliestUtcMs": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "incarnation": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "latestUtcMs": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "monotonicMs": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "observationId": {
             "format": "uuid",
