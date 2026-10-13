@@ -24,26 +24,26 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-  build: { assetsInlineLimit: 0 }, // Replaceable artwork stays external and precached, including small SVGs.
-  plugins: [react(), VitePWA({
-    registerType: 'prompt',
-    injectRegister: false,
-    manifest: {
-      id: '/', name: 'MiezMerker', short_name: 'MiezMerker', lang: 'de',
-      start_url: '/', scope: '/', display: 'standalone',
-      theme_color: '#24584b', background_color: '#fafaf3',
-      icons: [{ src: pwaBrandAssets.icon192, sizes: '192x192', type: 'image/png' },
-              { src: pwaBrandAssets.icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
-    },
-    workbox: {
-      globPatterns: ['**/*.{js,css,html,png,ico,svg,webp}'],
-      navigateFallback: 'index.html',
-      navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/, /^\/admin(?:\/|\?|$)/],
-      // HTTP business data is never cached by this foundation.
-      runtimeCaching: [],
-    },
-  })],
-  server: { port: 5173, strictPort: true, proxy, https },
-  preview: { port: 4173, strictPort: true, proxy },
+    build: { assetsInlineLimit: 0 }, // Replaceable artwork stays external and precached, including small SVGs.
+    plugins: [react(), VitePWA({
+      registerType: 'prompt',
+      injectRegister: false,
+      manifest: {
+        id: '/', name: 'MiezMerker', short_name: 'MiezMerker', lang: 'de',
+        start_url: '/', scope: '/', display: 'standalone',
+        theme_color: '#24584b', background_color: '#fafaf3',
+        icons: [{ src: pwaBrandAssets.icon192, sizes: '192x192', type: 'image/png' },
+                { src: pwaBrandAssets.icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,png,ico,svg,webp}'],
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/, /^\/admin(?:\/|\?|$)/],
+        // HTTP business data is never cached by this foundation.
+        runtimeCaching: [],
+      },
+    })],
+    server: { port: 5173, strictPort: true, proxy, https },
+    preview: { port: 4173, strictPort: true, proxy },
   };
 });
