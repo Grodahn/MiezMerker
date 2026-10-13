@@ -14,7 +14,9 @@
     "test:e2e": "playwright test",
     "api:generate": "node scripts/generate-api.mjs",
     "api:check": "node scripts/generate-api.mjs --check",
-    "dev:https": "vite --host 0.0.0.0 --mode local-https"
+    "dev:https": "vite --host 0.0.0.0 --mode local-https",
+    "dev:ca": "node scripts/serve-dev-ca.mjs",
+    "test:dev-ca": "node --test scripts/serve-dev-ca.test.mjs"
   },
   "dependencies": {
     "dexie": "4.4.6",
