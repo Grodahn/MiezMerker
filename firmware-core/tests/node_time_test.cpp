@@ -6,6 +6,7 @@
 // uncertainty model, strict credential guard and single-use lifecycle.
 #include <cassert>
 #include <iostream>
+#include <limits>
 
 #include "miezmerker/memory_stores.hpp"
 #include "miezmerker/node_time.hpp"
