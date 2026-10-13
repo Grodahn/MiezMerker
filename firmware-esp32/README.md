@@ -13,6 +13,9 @@ authenticated synchronization. No RFID reader, external RTC or Wi-Fi is initiali
 
 ## Windows build and port selection
 
+For persistent local issuer keys, explicit UTC attestation and a matching firmware
+pin, follow [local signed UTC onboarding](../docs/local-onboarding.md).
+
 Use an EIM-activated ESP-IDF 6.1 PowerShell terminal. `idf.py` may be an alias
 for `Invoke-idfpy`; do not assume it is an executable. Alternatively
 `tools/idf.ps1` configures only its process from the installed EIM paths. Its

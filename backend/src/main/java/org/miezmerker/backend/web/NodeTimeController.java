@@ -22,6 +22,12 @@ public class NodeTimeController {
     private final NodeTimeService service;
     private final NodeTimeRateLimiter limits;
     public NodeTimeController(NodeTimeService service, NodeTimeRateLimiter limits) { this.service=service; this.limits=limits; }
+    @ExceptionHandler(NodeTimeService.Unavailable.class)
+    public ResponseEntity<Void> unavailable(NodeTimeService.Unavailable error) {
+        var response = ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Cache-Control", "no-store");
+        if (error.diagnostic() != null) response.header("X-MM-Time-Bootstrap", error.diagnostic());
+        return response.build();
+    }
     @PostMapping(consumes="application/json",produces="application/json")
     @Operation(operationId="issueNodeTimeProof",summary="Issue challenge-bound UTC proof; ACTIVE owner member or pre-claim ADMIN",
         requestBody=@io.swagger.v3.oas.annotations.parameters.RequestBody(required=true,

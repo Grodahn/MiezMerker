@@ -64,7 +64,16 @@ test('unhealthy issuer clock is concrete failure and does not submit proof', asy
   expect(ble.write).toHaveBeenCalledTimes(1);
 });
 test('firmware rejection of forged, replayed or stale proof fails closed', async () => {
-  await expect(bootstrapRegistrationTime(transport(challenge(), false), NODE, 'org', () => {})).rejects.toThrow('Vertrauenswürdige UTC');
+  await expect(bootstrapRegistrationTime(transport(challenge(), false), NODE, 'org', () => {})).rejects.toThrow('Issuer-Pin');
+});
+test.each([
+  ['issuer-key-missing', 'stabiler Backend-Issuer'],
+  ['utc-unconfirmed', 'Backend-UTC nicht als gesund bestätigt'],
+])('authorized bootstrap diagnostic %s is actionable', async (code, message) => {
+  post.mockResolvedValue({ error: {}, response: { status: 503, headers: new Headers({ 'X-MM-Time-Bootstrap': code }) } });
+  const ble = transport();
+  await expect(bootstrapRegistrationTime(ble, NODE, 'org', () => {})).rejects.toThrow(message);
+  expect(ble.write).toHaveBeenCalledTimes(1);
 });
 test.each(['MEMBER', 'inactive', 'unauthenticated'])('%s cannot start time bootstrap', async role => {
   auth.mockReturnValue({ user: role === 'unauthenticated' ? null : { memberships: [

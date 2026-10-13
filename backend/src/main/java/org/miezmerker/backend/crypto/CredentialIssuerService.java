@@ -79,6 +79,11 @@ public class CredentialIssuerService {
                 this.ttlSeconds = configuredTtl;
                 this.stableKey = true;
                 log.info("Using configured credential issuer key (kid={}).", KEY_ID);
+                byte[] point = new byte[65]; point[0] = 4;
+                System.arraycopy(EcKeyUtils.b64uDecode(EcKeyUtils.xOf(pub)), 0, point, 1, 32);
+                System.arraycopy(EcKeyUtils.b64uDecode(EcKeyUtils.yOf(pub)), 0, point, 33, 32);
+                log.info("Issuer public SHA256(point)={}; compare independently provisioned firmware pin.",
+                        java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(point)));
                 return;
             } catch (IllegalArgumentException e) {
                 throw e;
@@ -94,7 +99,7 @@ public class CredentialIssuerService {
         this.ttlSeconds = configuredTtl;
         this.stableKey = false;
         log.warn("Using ephemeral credential issuer key (kid={}). "
-                + "Configure a stable miezmerker.issuer key for production.", KEY_ID);
+                + "Signed UTC bootstrap denied: configure a stable issuer pair. See docs/local-onboarding.md.", KEY_ID);
     }
 
     /** Stable-key factory for tests/vectors (not a Spring bean constructor). */

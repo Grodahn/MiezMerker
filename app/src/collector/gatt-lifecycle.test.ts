@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { BLE_CHAR_UUIDS, WebBluetoothTransport } from '../platform/web-bluetooth';
+import { bluetoothErrorMessage } from '../ui/status-messages';
 
 beforeEach(() => Object.defineProperty(navigator, 'bluetooth', { value: {}, configurable: true }));
 afterEach(() => { vi.useRealTimers(); Reflect.deleteProperty(navigator, 'bluetooth'); });
@@ -34,9 +35,31 @@ test('connect timeout cancels the browser GATT attempt before it becomes connect
 test('discovery stops on a lost connection instead of misreporting missing firmware features', async () => {
   const { service, server, transport } = fakeDevice();
   service.getCharacteristic.mockRejectedValue(new DOMException('Connection lost', 'NetworkError'));
-  await expect(transport.connect()).rejects.toMatchObject({ kind: 'connection-failed' });
+  await expect(transport.connect()).rejects.toMatchObject({ kind: 'connection-failed', stage: 'characteristic' });
   expect(service.getCharacteristic).toHaveBeenCalledTimes(1);
   expect(server.disconnect).toHaveBeenCalledTimes(1);
+});
+
+test.each(['connect', 'service', 'characteristic'] as const)('UI preserves the failing GATT %s phase', async stage => {
+  const { server, service, transport } = fakeDevice();
+  const failure = new DOMException('Browser-specific details', 'NetworkError');
+  if (stage === 'connect') server.connect.mockRejectedValue(failure);
+  else if (stage === 'service') server.getPrimaryService.mockRejectedValue(failure);
+  else service.getCharacteristic.mockRejectedValue(failure);
+  const error = await transport.connect().catch(error => error);
+  expect(error).toMatchObject({ kind: 'connection-failed', stage });
+  const displayed = bluetoothErrorMessage(error);
+  expect(displayed).toContain(stage === 'connect' ? 'GATT-Verbindungsaufbau'
+    : stage === 'service' ? 'Dienstsuche' : 'Characteristic-Suche (info)');
+  expect(displayed).not.toContain('Browser-specific details');
+  expect(displayed).not.toContain('näher herangehen');
+});
+
+test('phase diagnostics preserve the actionable permission-denied message', async () => {
+  const { server, transport } = fakeDevice();
+  server.connect.mockRejectedValue(new DOMException('Denied', 'SecurityError'));
+  const error = await transport.connect().catch(error => error);
+  expect(bluetoothErrorMessage(error)).toContain('Bluetooth-Berechtigung verweigert');
 });
 
 test('discovery timeout is reported as a timeout and disconnects immediately', async () => {

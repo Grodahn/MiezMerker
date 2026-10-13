@@ -80,6 +80,8 @@ export interface SyncCallbacks {
   createTransport: () => NodeTransport | Promise<NodeTransport>;
   trustedNowS?: () => number;
   signal?: AbortSignal;
+  // ADMIN registration preflight runs before closing the public discovery link.
+  onUnclaimed?: (transport: NodeTransport, hello: PublicNodeInfo) => Promise<void>;
 }
 
 function toNodeState(phase: string): NodeSyncState {
@@ -136,11 +138,18 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     // Public discovery needs no credential or device key. In particular an
     // ADMIN can discover an unclaimed node before initial credential issuance.
     emit({ nodeState: 'connecting', nodeMessage: 'Verbinde mit Node …' });
-    const hello = await new PublicProbeTransport(transport).readPublicHello();
+    const registerOnOpenConnection = Boolean(callbacks.onUnclaimed && auth.user.memberships.some(
+      m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN'));
+    const hello = await new PublicProbeTransport(transport).readPublicHello({ keepUnclaimedConnected: registerOnOpenConnection });
     emit({ owner: hello.owner });
     if (hello.claimState !== 1) {
       emit({ nodeState: 'failed', unclaimed: true,
         nodeMessage: 'Node ist UNCLAIMED. Ein aktiver ADMIN kann ihn direkt registrieren.' });
+      if (registerOnOpenConnection) {
+        operation.assertActive();
+        await callbacks.onUnclaimed!(transport, hello);
+        operation.assertActive();
+      }
       return view;
     }
     if (hello.owner && hello.owner.organizationId.toLowerCase() !== organizationId.toLowerCase()) {

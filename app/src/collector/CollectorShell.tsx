@@ -9,7 +9,7 @@ import {
   WebBluetoothTransport,
 } from '../platform/web-bluetooth';
 import type { CollectorViewState } from './collector-sync';
-import { initialCollectorView } from './collector-sync';
+import { initialCollectorView, runFieldSync } from './collector-sync';
 import type { BackendSyncState } from './backend-upload';
 import { ClaimError } from './claim-node';
 import { provisionNode } from './provision-node';
@@ -293,6 +293,8 @@ export function CollectorShell(props: {
     const orgStillActive = () => mounted.current && batchController.current === operation && contextKey() === startedContext;
     const organizationId = state.activeOrganizationId;
     let verifiedCandidate: BatchNodeResult | null = null;
+    const verifiedNodeIds = new Set<string>();
+    let preflightError: unknown;
     try {
       // Fresh permission snapshot: getDevices() may include powered-off or
       // removed devices; only actual connection attempts prove reachability.
@@ -317,6 +319,16 @@ export function CollectorShell(props: {
       setBatchProgress({ done: 0, total: inputs.length, current: '', detail: 'Starte Sammel-Sync …' });
       credentialCheckGeneration.current++;
       let results = await runBatchSync(inputs, {
+        runSingleNode: (transport, signal, onUpdate) => runFieldSync({ createTransport: () => transport, signal, onUpdate,
+          onUnclaimed: getAuthState().user?.memberships.some(m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN')
+            ? async (connected, hello) => {
+              setFreigebenMessage('Napf verbunden. Signierter Identitätsnachweis wird geprüft …');
+              try {
+                await verifyRegistrationCandidate(connected, hello.nodeId, organizationId, signal, true);
+                verifiedNodeIds.add(hello.nodeId);
+              } catch (error) { preflightError = error; throw error; }
+            } : undefined,
+        }),
         signal: operation.signal,
         trustedNowS: () => Math.floor((props.now?.() ?? Date.now()) / 1000),
         createTransport: device => new WebBluetoothTransport(device as never),
@@ -340,6 +352,7 @@ export function CollectorShell(props: {
         ? { ...result, foreignOrganizationName: null, message: 'Dieser Napf ist für deine Organisation nicht verfügbar.' } : result);
       setBatchResults(results);
       setBatchProgress(null);
+      if (preflightError) throw preflightError;
       if (registration && results[0]?.kind === 'foreign') {
         setFreigebenMessage('Dieser Napf ist für deine Organisation nicht verfügbar.');
       }
@@ -351,7 +364,9 @@ export function CollectorShell(props: {
           const input = inputs.find(input => input.browserId === candidate.browserId);
           if (input) {
             setFreigebenMessage('Napf verbunden. Signierter Identitätsnachweis wird geprüft …');
-            await verifyRegistrationCandidate(new WebBluetoothTransport(input.device as never), candidate.nodeId!, organizationId, operation.signal);
+            if (!verifiedNodeIds.has(candidate.nodeId!)) {
+              await verifyRegistrationCandidate(new WebBluetoothTransport(input.device as never), candidate.nodeId!, organizationId, operation.signal);
+            }
             if (stillActive()) { setFreigebenMessage(''); verifiedCandidate = candidate; }
           }
         }

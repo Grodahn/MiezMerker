@@ -99,7 +99,8 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
   await dialog.getByRole('button', { name: 'Einrichtung abschließen' }).click();
   await expect(dialog.getByText(/kann beim nächsten Auslesen mitmachen/)).toBeVisible();
   expect(claims).toBe(1); expect(deployments).toBe(1); expect(displayName).toBe('Der Grüne');
-  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { connects: number } }).registrationEvents.connects)).toBe(6);
+  // Both discovery/preflight attempts retain their connection; no immediate reconnect.
+  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { connects: number } }).registrationEvents.connects)).toBe(4);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('miezmerker-last-setup-node'))).toBeNull();
   expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

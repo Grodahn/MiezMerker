@@ -16,7 +16,9 @@ export async function bootstrapRegistrationTime(transport: NodeTransport, nodeId
     const frame = decodeFrame(await transport.read());
     assertActive();
     if (!frame || frame.version !== 1 || frame.opcode !== opcode + 1) {
-      throw new ClaimError('trusted-time', 'Vertrauenswürdige UTC-Zeit fehlt. Firmware mit signiertem Zeit-Bootstrap und passendem Issuer-Schlüssel erforderlich.');
+      throw new ClaimError('trusted-time', opcode === Opcode.RegistrationTimeProofRequest
+        ? 'Signierter UTC-Proof vom Napf abgelehnt: Issuer-Pin mit lokalem Setup und ESP-Log vergleichen; danach mit neuer Challenge erneut versuchen. Ungültige, abgelaufene oder wiederverwendete Proofs bleiben gesperrt.'
+        : 'Vertrauenswürdige UTC-Zeit fehlt. Firmware mit signiertem Zeit-Bootstrap und passendem Issuer-Schlüssel erforderlich; issuer_pin im ESP-Log prüfen.');
     }
     return frame.payload;
   };
@@ -48,8 +50,13 @@ export async function bootstrapRegistrationTime(transport: NodeTransport, nodeId
   });
   assertActive(); assertAdminMayClaim(organizationId);
   if (error || !data?.proof) {
+    const diagnostic = response?.status === 503 ? response.headers?.get('X-MM-Time-Bootstrap') : null;
     throw new ClaimError('trusted-time', response?.status === 503
-      ? 'Zeit-Bootstrap nicht verfügbar. Backend benötigt einen konfigurierten Issuer-Schlüssel und eine bestätigte gesunde UTC-Zeit.'
+      ? diagnostic === 'issuer-key-missing'
+        ? 'Zeit-Bootstrap gesperrt: stabiler Backend-Issuer-Schlüssel fehlt. Lokales Issuer-Setup ausführen und IntelliJ-Konfiguration laden; Firmware-Pin vergleichen.'
+        : diagnostic === 'utc-unconfirmed'
+          ? 'Zeit-Bootstrap gesperrt: Backend-UTC nicht als gesund bestätigt. Serveruhr/NTP prüfen und die lokale UTC-Attestation ausdrücklich setzen.'
+          : 'Zeit-Bootstrap nicht verfügbar. Backend benötigt einen konfigurierten Issuer-Schlüssel und eine bestätigte gesunde UTC-Zeit.'
       : 'Signierter Zeit-Bootstrap abgelehnt. Aktive ADMIN-Mitgliedschaft, Internet und Napf-Zuordnung prüfen.');
   }
   const result = await exchange(Opcode.RegistrationTimeProofRequest, encodeClaimReceipt(data.proof));
