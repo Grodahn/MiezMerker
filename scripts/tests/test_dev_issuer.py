@@ -1,5 +1,6 @@
 """Exercise the actual PowerShell setup, without printing any private material."""
 import json
+import base64
 import os
 from pathlib import Path
 import shutil
@@ -79,6 +80,18 @@ class DevIssuerTest(unittest.TestCase):
 
     def test_repository_secret_storage_refused(self):
         self.assertNotEqual(0, self.run_setup(directory=SCRIPT.parent / 'issuer').returncode)
+
+    def test_trailing_der_is_rejected_without_replacing_store(self):
+        pair = self.success(self.run_setup())
+        for key in ('private', 'public'):
+            altered = dict(pair)
+            altered[key] = base64.b64encode(base64.b64decode(pair[key]) + b'\x00').decode('ascii')
+            store = json.dumps(altered)
+            (self.directory / 'issuer.json').write_text(store)
+            result = self.run_setup()
+            self.assertNotEqual(0, result.returncode)
+            self.assertNotIn(altered['private'], result.stdout + result.stderr)
+            self.assertEqual(store, (self.directory / 'issuer.json').read_text())
 
     def test_shell_environment_and_private_storage_permissions(self):
         self.success(self.run_setup())

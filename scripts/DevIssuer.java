@@ -9,6 +9,20 @@ import java.util.*;
 
 /** Private subprocess protocol for PowerShell 5.1. Never pass keys as CLI arguments. */
 class DevIssuer {
+    static void requireCompleteDer(byte[] der) {
+        if (der.length < 2 || der[0] != 0x30) throw new IllegalArgumentException();
+        int prefix = 2, first = der[1] & 255;
+        long length = first;
+        if (first >= 128) {
+            int count = first & 127;
+            if (count == 0 || count > 4 || der.length < 2 + count || der[2] == 0)
+                throw new IllegalArgumentException();
+            prefix += count; length = 0;
+            for (int i = 2; i < prefix; i++) length = (length << 8) | (der[i] & 255);
+            if (length < 128) throw new IllegalArgumentException();
+        }
+        if (length != der.length - prefix) throw new IllegalArgumentException();
+    }
     static byte[] coordinate(BigInteger value) {
         byte[] encoded = value.toByteArray(), result = new byte[32];
         int count = Math.min(encoded.length, result.length);
@@ -28,10 +42,11 @@ class DevIssuer {
                 var factory = KeyFactory.getInstance("EC");
                 byte[] privateDer = Base64.getDecoder().decode(privateText);
                 byte[] publicDer = Base64.getDecoder().decode(publicText);
+                requireCompleteDer(privateDer); requireCompleteDer(publicDer);
                 pair = new KeyPair(factory.generatePublic(new X509EncodedKeySpec(publicDer)),
                         factory.generatePrivate(new PKCS8EncodedKeySpec(privateDer)));
-                if (!Arrays.equals(privateDer, pair.getPrivate().getEncoded())
-                        || !Arrays.equals(publicDer, pair.getPublic().getEncoded())) throw new IllegalArgumentException();
+                // JDK providers may normalize valid PKCS8 encodings differently.
+                // Validate framing, curve and signing consistency, not re-encoding equality.
             }
             var parameters = AlgorithmParameters.getInstance("EC");
             parameters.init(new ECGenParameterSpec("secp256r1"));
