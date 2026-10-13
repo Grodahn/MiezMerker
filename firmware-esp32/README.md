@@ -116,22 +116,33 @@ keys; boot verifies that persisted public and private key material match.
 
 ## Clock, issuer trust and claiming
 
-`BoardClock` reports `UNKNOWN`, no UTC epoch, and an independent monotonic
-debounce clock. It never uses uptime, Windows time or peer time as UTC.
-`TimeCorrect` cannot bootstrap authorization: the UTC adapter rejects it, and
-the session already requires trusted UTC. Existing timestamps stay immutable.
+`BoardClock` keeps observation capture truthfully `UNKNOWN` (no invented
+timestamps) and maintains a separate security-trusted UTC interval
+`[lower, upper]` only after a backend-signed, challenge-bound proof verifies
+against the independently pinned issuer key (#130, ADR 0017). Fresh boot,
+reboot, power loss, timer discontinuity, rollback, expiry or overflow starts
+or returns to no trust (fail closed). The interval advances with monotonic
+time plus a configured drift bound and finite trust age; credential and claim
+receipt authorization requires `lower >= iat && upper < exp` with no grace
+period or midpoint fallback. `TimeCorrect` stays protected and never becomes
+a pre-auth arbitrary-time setter. Existing timestamps stay immutable.
 
-**Secure claim/sync is currently blocked by trusted UTC**: ADR 0013 requires
-a fresh node-signed claim timestamp, and ADR 0012 requires reliable `iat/exp`
-checks before authorization. Supply an independently trusted UTC source with
-a defined cold-boot trust/rollback policy (RTC/time initialization work in
-[#4](https://github.com/Grodahn/MiezMerker/issues/4)); an unchecked PWA/PC clock
-is insufficient. Then provision the deployment's public issuer key independently
-using `CONFIG_MM_ISSUER_PUBLIC_KEY_HEX` (130 hex chars, uncompressed P-256
+Provisional transport bound: a time challenge is valid for 30 s of monotonic
+uptime (`kChallengeLifetimeMs`). The PWA is untrusted transport only; phone
+time never grants trust. The 30 s limit, server-error bound (default 1000 ms),
+drift bound (default 5000 ppm), trust age (default 24 h) and sampling
+uncertainty (default 2 ms) are explicit configuration assumptions that must
+be re-measured for future transports or production calibration.
+
+Provision the deployment's public issuer key independently using
+`CONFIG_MM_ISSUER_PUBLIC_KEY_HEX` (130 hex chars, uncompressed P-256
 `04 || x || y`) through `idf.py menuconfig`. Obtain it through the trusted
-deployment channel, never from an incoming receipt as its own trust anchor.
-Empty pin fails closed. No issuer private key or shared device identity belongs
-in a build image. The claim receipt's signed `ipk_*` echo must match that pin.
+deployment channel, never from an incoming receipt, proof, claim receipt or
+unverified issuer endpoint as its own trust anchor. Empty pin fails closed.
+No issuer private key or shared device identity belongs in a build image.
+The claim receipt's signed `ipk_*` echo must match that pin. Time proofs
+additionally require the pinned `kid=miezmerker-issuer-v1`,
+`iss=miezmerker` and purpose `node-time-bootstrap`.
 
 On a running, unclaimed board, hold BOOT/GPIO9 for **2–5 seconds and release**
 to open a 120-second physical claim window. Without trusted UTC this cannot

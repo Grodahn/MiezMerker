@@ -47,3 +47,58 @@ add_test(NAME offline-auth COMMAND offline-auth-test
   "${CMAKE_CURRENT_SOURCE_DIR}/../../protocol/fixtures/offline-credential-v1.json")
 
 set_tests_properties(offline-auth PROPERTIES LABELS "auth")
+
+set(CORE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../firmware-core")
+set(ESP32_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+add_executable(node-time-verify-test node_time_verify_test.cpp
+  ../components/offline-auth/node_time_verify.cpp
+  "${CORE_ROOT}/src/types.cpp" "${CORE_ROOT}/src/node_time_portable.cpp")
+target_include_directories(node-time-verify-test PRIVATE
+  ../components/offline-auth/include "${CORE_ROOT}/include")
+target_link_libraries(node-time-verify-test PRIVATE test-crypto)
+if(MSVC)
+  target_compile_options(node-time-verify-test PRIVATE /UNDEBUG /W4 /WX)
+else()
+  target_compile_options(node-time-verify-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+endif()
+add_test(NAME node-time-verify COMMAND node-time-verify-test
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../protocol/fixtures/node-time-v1.json")
+set_tests_properties(node-time-verify PROPERTIES LABELS "auth")
+
+add_executable(node-time-bootstrap-test node_time_bootstrap_test.cpp
+  ../components/offline-auth/offline_auth.cpp
+  ../components/offline-auth/node_time_verify.cpp
+  ../src/persistent_state.cpp
+  "${CORE_ROOT}/src/types.cpp" "${CORE_ROOT}/src/core.cpp"
+  "${CORE_ROOT}/src/node_identity.cpp" "${CORE_ROOT}/src/memory_stores.cpp"
+  "${CORE_ROOT}/src/protocol_view.cpp" "${CORE_ROOT}/src/ble_codec.cpp"
+  "${CORE_ROOT}/src/ble_sync.cpp" "${CORE_ROOT}/src/node_time_portable.cpp")
+target_include_directories(node-time-bootstrap-test PRIVATE
+  ../components/offline-auth/include ../components/ble-sync/include
+  ../include "${CORE_ROOT}/include")
+target_link_libraries(node-time-bootstrap-test PRIVATE test-crypto)
+# Test-only verified-anchor factory for the storage-full fixture below.
+target_compile_definitions(node-time-bootstrap-test PRIVATE MIEZMERKER_TEST_ANCHOR_ACCESS)
+if(MSVC)
+  target_compile_options(node-time-bootstrap-test PRIVATE /UNDEBUG /W4 /WX)
+else()
+  target_compile_options(node-time-bootstrap-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+endif()
+add_test(NAME node-time-bootstrap COMMAND node-time-bootstrap-test
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../protocol/fixtures/node-time-v1.json")
+set_tests_properties(node-time-bootstrap PROPERTIES LABELS "auth;lifecycle;storage")
+
+add_executable(node-time-auth-test node_time_auth_test.cpp
+  ../components/offline-auth/offline_auth.cpp
+  "${CORE_ROOT}/src/node_time_portable.cpp" "${CORE_ROOT}/src/types.cpp")
+target_include_directories(node-time-auth-test PRIVATE
+  ../components/offline-auth/include "${CORE_ROOT}/include")
+target_link_libraries(node-time-auth-test PRIVATE test-crypto)
+if(MSVC)
+  target_compile_options(node-time-auth-test PRIVATE /UNDEBUG /W4 /WX)
+else()
+  target_compile_options(node-time-auth-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+endif()
+add_test(NAME node-time-auth COMMAND node-time-auth-test
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../protocol/fixtures/offline-credential-v1.json")
+set_tests_properties(node-time-auth PROPERTIES LABELS "auth")
