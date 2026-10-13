@@ -44,7 +44,7 @@ core codecs can share the same fixtures without relying on frontend code.
   and challenge/response proof-of-possession. Interop vectors:
   `fixtures/offline-credential-v1.json`.
 - Node identity is a random UUIDv4 + P-256 device key pair, never MAC/DB/site ids.
-  Claim requires ACTIVE ADMIN + physical claim mode (signed advertisement, ADR-0013).
+  Claim requires ACTIVE ADMIN + signed identity proof (direct registration, ADR-0013 / #154).
 - Ownership/claim/reset lifecycle must avoid reusing event identities after reset.
 - Versioned golden byte fixtures will live here alongside the eventual codec, not
   in backend OpenAPI. No invented provisional wire format is shipped.

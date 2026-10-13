@@ -2206,7 +2206,7 @@
             "description": "OK"
           }
         },
-        "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + claim mode)",
+        "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + signed node identity)",
         "tags": [
           "node-controller"
         ]

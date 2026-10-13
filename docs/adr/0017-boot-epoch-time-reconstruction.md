@@ -28,10 +28,10 @@ This ADR is the **reviewed design contract for later implementation**, not a cla
 
 | Persisted Node claim state | RFID input and capture | Clock/provisioning behavior |
 | --- | --- | --- |
-| `UNCLAIMED` | **Drop/ignore RFID input without producing any RawObservation, assigning a sequence, filling the observation log, or emitting chip IDs in normal diagnostics.** | Boot markers, monotonic timer, independently pinned issuer key, signed time bootstrap, public identity and physical claim mode may operate solely to enable secure registration. |
+| `UNCLAIMED` | **Drop/ignore RFID input without producing any RawObservation, assigning a sequence, filling the observation log, or emitting chip IDs in normal diagnostics.** | Boot markers, monotonic timer, independently pinned issuer key, signed time bootstrap, public identity and direct ADMIN registration may operate solely to enable secure registration. |
 | `CLAIMED` (owner committed atomically on the Node) | Allow ordinary RFID capture under existing Core persistence and deduplication rules, even if UTC is `UNKNOWN`. | Protected BLE sync still needs a valid offline credential, issuer trust and security UTC. |
 | Backend reserved ownership but Node claim receipt not yet committed | Still **UNCLAIMED** locally: **no** capture. | Deliver/retry the existing claim receipt; never infer successful registration from a request or browser permission. |
-| Factory reset / renewed unclaimed state | Stop capture immediately; existing reset procedure already rotates Node identity and clears the old observation log securely. | Allow new physical claiming only through #18; no old owner/data reuse. |
+| Factory reset / renewed unclaimed state | Stop capture immediately; existing reset procedure already rotates Node identity and clears the old observation log securely. | Allow direct ACTIVE ADMIN claiming through #154; no old owner/data reuse. |
 
 **The state check belongs to the shared firmware-core capture path**, not
 merely the ESP32 GPIO3, UART or hardware adapter. Enforce it on
@@ -189,7 +189,7 @@ These DTO qualities are independent of the existing immutable on-wire capture en
 **Pre-auth bootstrap is a new narrowly scoped capability, NOT removal of protection on the existing TimeCorrect GATT characteristic.**
 
 1. **Node challenge:** Device emits a new, single-use, 32-byte CSPRNG challenge, node ID, incarnation, boot counter, issuance monotonic uptime and protocol version. A new nonce supersedes the previous. Optionally domain-separate and sign a possession proof using its persistent P-256 device key so the backend can bind the request to a real private-key holder. Public bootstrap must not reveal chip numbers, pending counts or owner secrets.
-2. **Authenticated PWA:** Browser-freigegebene PWA requests a time proof from the backend. For an owned node, authenticated ACTIVE member of that owner org; for a first unclaimed node, ACTIVE ADMIN of the selected organization, plus regular physical claim-mode checks during the actual claim. Rate limits, request bounds and abuse logging apply. Never trust a caller-supplied owner identifier over backend-verified ownership. No arbitrary-time-signing endpoint.
+2. **Authenticated PWA:** Browser-freigegebene PWA requests a time proof from the backend. For an owned node, authenticated ACTIVE member of that owner org; for a first unclaimed node, ACTIVE ADMIN of the selected organization, plus signed device identity and receipt checks during direct registration (#154). Rate limits, request bounds and abuse logging apply. Never trust a caller-supplied owner identifier over backend-verified ownership. No arbitrary-time-signing endpoint.
 3. **Backend signing:** Server samples **its own authoritative UTC** and issues a domain-separated ES256 token, purpose "MM-TRUSTED-TIME-v1", carrying issuer/key ID, version, time in UTC milliseconds, node ID, incarnation, boot counter, fresh challenge, and node key fingerprint where available. The PWA cannot submit a UTC to be signed. Server must withhold issuance if its own time source is unhealthy. The public signing key must be provisioned independently on the node.
 4. **Node validation:** ESP verifies signature under independently pinned public key (existing CONFIG_MM_ISSUER_PUBLIC_KEY_HEX or separately pinned time key), purpose, key ID, boot/node/nonce binding, and single-use state. **Never** bootstrap trust from the signed token's embedded public key, from an unverified claim receipt or from a public /issuer response alone.
 5. **Freshness without any pre-existing clock:** A signed issuance timestamp **cannot prove its own freshness**. Freshness instead relies on nonce unpredictability plus a short **monotonic challenge-to-acceptance deadline** (provisional maximum 30 s, to be confirmed in tests). The signed server issuance is bounded between Node challenge and acceptance. At Node acceptance, the security clock starts from the **conservative interval** `[S-E_server, S+E_server+D]`, where `D = U_accept - U_challenge`; it MUST NOT start from the point value S alone. After the deadline, or after any nonce consumption/reset, reject. No post-reset reuse of stored time proof.
@@ -218,7 +218,7 @@ BOOT or timer discontinuity -> SECURITY_TIME_UNKNOWN
               -> confidence expired / rollback / reboot -> SECURITY_TIME_UNKNOWN
 ~~~
 
-The physical claim gate from ADR 0013 remains required. Signing backend time does not itself register a node, issue BLE credentials, read observations, or authorize any session. Authenticated time initialization and authenticated observation transfer are **separate** transitions.
+Direct registration under ADR 0013 / #154 requires ACTIVE ADMIN and signed device/receipt checks; no physical gate. Signing backend time does not itself register a node, issue BLE credentials, read observations, or authorize any session. Authenticated time initialization and authenticated observation transfer are **separate** transitions.
 
 ### Proposed interop payloads and installation evidence
 
@@ -283,11 +283,11 @@ little-endian. Validate that the provided uncompressed P-256 point is
 well-formed and calculate its fingerprint from the **same** point covered
 by NodeChallengeSigningInput. For claimed Nodes it must equal the backend
 registered key. For unclaimed Nodes the presented public key establishes
-**only** possession, not ownership; require existing #18 physical-mode
-claim to bind it to an organization.
+**only** possession, not ownership; require direct ACTIVE ADMIN / signed receipt
+claim (#154) to bind it to an organization.
 
 This does **not** expose a generic pre-auth signing oracle: add explicit
-rate-limited, purpose-scoped Node sign operations, retaining physical-mode
+rate-limited, purpose-scoped Node sign operations, retaining UNCLAIMED and trusted-time
 restrictions for the existing claim advertisement and disallowing attacker
 chosen arbitrary messages.
 
@@ -312,7 +312,7 @@ For a **claimed** device the backend verifies the challenge signature
 against its registered Node public key and verifies ACTIVE membership in
 the owning organization. For an **unclaimed** device it can verify proof of
 possession against the presented device key, but this **does not establish
-ownership**; only a subsequent physical-mode claim with #18 may do that.
+ownership**; only a subsequent ACTIVE ADMIN signed claim with #154 may do that.
 The backend must never create ownership merely by issuing time.
 
 The ESP32 validates the backend proof, persists its anchor, and generates
@@ -420,7 +420,7 @@ iat > clock lower bound waits/retries, never uses an iat grace window.
 press GPIO3 / run synthetic capture and inject a reader-tag: observation
 count, reserved sequence and pending BLE data remain unchanged; no
 chip-bearing log is emitted, regardless of whether trusted UTC exists.
-Perform physical signed claiming, confirm the Node has durably
+Perform direct ACTIVE ADMIN signed claiming, confirm the Node has durably
 committed `CLAIMED` before the next input, then capture a read with
 `clock=UNKNOWN`: exactly one immutable raw observation is stored.
 Interrupt registration after backend reservation but before Node receipt

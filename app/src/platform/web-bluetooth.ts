@@ -185,6 +185,8 @@ export function characteristicForRequest(opcode: Opcode): string {
     case Opcode.TimeRequest: return BLE_CHAR_UUIDS.time;
     case Opcode.ClaimAdvertisementRequest: return BLE_CHAR_UUIDS.claimAdvertisement;
     case Opcode.ClaimReceiptRequest: return BLE_CHAR_UUIDS.claimReceipt;
+    case Opcode.RegistrationTimeChallengeRequest:
+    case Opcode.RegistrationTimeProofRequest: return BLE_CHAR_UUIDS.claimReceipt;
     default: throw new BluetoothTransportError('protocol', `Unbekannte Protokoll-Operation (${opcode}).`);
   }
 }

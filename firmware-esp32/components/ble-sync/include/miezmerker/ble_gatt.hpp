@@ -19,6 +19,7 @@
 
 #include "miezmerker/ble_sync.hpp"
 #include "miezmerker/node_identity.hpp"
+#include "miezmerker/node_time.hpp"
 
 namespace miezmerker::ble_gatt {
 
@@ -56,6 +57,7 @@ public:
     void disconnect();
     void set_claim_mode(bool active) { claim_mode_ = active; }
     void set_node_identity(NodeIdentityManager* identity) { identity_ = identity; }
+    void set_time_bootstrap(node_time::NodeTimeBootstrapManager* manager) { time_bootstrap_ = manager; }
 
     /// Handles a raw request frame, returns a raw response frame.
     /// trusted_now_s is trusted UTC seconds (0 = unknown, fails closed).
@@ -72,6 +74,7 @@ private:
     std::vector<std::uint8_t> auth_fragments_;
     std::size_t auth_total_{0};
     NodeIdentityManager* identity_{nullptr};
+    node_time::NodeTimeBootstrapManager* time_bootstrap_{nullptr};
     std::vector<std::uint8_t> receipt_fragments_;
     std::size_t receipt_total_{0};
 };

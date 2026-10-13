@@ -49,7 +49,7 @@ public class NodeTimeProofVerifier {
         } catch (Exception e) { throw new IllegalArgumentException("Invalid time proof"); }
     }
 
-    /** trustedDeviceKey MUST be registered or subsequently verified by physical claiming (#132). */
+    /** trustedDeviceKey MUST be registered or subsequently verified by signed ADMIN registration (#154/#132). */
     public void verifyAcceptance(String proof, NodeTimeProtocol.Challenge c,
             NodeTimeProtocol.Acceptance a, ECPublicKey trustedDeviceKey) {
         verify(proof,c);

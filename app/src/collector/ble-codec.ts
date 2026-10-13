@@ -38,6 +38,10 @@ export enum Opcode {
   ClaimAdvertisementResponse = 0x16,
   ClaimReceiptRequest = 0x17,
   ClaimReceiptResponse = 0x18,
+  RegistrationTimeChallengeRequest = 0x19,
+  RegistrationTimeChallengeResponse = 0x1a,
+  RegistrationTimeProofRequest = 0x1b,
+  RegistrationTimeProofResponse = 0x1c,
   Error = 0xff,
 }
 

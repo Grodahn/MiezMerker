@@ -42,9 +42,9 @@ std::string uuid(const std::array<std::byte, 16>& id) {
     return out;
 }
 }
-NodeIdentityManager::NodeIdentityManager(NodeIdentityStore& store, ClaimMode& claim_mode,
+NodeIdentityManager::NodeIdentityManager(NodeIdentityStore& store, ClaimMode&,
         RandomSource& random, NodeCrypto& crypto, ClaimClock& clock)
-    : store_(store), claim_mode_(claim_mode), random_(random), crypto_(crypto), clock_(clock) {}
+    : store_(store), random_(random), crypto_(crypto), clock_(clock) {}
 
 bool NodeIdentityManager::initialize() {
     ready_ = false;

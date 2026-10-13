@@ -34,13 +34,13 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
     expect(() => assertAdminMayClaim('org-a')).toThrow('Nur ADMIN');
   });
 
-  test('claim requires physical claim mode confirmation', async () => {
-    authAs('ADMIN');
+  test('unauthenticated user cannot claim', async () => {
+    authAs(null);
     await expect(claimNode('org-a', {
       nodeId: '44444444-4444-4444-8444-444444444444',
       publicKeyX: 'x'.repeat(43), publicKeyY: 'y'.repeat(43),
       claimSignature: 's'.repeat(86), timestampMillis: 1,
-    }, { claimModeConfirmed: false })).rejects.toThrow('Claim-Modus');
+    })).rejects.toThrow('aktive Mitgliedschaft');
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -51,7 +51,7 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
       nodeId: '44444444-4444-4444-8444-444444444444',
       publicKeyX: 'x'.repeat(43), publicKeyY: 'y'.repeat(43),
       claimSignature: 's'.repeat(86), timestampMillis: 1,
-    }, { claimModeConfirmed: true });
+    });
     expect(outcome.receipt).toBe('jwt');
     expect(post.mock.calls[0][1].body.organizationId).toBe('org-a');
     const db = new CollectorDatabase();
@@ -68,7 +68,7 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
       nodeId: '44444444-4444-4444-8444-444444444444',
       publicKeyX: 'x'.repeat(43), publicKeyY: 'y'.repeat(43),
       claimSignature: 's'.repeat(86), timestampMillis: 1,
-    }, { claimModeConfirmed: true })).rejects.toThrow('anderen Organisation');
+    })).rejects.toThrow('anderen Organisation');
   });
 
   test('offline claiming is explicitly blocked', async () => {
@@ -76,7 +76,7 @@ describe('claiming (UNCLAIMED only ACTIVE ADMIN, #18)', () => {
     Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
     await expect(claimNode('org-a', {
       nodeId: 'n', publicKeyX: 'x', publicKeyY: 'y', claimSignature: 's', timestampMillis: 1,
-    }, { claimModeConfirmed: true })).rejects.toThrow('Internet');
+    })).rejects.toThrow('Internet');
   });
 
 

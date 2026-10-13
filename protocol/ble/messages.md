@@ -39,11 +39,22 @@ Opcodes (v1):
 | `0x12` | StatusResponse | S→C | `pending u32 LE, ack u64, store u8, clock u8, epoch u64 (0 if unknown), next_seq u64` |
 | `0x13` | CompactRequest | C→S | empty |
 | `0x14` | CompactResponse | S→C | `freed u32 LE, remaining u32 LE, ack u64, error u8` |
-| `0x15` | ClaimAdvertisementRequest | C→S | empty (read trigger, physical claim mode only) |
+| `0x15` | ClaimAdvertisementRequest | C→S | empty (read trigger, ready UNCLAIMED identity + trusted UTC) |
 | `0x16` | ClaimAdvertisementResponse | S→C | `node_id 16 B, public_key 65 B (0x04\|x\|y), timestamp_ms u64 LE, signature 64 B` |
 | `0x17` | ClaimReceiptRequest | C→S | `receipt str` (nonempty, <=4096 B) |
 | `0x18` | ClaimReceiptResponse | S→C | `error u8` (`0` only after atomic claim commit and capture-state refresh) |
+| `0x19` | RegistrationTimeChallengeRequest | C→S | empty, write to ClaimReceipt characteristic |
+| `0x1A` | RegistrationTimeChallengeResponse | S→C | `version u16, node 16 B, incarnation 16 B, boot u32, nonce 32 B, uptime u64, device key 65 B, fingerprint 32 B, signature 64 B` (239 B, integers LE) |
+| `0x1B` | RegistrationTimeProofRequest | C→S | exact backend compact JWS as `str`, <=4096 B; ClaimReceipt characteristic / `0x4e` fragment envelope |
+| `0x1C` | RegistrationTimeProofResponse | S→C | `error u8` (`0` after pinned verification and durable time-anchor acceptance) |
 | `0xFF` | Error | S→C | `code u8, msg str` |
+
+Registration-time opcodes `0x19`–`0x1c` use write/read on the existing
+ClaimReceipt characteristic (`…5b0b`), independently of observation authorization.
+The 239-byte challenge maps losslessly to ADR 0017 HTTP fields; uptime is an
+unsigned 64-bit JSON integer. Proof writes reuse the ordered `0x4e` transport
+envelope and its 4102-byte frame bound. Time success grants neither ownership
+nor BLE access. Initial registration requires ACTIVE ADMIN and no physical gate.
 
 Enums: `claim`: `0 UNCLAIMED, 1 CLAIMED`. `clock`: `0 UNKNOWN, 1 RTC_ONLY,
 2 SYNCED`. `store`: `0 OK, 1 NEARLY_FULL, 2 FULL`.
@@ -87,7 +98,7 @@ Service UUID `6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b6c`.
 | Batch | `…5b07` | write + notify/read (authorized) | `BatchRequest` → `BatchResponse` (notify pages) |
 | Ack | `…5b08` | write + read (authorized) | `AckRequest` → `AckResponse`; `CompactRequest` → `CompactResponse` multiplexed by opcode |
 | Time | `…5b09` | write + read (authorized) | `TimeCorrectRequest` → `TimeCorrectResponse` |
-| ClaimAdvertisement | `…5b0a` | read (physical claim mode) | `ClaimAdvertisementResponse` or `Error` |
+| ClaimAdvertisement | `…5b0a` | read (UNCLAIMED + trusted UTC) | `ClaimAdvertisementResponse` or `Error` |
 | ClaimReceipt | `…5b0b` | write + read | `ClaimReceiptRequest` → `ClaimReceiptResponse` or `Error` |
 
 The two provisioning characteristics extend v1 without changing existing sync

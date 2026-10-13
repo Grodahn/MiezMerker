@@ -197,7 +197,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + claim mode) */
+        /** Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + signed node identity) */
         post: operations["claimNode"];
         delete?: never;
         options?: never;

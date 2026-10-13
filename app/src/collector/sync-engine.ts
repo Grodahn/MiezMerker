@@ -273,7 +273,7 @@ export class SyncEngine {
         throw new SyncFailedError('protocol', 'hello failed', null);
       }
       if (hello.claimState !== 1) {
-        throw new SyncFailedError('unclaimed', 'Node ist UNCLAIMED. Nur ADMIN kann ihn im physischen Claim-Modus claimen.', null);
+        throw new SyncFailedError('unclaimed', 'Node ist UNCLAIMED. Ein aktiver ADMIN kann ihn direkt registrieren.', null);
       }
       if (hello.nodeId.toLowerCase() !== this.identity.nodeId.toLowerCase()) {
         throw new SyncFailedError('unauthorized', 'Node identity changed after discovery.', null);

@@ -109,7 +109,7 @@ async def run(args):
             _, auth = unpack(await client.read_gatt_char(characteristic(4)), 8)
             assert auth[0] == 0, 'invalid credential authorized'
             await rejected_read(client, 6)
-            # Receipt has no physical claim proof/trusted time; reject, never commit.
+            # Receipt has no valid signature/binding/trusted time; reject, never commit.
             await client.write_gatt_char(characteristic(11), frame(23, struct.pack('<H', 7) + b'invalid'), response=True)
             _, receipt = unpack(await client.read_gatt_char(characteristic(11)), 255)
             assert receipt[0] == 14

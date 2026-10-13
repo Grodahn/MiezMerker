@@ -59,6 +59,10 @@ enum class Opcode : std::uint8_t {
     ClaimAdvertisementResponse = 0x16,
     ClaimReceiptRequest = 0x17,
     ClaimReceiptResponse = 0x18,
+    RegistrationTimeChallengeRequest = 0x19,
+    RegistrationTimeChallengeResponse = 0x1A,
+    RegistrationTimeProofRequest = 0x1B,
+    RegistrationTimeProofResponse = 0x1C,
     Error = 0xFF,
 };
 

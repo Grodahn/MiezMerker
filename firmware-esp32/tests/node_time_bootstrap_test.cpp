@@ -22,6 +22,8 @@
 #include "miezmerker/node_time_verify.hpp"
 #include "miezmerker/offline_auth.hpp"
 #include "miezmerker/persistent_state.hpp"
+#include "miezmerker/ble_gatt.hpp"
+#include "miezmerker/gatt_endpoint.hpp"
 
 using namespace miezmerker;
 using namespace miezmerker::node_time;
@@ -182,6 +184,88 @@ void append_boot_for(PersistentTimeEvidence& evidence, std::uint32_t boot) {
 int main(int argc, char** argv) {
     assert(argc == 2);
     Fixture fixture(argv[1]);
+
+    // #154: exercise the actual pre-auth GATT bridge with the real pinned JWS
+    // verifier and frozen proof. No physical claim window or UTC setter exists.
+    {
+        struct LegacyMode : ClaimMode { bool active() const override { return false; } } mode;
+        struct Time : ClaimClock { std::uint64_t epoch_ms() const override { return 0; } } time;
+        struct IdentityCell : NodeIdentityStore {
+            NodeIdentity value;
+            NodeIdentityLoadResult load(NodeIdentity& out) override { out = value; return NodeIdentityLoadResult::loaded; }
+            bool save(const NodeIdentity& in) override { value = in; return true; }
+            bool clear() override { return false; }
+        } identity_cell;
+        const auto node_id = fixture_node();
+        for (unsigned i = 0; i < 16; ++i) identity_cell.value.node_id[i] = static_cast<std::byte>(node_id.bytes[i]);
+        identity_cell.value.public_key = fixture.device_pub;
+        identity_cell.value.private_key = fixture.device_priv;
+        ManualClock clock; clock.set_monotonic_ms(1000);
+        FixtureRandom random; FakeDeviceCrypto crypto;
+        NodeIdentityManager identity(identity_cell, mode, random, crypto, time);
+        assert(identity.initialize());
+        ClaimAdvertisement unavailable;
+        assert(!identity.sign_claim(unavailable)); // Missing UTC still fails closed.
+        Cell cell; PersistentTimeEvidence evidence(cell);
+        assert(evidence.open()); append_boot_for(evidence, 42);
+        NodeTimeBootstrapManager manager(clock, random, crypto, evidence, verify_time_proof, fixture.issuer);
+        assert(manager.on_boot(node_id, fixture_incarn(), 42));
+        struct Auth : ble::SyncAuthorizer {
+            bool begin(std::array<std::uint8_t, 32>&) override { return false; }
+            bool authorize(const std::string&, const std::array<std::uint8_t, 64>&, ble::TrustedEpochSeconds) override { return false; }
+            bool can_sync(ble::TrustedEpochSeconds) const override { return false; }
+            void disconnect() override {}
+        } auth;
+        struct Rtc : ble::RtcControl { bool set_corrected_epoch_ms(std::uint64_t) override { return false; } } rtc;
+        struct Signer : ble::NodeSigner {
+            bool sign_session(const std::array<std::uint8_t, 32>&, std::array<std::uint8_t, 64>&) override { return false; }
+        } signer;
+        // Separate capture fixture; the bootstrap manager's identity/boot binding
+        // is the normative frozen vector, not this transport test's capture store.
+        InMemoryIdentityStore capture_identity;
+        struct Storage : miezmerker::Storage { bool open() override { return true; } } storage;
+        InMemoryObservationStore sink; FixedRandomSource capture_random;
+        Core core(clock, storage, sink, capture_identity, capture_random, CoreConfig{});
+        assert(core.initialize());
+        ble::SyncServer server(core, auth, rtc, signer);
+        ble_gatt::OwnerMetadata owner;
+        ble_gatt::GattRouter router(server, owner);
+        router.set_node_identity(&identity);
+        router.set_time_bootstrap(&manager);
+        ble_gatt::GattEndpoint endpoint(router, server); endpoint.connect();
+        using ble::Opcode; using ble_gatt::Characteristic; using ble_gatt::AccessResult;
+        auto challenge_request = ble::encode_frame({1, Opcode::RegistrationTimeChallengeRequest, {}});
+        assert(endpoint.write(Characteristic::ClaimReceipt, challenge_request, 23, 1000, 0) == AccessResult::ok);
+        assert(endpoint.read(Characteristic::ClaimReceipt, false, 1000, 0) == AccessResult::ok);
+        auto response = ble::decode_frame(endpoint.value(Characteristic::ClaimReceipt));
+        assert(response && response->opcode == Opcode::RegistrationTimeChallengeResponse);
+        assert(response->payload.size() == 239 && response->payload[0] == 1);
+        assert(std::equal(node_id.bytes.begin(), node_id.bytes.end(), response->payload.begin() + 2));
+        assert(std::equal(fixture.device_pub.begin(), fixture.device_pub.end(), response->payload.begin() + 78,
+            [](auto a, auto b) { return static_cast<unsigned>(a) == b; }));
+        clock.set_monotonic_ms(1300);
+        auto proof_request = ble::encode_frame({1, Opcode::RegistrationTimeProofRequest, ble::encode_claim_receipt(fixture.proof)});
+        // Conservative MTU 23: reuse the bounded, ordered receipt envelope.
+        for (std::size_t offset = 0; offset < proof_request.size(); offset += 12) {
+            std::vector<std::uint8_t> chunk{0x4e, 0x4d, 1, static_cast<std::uint8_t>(offset == 0),
+                static_cast<std::uint8_t>(proof_request.size()), static_cast<std::uint8_t>(proof_request.size() >> 8),
+                static_cast<std::uint8_t>(offset), static_cast<std::uint8_t>(offset >> 8)};
+            chunk.insert(chunk.end(), proof_request.begin() + offset, proof_request.begin() + std::min(offset + 12, proof_request.size()));
+            assert(endpoint.write(Characteristic::ClaimReceipt, chunk, 23, 1300, 0) == AccessResult::ok);
+        }
+        response = ble::decode_frame(endpoint.value(Characteristic::ClaimReceipt));
+        assert(response && response->opcode == Opcode::RegistrationTimeProofResponse && response->payload == std::vector<std::uint8_t>{0});
+        assert(manager.state() == SecurityTimeState::BOUNDED && evidence.anchors().size() == 1);
+        assert(!identity.claimed() && !server.authorized(1791748800)); // Time alone grants no access.
+        // Replayed proof, malformed request and unconfigured adapters all fail closed.
+        response = ble::decode_frame(router.handle_frame(proof_request, 0));
+        assert(response && response->opcode == Opcode::Error);
+        response = ble::decode_frame(router.handle_frame(ble::encode_frame({1, Opcode::RegistrationTimeChallengeRequest, {1}}), 0));
+        assert(response && response->opcode == Opcode::Error);
+        router.set_time_bootstrap(nullptr);
+        response = ble::decode_frame(router.handle_frame(challenge_request, 0));
+        assert(response && response->opcode == Opcode::Error);
+    }
 
     // One valid acceptance establishes bounded trust with conservative bounds.
     {

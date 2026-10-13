@@ -31,7 +31,7 @@ domain regression and GitHub CI evidence are reported in the PR.
   denials return no owning organization/key metadata.
 - Shared database claim lock protects absent-row and registered-row issuance;
   concurrent foreign claiming regression verifies committed ownership is rechecked.
-  Bootstrap writes no Node/Deployment/Cat/observation and bypasses no physical claim.
+  Bootstrap writes no Node/Deployment/Cat/observation and grants no ownership or observation access (#154 removes the physical registration gate).
 - Strict JSON fields, exact P-256 point/fingerprint, canonical base64url/P1363,
   binary UUID and little-endian fixed-width byte contracts; uint64 uptime preserved.
 - Proof verification restricts issuer, key ID, ES256, version and kind; acceptance

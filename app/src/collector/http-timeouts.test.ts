@@ -65,6 +65,6 @@ test('a stalled claim reservation terminates so the same claim can be retried', 
   await expect(claimNode('org', {
     nodeId: '44444444-4444-4444-8444-444444444444', publicKeyX: 'x', publicKeyY: 'y',
     claimSignature: 'signature', timestampMillis: 1,
-  }, { claimModeConfirmed: true })).rejects.toThrow();
+  })).rejects.toThrow();
   expect(post).toHaveBeenCalledTimes(1);
 });

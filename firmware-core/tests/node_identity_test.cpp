@@ -250,7 +250,7 @@ int main() {
 
     std::array<std::byte, 64> signature{};
     ClaimAdvertisement advertisement;
-    assert(!reboot.sign_claim(advertisement));
+    assert(reboot.sign_claim(advertisement)); // No button or physical window (#154).
     mode.enabled = true;
     assert(reboot.sign_claim(advertisement));
     assert(advertisement.timestamp_ms == clock.time);
@@ -266,7 +266,8 @@ int main() {
     assert(crypto.signed_message.ends_with("\n123457\nclaim-mode"));
     crypto.claim = {reset.node_id, reset.public_key, "org-a", "Org A", "help@example.org"};
     mode.enabled = false;
-    assert(!reboot.apply_claim("receipt"));
+    crypto.valid_receipt = false;
+    assert(!reboot.apply_claim("receipt")); // Cryptography remains mandatory.
     mode.enabled = true;
     crypto.valid_receipt = false;
     assert(!reboot.apply_claim("receipt"));
@@ -283,6 +284,7 @@ int main() {
     store.fail_save = false;
     assert(reboot.initialize());
     assert(!reboot.claimed());
+    mode.enabled = false; // Initial commit requires no physical interaction.
     assert(reboot.apply_claim("receipt"));
     assert(reboot.claimed() && !reboot.in_claim_mode());
     assert(!reboot.sign_claim(advertisement));

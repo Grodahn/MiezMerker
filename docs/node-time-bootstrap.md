@@ -60,15 +60,17 @@ CLAIMED requires ACTIVE user/membership/organization in the actual owning organi
 and the exact registered Node key and fingerprint. A submitted organization ID or
 global SYSADMIN privilege grants no membership. UNCLAIMED requires ACTIVE ADMIN in
 the intended organization and a valid self-signed device challenge. Existing owned
-IDs cannot use the UNCLAIMED path, including same-owner retries; a preregistered
+IDs cannot use the UNCLAIMED path from foreign organizations. #154 allows an
+ACTIVE same-owner ADMIN with the exact registered key to recover time after
+an interrupted claim reservation while the firmware remains UNCLAIMED. A preregistered
 UNCLAIMED row must have the matching key. A new ID cannot reuse a registered key.
 
 Ownership lookup and signing hold the existing database claim lock until the
 transaction commits. This includes absent IDs and serializes with #18 claiming
 across backend instances. If claiming wins first, bootstrap rechecks the committed
 owner/state; if bootstrap wins, its proof establishes possession only and reserves
-no ownership. Signed physical claim-mode advertisement and all existing #18 gates
-remain mandatory. No database migration or Node/Deployment/Cat/observation write
+no ownership. The signed identity advertisement and receipt checks remain
+mandatory; #154 removes the physical release gate. No database migration or Node/Deployment/Cat/observation write
 is introduced.
 
 ## Freshness, retries and limits
@@ -126,7 +128,7 @@ exact proof, and ADR 0017 TIME-ACCEPT bytes, including identity,
 incarnation, boot, nonce digest, exact compact JWS digest, unsigned acceptance
 uptime and UUID anchor. Acceptance uptime must be at least challenge uptime.
 Signature uses raw P1363 P-256/SHA-256. The caller MUST pass the registered or
-subsequently physically claimed device key, never blindly trust a PWA key. The
+subsequently registered device key, never blindly trust a PWA key. The
 primitive verifies evidence only; it does not infer actual device clock accuracy
 or authorize anchor storage. The signed proof alone is not installation evidence.
 

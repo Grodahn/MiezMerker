@@ -144,11 +144,12 @@ The claim receipt's signed `ipk_*` echo must match that pin. Time proofs
 additionally require the pinned `kid=miezmerker-issuer-v1`,
 `iss=miezmerker` and purpose `node-time-bootstrap`.
 
-On a running, unclaimed board, hold BOOT/GPIO9 for **2–5 seconds and release**
-to open a 120-second physical claim window. Without trusted UTC this cannot
-produce a claim proof. With the prerequisites satisfied, use the existing
-administrator PWA claim workflow. Initial receipt commit requires physical
-mode, independently pinned ES256 verification, expiry and UUID/key binding.
+Any ready UNCLAIMED board can be registered by an active organization ADMIN
+through the PWA's **Napf registrieren** action (#154), in production and DEV.
+No BOOT press, power-on gesture, QR code or special role is required.
+Registration forwards a device-signed time challenge and backend-signed proof
+when trusted UTC is missing. Initial receipt commit requires independently
+pinned ES256 verification, strict bounded-time validity and UUID/key binding.
 Same-owner delivery remains idempotent. Reconnect/Challenge constructs the
 authorizer from the committed owner. All claim characteristics are registered.
 
@@ -244,7 +245,7 @@ authorized transfer/ACK, Android tests or two-board tests.
 For Android nRF Connect: scan for the service UUID above, connect, enumerate
 ...5b01 through ...5b0b, read Info/Owner/Challenge, attempt Status/Batch/Ack/Time
 unauthenticated (expect rejection), disconnect/reconnect and repeat. Once trusted
-UTC, issuer pin, physical claiming and legitimate AppDevice credentials exist,
+UTC, issuer pin, direct ADMIN registration and legitimate AppDevice credentials exist,
 use the existing Android PWA collector for signed Node proof, observation transfer,
 IndexedDB persistence before ACK, lost-ACK retransmission and duplicate-free retry.
 Do not disable auth to complete that checklist.
@@ -283,7 +284,7 @@ configuration/image/partition sizes; GitHub-hosted CI has no USB/BLE access.
 Wiring: **GPIO3 -> normally open pushbutton -> GND**. The internal pull-up gives
 HIGH while open; pressed is LOW. No external voltage is needed. Use the header
 pad labelled `3`, not physical header position 3. In this board configuration,
-GPIO9 is reserved for BOOT/claim/reset, 18/19 for native USB, 2/8/9 are strapping
+GPIO9 is reserved for BOOT/reset, 18/19 for native USB, 2/8/9 are strapping
 pins, flash uses 12-17, and no ADC/RTC/UART reader occupies GPIO3. This matches
 [Espressif's pin restrictions](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32c3/schematic-checklist.html)
 and ESP-IDF C3 GPIO definitions. Actual wiring inspection and physical acceptance

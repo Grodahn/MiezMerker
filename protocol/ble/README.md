@@ -36,7 +36,7 @@ Logical record JSON: [`../raw-observation-v1.schema.json`](../raw-observation-v1
    `OfflineAuthSession` + `SyncServer` routing) and PWA `SyncChannel`
    (Web Bluetooth behind an interface; management pages never import it).
 4. **Board wiring (ESP32-C3, #4)** — CSPRNG for challenges, trusted RTC/clock
-   for expiry, flash/NVS atomic stores, BOOT-button claim mode. Host tests use
+   for expiry, flash/NVS atomic stores, direct ADMIN registration and signed time bootstrap. Host tests use
    fakes; this directory documents the required behavior.
 
 Security semantics from #17/#18 are reused unchanged (ADR-0012, ADR-0013,
@@ -75,8 +75,8 @@ and pending data require authorization (see `security.md`).
 
 ESP32-C3 NimBLE example: connectable/scannable undirected advertising,
 interval ~100–200 ms, TX power 0 dBm default, short name `MiezMerker`
-(optional, no identity in the name). Claim-mode windowing is a board concern
-(#4); the flag only reflects the `ClaimMode` port.
+(optional, no identity in the name). The legacy claim-mode flag reflects
+readiness of an UNCLAIMED identity (#154), not a physical release window.
 
 ## GATT summary
 
