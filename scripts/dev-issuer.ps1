@@ -1,4 +1,4 @@
-#requires -Version 7.2
+#requires -Version 5.1
 <# Local ES256 setup. Invoke with & to configure this shell. Never prints secret values.
    A static -AttestHealthyUtc is an operator assertion, not NTP monitoring. #>
 [CmdletBinding()]
@@ -6,10 +6,13 @@ param(
     [string]$KeyDirectory = (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MiezMerker/issuer'),
     [switch]$ImportFromEnvironment,
     [switch]$AttestHealthyUtc,
-    [string]$CheckFirmwarePin
+    [string]$CheckFirmwarePin,
+    [string]$JavaExecutable
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$issuerOnWindows = $env:OS -eq 'Windows_NT'
+$legacyPowerShell = $PSVersionTable.PSEdition -eq 'Desktop'
 $env:TIME_BOOTSTRAP_CLOCK_HEALTHY = 'false' # Every failed/unchecked setup stays closed.
 $issuerDir = [IO.Path]::GetFullPath($KeyDirectory)
 $repoDir = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -18,7 +21,7 @@ if ($issuerDir.Equals($repoDir, [StringComparison]::OrdinalIgnoreCase) -or
     throw 'Issuer secrets must be stored outside the repository.'
 }
 function Protect-IssuerDirectory {
-    if ($IsWindows) {
+    if ($issuerOnWindows) {
         $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
         $acl = [Security.AccessControl.DirectorySecurity]::new()
         $acl.SetOwner($sid)
@@ -26,13 +29,15 @@ function Protect-IssuerDirectory {
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl',
             'ContainerInherit,ObjectInherit', 'None', 'Allow'))
         # Set only owner/DACL, never SACL (which would require SeSecurityPrivilege).
-        [IO.FileSystemAclExtensions]::SetAccessControl([IO.DirectoryInfo]::new($issuerDir), $acl)
+        if ($legacyPowerShell) { [IO.DirectoryInfo]::new($issuerDir).SetAccessControl($acl) }
+        else { [IO.FileSystemAclExtensions]::SetAccessControl([IO.DirectoryInfo]::new($issuerDir), $acl) }
         foreach ($file in Get-ChildItem -LiteralPath $issuerDir -File -Force) {
             $fileAcl = [Security.AccessControl.FileSecurity]::new()
             $fileAcl.SetOwner($sid)
             $fileAcl.SetAccessRuleProtection($true, $false)
             $fileAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'Allow'))
-            [IO.FileSystemAclExtensions]::SetAccessControl([IO.FileInfo]::new($file.FullName), $fileAcl)
+            if ($legacyPowerShell) { [IO.FileInfo]::new($file.FullName).SetAccessControl($fileAcl) }
+            else { [IO.FileSystemAclExtensions]::SetAccessControl([IO.FileInfo]::new($file.FullName), $fileAcl) }
         }
     } else {
         [IO.File]::SetUnixFileMode($issuerDir, [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute)
@@ -63,8 +68,28 @@ Protect-IssuerDirectory
 $pairPath = Join-Path $issuerDir 'issuer.json'
 $propertiesPath = Join-Path $issuerDir 'backend-issuer.properties'
 $defaultsPath = Join-Path $issuerDir 'sdkconfig.issuer.defaults'
-$issuerKey = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
-$publicKey = [Security.Cryptography.ECDsa]::Create()
+$issuerKey = $null; $publicKey = $null
+function Invoke-LegacyIssuer([string]$private, [string]$public) {
+    if (!$JavaExecutable) {
+        if ($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin/java.exe'))) {
+            $JavaExecutable = Join-Path $env:JAVA_HOME 'bin/java.exe'
+        } else {
+            $command = Get-Command java -ErrorAction SilentlyContinue
+            if (!$command) { throw 'PowerShell 5.1 requires JDK 17+ (backend JDK 21 recommended). Set JAVA_HOME or -JavaExecutable to IntelliJ JDK bin/java.exe.' }
+            $JavaExecutable = $command.Source
+        }
+    }
+    # Secrets use a captured private pipe, never arguments, terminal output or logs.
+    $result = @(@($private, $public) | & $JavaExecutable (Join-Path $PSScriptRoot 'DevIssuer.java') 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $result.Count -ne 4) {
+        throw 'Issuer crypto validation failed. Check JDK 17+ and the existing matching P-256 pair; no key replacement performed.'
+    }
+    return [pscustomobject]@{ private = $result[0]; public = $result[1]; pin = $result[2]; fingerprint = $result[3] }
+}
+if (!$legacyPowerShell) {
+    $issuerKey = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
+    $publicKey = [Security.Cryptography.ECDsa]::Create()
+}
 $lock = $null
 try {
     # Serialize repeated/concurrent setup. No partial pair is ever regenerated.
@@ -82,11 +107,21 @@ try {
         if ($env:ISSUER_PRIVATE_PKCS8_B64 -or $env:ISSUER_PUBLIC_SPKI_B64 -or (Test-Path -LiteralPath $propertiesPath)) {
             throw 'Existing issuer configuration detected. Use -ImportFromEnvironment or restore issuer.json; refusing generation.'
         }
-        $pair = [pscustomobject]@{
+        if ($legacyPowerShell) {
+            $generated = Invoke-LegacyIssuer '' ''
+            $pair = [pscustomobject]@{ private = $generated.private; public = $generated.public }
+        } else { $pair = [pscustomobject]@{
             private = [Convert]::ToBase64String($issuerKey.ExportPkcs8PrivateKey())
             public = [Convert]::ToBase64String($issuerKey.ExportSubjectPublicKeyInfo())
-        }
+        } }
     }
+    if ([string]::IsNullOrWhiteSpace($pair.private) -or [string]::IsNullOrWhiteSpace($pair.public)) {
+        throw 'Existing issuer store has empty keys; restore it from backup. It will not be rotated.'
+    }
+    if ($legacyPowerShell) {
+        $validated = Invoke-LegacyIssuer $pair.private $pair.public
+        $pin = $validated.pin; $fingerprint = $validated.fingerprint
+    } else {
     try {
         $privateBytes = [Convert]::FromBase64String($pair.private)
         $publicBytes = [Convert]::FromBase64String($pair.public)
@@ -110,6 +145,7 @@ try {
     $point = [byte[]](@(4) + $parameters.Q.X + $parameters.Q.Y)
     $pin = [Convert]::ToHexString($point).ToLowerInvariant()
     $fingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($point)).ToLowerInvariant()
+    }
     if ($CheckFirmwarePin) {
         $matches = @(Select-String -LiteralPath $CheckFirmwarePin -Pattern '^CONFIG_MM_ISSUER_PUBLIC_KEY_HEX="([0-9a-fA-F]{130})"$')
         if ($matches.Count -ne 1 -or $matches[0].Matches[0].Groups[1].Value.ToLowerInvariant() -cne $pin) {
@@ -121,7 +157,7 @@ try {
         $stream = [IO.File]::Open($pairPath, 'CreateNew', 'Write', 'None')
         try {
             $encoded = [Text.Encoding]::UTF8.GetBytes(($pair | ConvertTo-Json -Compress))
-            $stream.Write($encoded); $stream.Flush($true)
+            $stream.Write($encoded, 0, $encoded.Length); $stream.Flush($true)
         } finally { $stream.Dispose() }
     }
     [IO.File]::WriteAllText($propertiesPath, "miezmerker.issuer.private-key-pkcs8-b64=$($pair.private)`nmiezmerker.issuer.public-key-spki-b64=$($pair.public)`n")
@@ -145,5 +181,5 @@ try {
     Write-Host "UTC operator attestation: $env:TIME_BOOTSTRAP_CLOCK_HEALTHY (no live NTP monitoring)"
 } finally {
     if ($lock) { $lock.Dispose() }
-    $issuerKey.Dispose(); $publicKey.Dispose()
+    if ($issuerKey) { $issuerKey.Dispose() }; if ($publicKey) { $publicKey.Dispose() }
 }

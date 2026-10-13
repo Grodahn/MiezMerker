@@ -1,14 +1,19 @@
 # Local signed UTC onboarding (#157)
 
-Use PowerShell **7.2+** (`pwsh`), your existing IntelliJ JDK/Spring Boot,
+Use Windows PowerShell **5.1** or PowerShell **7.2+** (`pwsh`), your existing IntelliJ JDK/Spring Boot,
 PostgreSQL and ESP-IDF 6.1 installation. No OpenSSL or Python crypto package is
-required. This is local development provisioning, independent of demo seeding.
+required. PowerShell 5.1 uses the bundled `scripts/DevIssuer.java` helper with
+your backend JDK (21 recommended, 17 minimum); keys travel through captured
+process pipes, never command-line arguments or terminal output. Set `JAVA_HOME`
+or pass `-JavaExecutable 'C:\path\to\jdk\bin\java.exe'` if IntelliJ's JDK is not
+on PATH. Both shells preserve exactly the same existing issuer store and pin.
+This is local development provisioning, independent of demo seeding.
 Production defaults stay closed; do not deploy this static UTC attestation as
 live clock monitoring. The phone/browser clock never establishes trusted UTC.
 
 ## 1. Persist the issuer outside Git
 
-From PowerShell 7:
+From Windows PowerShell 5.1 or PowerShell 7:
 
 ```powershell
 Set-Location C:\dev\MiezMerker
@@ -89,7 +94,7 @@ Never print the issuer properties file for validation.
 The generated defaults contain exactly 130 hex characters (`04||X||Y`). ESP-IDF
 defaults do **not** override an existing sdkconfig, so use menuconfig to set the
 pin explicitly for an existing build. In an EIM-activated ESP-IDF 6.1 PowerShell
-terminal, with PowerShell 7:
+terminal, with Windows PowerShell 5.1 or PowerShell 7:
 
 ```powershell
 Set-Location C:\dev\MiezMerker
