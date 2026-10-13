@@ -151,3 +151,73 @@ Windows Firewall private-network access to TCP 5173 if the phone cannot connect.
 The HTTPS files are optional and **not needed** for production builds or CI.
 For production use deploy a publicly trusted HTTPS certificate; never deploy
 the local `mkcert` private keys.
+
+### Optional: public mkcert CA download through the existing Admin backend (#150)
+
+The dedicated port-5174 helper was replaced by a **dev-only endpoint on
+the existing Spring Admin backend (port 8080)**. No additional download
+server, npm dependency or Vite plugin is required.
+
+**Only for a local, isolated test WLAN and your own Android devices.**
+The HTTP admin login is *not TLS protected*: both the password and the
+downloaded certificate can be observed or manipulated by others on the LAN.
+A protected Admin route restricts access but cannot authenticate a CA over
+HTTP. Never use this on untrusted networks, expose port 8080 to the Internet,
+or give regular external testers Admin credentials. Prefer a trusted file
+transfer or the proper staging/HTTPS pipeline (#152) for outside testers.
+
+To start the existing backend in PowerShell with the feature explicitly
+enabled, keeping your usual **local development database configuration**:
+
+```powershell
+# From the repo root (mkcert must already be installed and initialized):
+$env:SPRING_PROFILES_ACTIVE = 'dev'
+$env:MIEZMERKER_DEV_CA_ENABLED = 'true'
+$env:MIEZMERKER_DEV_CA_PUBLIC_CERT_PATH = Join-Path (mkcert -CAROOT) 'rootCA.pem'
+$env:COOKIE_SECURE = 'false' # local HTTP only, NEVER production
+cd backend
+./mvnw.cmd spring-boot:run
+```
+
+If the backend already runs, restart it with these settings. The route
+`GET /admin/dev/root-ca.crt` exists **only** when the Spring `dev` profile
+and explicit opt-in are BOTH active; a missing or malformed public certificate
+fails startup. The route is protected by the unchanged `/admin/**` Spring
+Security active-ADMIN authorization gate and is linked from the Admin dashboard
+only when enabled. It reads only the explicitly configured regular
+`rootCA.pem`, validates an X.509 CA certificate, and sends public DER bytes
+with an attachment filename. The private `rootCA-key.pem` and Vite's
+`dev-key.pem` are **never read or served**.
+
+On your Android phone, connected to the same WLAN, open
+`http://192.168.68.155:8080/admin/` (substitute the laptop's real WLAN IP,
+**not localhost on the phone**). Log in with an existing authorized *development*
+Admin account, select **Öffentliches CA-Zertifikat herunterladen**, and save
+the `.crt` file.
+
+**Security:** Because this first download is over HTTP, compare the
+certificate SHA-256 fingerprint with the value printed in the **backend's local
+terminal** through a *separate trusted channel* before approving it as a
+trusted CA on Android. A checksum shown by the same HTTP connection would
+not prove authenticity. If you cannot check the downloaded certificate
+independently, use a trusted USB file transfer instead. The server logs only
+the fingerprint, not any private key.
+
+Then on Android: Settings → Security / More security settings →
+Encryption & credentials → Install a certificate → CA certificate;
+select the downloaded file, confirm the Android warning and unlock
+the device as requested. Menu names vary. Close/reopen Chrome and visit
+`https://192.168.68.155:5173/` while `npm run dev:https` runs.
+Chrome must accept the certificate without a warning; verify
+`window.isSecureContext === true` before Web Bluetooth.
+
+**After download**, disable the option and restart the backend:
+```powershell
+Remove-Item Env:MIEZMERKER_DEV_CA_ENABLED -ErrorAction SilentlyContinue
+Remove-Item Env:MIEZMERKER_DEV_CA_PUBLIC_CERT_PATH -ErrorAction SilentlyContinue
+```
+
+The feature is never registered in ordinary test or production profiles.
+Do not install its CA on regular users' phones; remove the CA from Android
+after testing. Before public/production Go-live, release gates **#151**
+and **#113** forbid shipping this endpoint or private development materials.

@@ -196,6 +196,8 @@ class AdminShellTest {
         var login = formLogin("admin-a@example.org", "supersecret-password-a");
         assertTrue(login.headers().firstValue("location").orElse("").endsWith("/admin/"));
         assertEquals(200, get("/admin/").statusCode());
+        // The dev-only CA route does not exist in ordinary test/production profiles.
+        assertEquals(404, get("/admin/dev/root-ca.crt").statusCode());
     }
 
     @Test

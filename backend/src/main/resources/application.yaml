@@ -38,6 +38,11 @@ springdoc:
     path: /api/v1/openapi
   paths-to-match: /api/v1/**
 miezmerker:
+  # Never enabled in production. The controller requires the explicit 'dev'
+  # Spring profile as well as an opt-in flag; the file path is operator-supplied.
+  dev-ca:
+    enabled: ${MIEZMERKER_DEV_CA_ENABLED:false}
+    public-cert-path: ${MIEZMERKER_DEV_CA_PUBLIC_CERT_PATH:}
   security:
     # BCrypt cost for password hashing. Default 12; only the "test" profile
     # lowers it (application-test.yaml). Uncomment to override explicitly.
