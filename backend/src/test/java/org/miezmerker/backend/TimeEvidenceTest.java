@@ -27,7 +27,7 @@ import static org.miezmerker.backend.service.TemporalProjectionEngine.Quality.*;
 
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties={"spring.datasource.hikari.maximum-pool-size=2","spring.datasource.hikari.minimum-idle=1"})
-@ActiveProfiles("test") @Tag("node") @Tag("auth")
+@ActiveProfiles("test") @Tag("node") @Tag("auth") @Tag("visits")
 // This dedicated signer/uncertainty context cannot be reused by other classes.
 // Release its pool after the class instead of consuming CI PostgreSQL clients.
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
@@ -53,6 +53,7 @@ class TimeEvidenceTest {
     @Autowired TimeAnchorRepository anchors;
     @Autowired TimeEvidenceService evidence;
     @Autowired TemporalProjectionService projections;
+    @Autowired TemporalVisitService temporalVisits;
     @Autowired ObservationIngestService ingest;
     @Autowired CredentialIssuerService issuer;
     @Autowired NodeDeploymentRepository deployments;
@@ -107,6 +108,52 @@ class TimeEvidenceTest {
     static void status(int status,org.junit.jupiter.api.function.Executable code) {
         assertEquals(status,assertThrows(ResponseStatusException.class,code).getStatusCode().value());
     }
+    @Test void temporalVisitCapacityNeverSilentlyTruncatesHistory() {
+        var rows=new ArrayList<Object[]>();
+        for(long sequence=1;sequence<=4097;sequence++) rows.add(new Object[]{UUID.randomUUID(),orgA.getId(),node.getNodeId(),sequence,"SAME-CHIP"});
+        jdbc.batchUpdate("INSERT INTO raw_observations(id,organization_id,node_id,sequence,chip_id,clock_status) VALUES(?,?,?,?,?,'UNKNOWN')",rows);
+        status(503,()->temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,20));
+        assertEquals(4097,raws.count());
+    }
+    @Test void temporalVisitsLateEvidenceHistoricalSitePaginationAndTenantIsolation() throws Exception {
+        raw(1,42,900); raw(2,42,2000);
+        var unknown=temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,1);
+        assertEquals("OBSERVATION",unknown.items().getFirst().kind());
+        assertEquals("UNKNOWN",unknown.items().getFirst().quality()); assertEquals(1,unknown.nextOffset());
+        assertEquals(1,temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",1,1).items().size());
+        var site=sites.save(new FeedingSite(orgA,"Historical",null,null,null,null));
+        deployments.save(new NodeDeployment(orgA,node,site,Instant.ofEpochMilli(UTC-1000000),null));
+        var r=request(42,1000,1300,UTC); evidence.ingest(userA.getId(),r);
+        var reconstructed=temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,1);
+        assertEquals(1,reconstructed.items().size()); assertNull(reconstructed.nextOffset());
+        var visit=reconstructed.items().getFirst(); assertEquals("VISIT",visit.kind()); assertEquals(2,visit.observationCount());
+        assertEquals(site.getId(),visit.feedingSiteId()); assertEquals("RECONSTRUCTED",visit.quality());
+        assertTrue(visit.earliestUtcMs()<visit.latestUtcMs());
+        assertEquals(reconstructed,temporalVisits.read(userA.getId(),orgA.getId(),"same-chip",0,1));
+        assertEquals("DUPLICATE_IDENTICAL",evidence.ingest(userA.getId(),r).status());
+        assertEquals(reconstructed,temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,1));
+        assertTrue(raws.findAll().stream().allMatch(o->o.getObservedAtMs()==null && o.getFeedingSite()==null));
+        status(403,()->temporalVisits.read(userB.getId(),orgA.getId(),"SAME-CHIP",0,20));
+        assertTrue(temporalVisits.read(userB.getId(),orgB.getId(),"SAME-CHIP",0,20).items().isEmpty());
+        for(int offset:List.of(-1)) status(400,()->temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",offset,1));
+        status(400,()->temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,101));
+        assertTrue(temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",Integer.MAX_VALUE,20).items().isEmpty());
+        assertEquals(200,http("POST","/api/v1/auth/login","{\"email\":\"a@example.org\",\"password\":\"test-password\"}",true).statusCode());
+        var response=http("GET","/api/v1/organizations/"+orgA.getId()+"/visits/temporal?chipId=SAME-CHIP",null,false);
+        assertEquals(200,response.statusCode(),response.body());
+        assertEquals("no-store",response.headers().firstValue("Cache-Control").orElseThrow());
+        var visitJson=mapper.readTree(response.body()).path("items").get(0);
+        assertTrue(visitJson.path("earliestUtcMs").isString());
+        assertTrue(visitJson.path("observations").get(0).path("time").path("sequence").isString());
+        var admin=http("GET","/admin/visits/temporal?chipId=SAME-CHIP",null,false);
+        assertEquals(200,admin.statusCode(),admin.body());
+        assertTrue(admin.body().contains("Besuch mit rekonstruiertem Zeitfenster"));
+        assertTrue(admin.body().contains("data-utc-ms="));
+        assertTrue(admin.body().contains("Herkunft und relative Reihenfolge"));
+        assertFalse(admin.body().contains("1970"));
+        assertEquals(200,http("GET","/admin-temporal-times.js",null,false).statusCode());
+        assertEquals(403,http("GET","/api/v1/organizations/"+orgB.getId()+"/visits/temporal?chipId=SAME-CHIP",null,false).statusCode());
+    }
     @Test void lateAnchorAfterRawAckReprojectsWithoutMutationAndExactRetryIsNoop() {
         raw(1,42,900); raw(2,42,1000);
         var original=raws.findByNodeNodeIdAndSequence(node.getNodeId(),1).orElseThrow();
@@ -145,6 +192,7 @@ class TimeEvidenceTest {
         assertTrue(after.earliestUtcMs()>=before.earliestUtcMs()); assertTrue(after.latestUtcMs()<before.latestUtcMs());
         evidence.ingest(userA.getId(),request(1,2800,3000,UTC+9000));
         assertEquals(CONFLICT,page(0,10).items().getFirst().quality()); assertNull(page(0,10).items().getFirst().earliestUtcMs());
+        assertEquals("OBSERVATION",temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,20).items().getFirst().kind());
     }
     @Test void twoRebootsUseOnlyOuterBoundsAndUnknownShutdownDurations() {
         raw(1,1,1000); raw(2,5,1200); raw(3,5,9000); raw(4,9,1000);
@@ -153,6 +201,12 @@ class TimeEvidenceTest {
         var views=page(0,10).items(); assertEquals(RECONSTRUCTED,views.get(3).quality());
         assertEquals(BOUNDED,views.get(1).quality()); assertEquals(BOUNDED,views.get(2).quality());
         assertEquals(7800L,views.get(2).monotonicMs()-views.get(1).monotonicMs()); assertNull(views.get(1).approximateUtcMs());
+        var history=temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,20);
+        assertEquals(4,history.items().size());
+        assertEquals("BOUNDED",history.items().get(1).quality());
+        assertEquals("OBSERVATION",history.items().get(1).kind());
+        assertEquals("BOUNDED",history.items().get(2).quality());
+        assertTrue(history.items().stream().allMatch(i->i.observationCount()==1));
     }
     @Test void reversedUptimeAcrossPaginationAndBootOrderYieldConflict() {
         raw(1,1,1000); raw(2,1,900); evidence.ingest(userA.getId(),request(1,1000,1300,UTC));
@@ -172,6 +226,8 @@ class TimeEvidenceTest {
         assertNull(raws.findByNodeNodeIdAndSequence(node.getNodeId(),1).orElseThrow().getFeedingSite());
         deployments.save(new NodeDeployment(orgA,node,current,Instant.ofEpochMilli(UTC-200),Instant.ofEpochMilli(UTC+200)));
         assertNull(page(0,10).items().getFirst().derivedFeedingSiteId());
+        var uncertain=temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,20).items().getFirst();
+        assertNull(uncertain.feedingSiteId()); assertEquals("OBSERVATION",uncertain.kind());
     }
     @Test void frozenSiteSurvivesUnknownStrictProjection() {
         var site=sites.save(new FeedingSite(orgA,"Frozen",null,null,null,null));

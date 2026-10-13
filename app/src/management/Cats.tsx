@@ -9,6 +9,7 @@ import { Feedback, LoadState, millis, siteName, time, type Activity, type Cat, t
 import { requestOptions, result, useLoad, useMutation } from './data';
 import { CatPhoto } from './CatPhoto';
 import { VisitTable } from './VisitTable';
+import { TemporalHistory } from './TemporalHistory';
 import { SharedCare } from './SharedCare';
 import './cats.css';
 
@@ -53,7 +54,7 @@ function CatVisits({ organizationId, chipId, cats, sites }: {
       params: { path: { organizationId }, query: { chipId, limit: VISIT_PAGE_SIZE, offset, newestFirst: true } } })),
     [organizationId, chipId, offset]));
   return <section className="detail cat-visits" aria-label="Besuchsverlauf"><h2>Besuchsverlauf</h2>
-    <p className="cat-visits__hint">Besuchszeiten stammen aus Reads mit verlässlicher Uhrzeit. Reads mit unbekannter Uhrzeit werden nie zu Besuchen. Der Serverempfang ist keine Sichtungszeit.</p>
+    <p className="cat-visits__hint">Besuchszeiten stammen aus Reads mit verlässlicher Uhrzeit. Dieser historische Verlauf verwendet die ursprünglichen Uhrwerte. Später rekonstruierte Zeitfenster und unbekannte Beobachtungen stehen im separaten Verlauf. Der Serverempfang ist keine Sichtungszeit.</p>
     <LoadState {...visits}/>
     {visits.data && <>{offset > 0 && visits.data.length === 0
       ? <Status kind="empty" title="Keine weiteren Besuche." message="Die bisherigen Besuche sind auf der vorigen Seite verfügbar."/>
@@ -293,6 +294,7 @@ export function Cats({ organizationId }: { organizationId: string }) {
         searchReloadBaseline.current = data;
         setSelected(null); list.reload();
       }} />}
+    {selected?.chipId && data && <TemporalHistory key={`temporal-${selected.chipId}`} organizationId={organizationId} chipId={selected.chipId} sites={data.sites}/>}
     {selected?.chipId && data && <CatVisits key={`visits-${selected.chipId}`} organizationId={organizationId}
       chipId={selected.chipId} cats={data.cats} sites={data.sites}/>}
     </div>

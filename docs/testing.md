@@ -61,6 +61,10 @@ Backend tags cover all existing test classes:
 | schema | DatabaseSchemaTest, DisplayNameTest, NodeDisplayNameTest, SystemPrivilegeTest, SystemRoleMigrationTest |
 | system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |
 
+`TemporalVisitAggregationTest` and `TemporalProjectionEngineTest` belong to `visits`;
+`TimeEvidenceTest` belongs to `node`, `auth`, and `visits` and covers #132/#133
+evidence, temporal history, tenant isolation, and the explicit capacity limit.
+
 `SystemPrivilegeTest` also belongs to the `auth` domain.
 `NodeTimeBootstrapTest` and `NodeTimeProtocolTest` belong to `node` and `auth` and
 cover signed UTC bootstrap, authorization, claim races, bounded abuse controls,

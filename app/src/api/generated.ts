@@ -784,6 +784,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/visits/temporal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner-only interval visits and uncertain observations; rebuilt from immutable evidence */
+        get: operations["listTemporalVisits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}/visits/{visitId}": {
         parameters: {
             query?: never;
@@ -1368,6 +1385,57 @@ export interface components {
             ownObservationRef: string;
             /** Format: uuid */
             sourceOrganizationId: string;
+        };
+        TemporalVisitItem: {
+            ambiguousGap?: boolean;
+            chipId?: string;
+            earliestUtcMs?: string | null;
+            /** Format: uuid */
+            feedingSiteId?: string | null;
+            id?: string;
+            kind?: string;
+            latestUtcMs?: string | null;
+            /** Format: int32 */
+            observationCount?: number;
+            observations?: components["schemas"]["TemporalVisitRead"][];
+            quality?: string;
+        };
+        TemporalVisitPage: {
+            algorithmVersion?: string;
+            /** Format: int32 */
+            gapSeconds?: number;
+            items?: components["schemas"]["TemporalVisitItem"][];
+            /** Format: int32 */
+            nextOffset?: number | null;
+            timeProjectionVersion?: string;
+        };
+        TemporalVisitRead: {
+            chipId?: string;
+            /** Format: uuid */
+            nodeId?: string;
+            time?: components["schemas"]["TemporalVisitTime"];
+        };
+        TemporalVisitTime: {
+            algorithmVersion?: string;
+            anchorIds?: string[];
+            attributionProvenance?: string;
+            /** Format: int32 */
+            bootCounter?: number | null;
+            /** Format: uuid */
+            derivedDeploymentId?: string | null;
+            /** Format: uuid */
+            derivedFeedingSiteId?: string | null;
+            earliestUtcMs?: string | null;
+            incarnation?: string | null;
+            latestUtcMs?: string | null;
+            monotonicMs?: string | null;
+            /** Format: uuid */
+            observationId?: string;
+            /** @enum {string} */
+            quality?: "VERIFIED" | "RECONSTRUCTED" | "BOUNDED" | "ESTIMATED" | "UNKNOWN" | "CONFLICT";
+            reason?: string;
+            sequence?: string;
+            uncertaintyPolicies?: string[];
         };
         UpdateCatRequest: {
             chipId?: string;
@@ -2894,6 +2962,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecomputeVisitsResponse"];
+                };
+            };
+        };
+    };
+    listTemporalVisits: {
+        parameters: {
+            query: {
+                chipId: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["TemporalVisitPage"];
                 };
             };
         };

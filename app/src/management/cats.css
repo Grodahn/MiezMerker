@@ -45,3 +45,6 @@
   .cat-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .visit-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.temporal-card { overflow-wrap: anywhere; min-width: 0; }
+.temporal-card details ul { padding-inline-start: 1.25rem; }
