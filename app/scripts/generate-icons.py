@@ -93,7 +93,7 @@ def make_icon(source: tuple[int, int, bytes], size: int, maskable: bool = False)
 
     # Maskable launchers crop outside their safe area. Add breathing room to
     # keep both the cat and the MiezMerker wordmark visible.
-    side = round(size * 0.76) if maskable else size
+    side = round(size * 0.70) if maskable else size
     start = (size - side) // 2
     output = bytearray()
     for y in range(size):
