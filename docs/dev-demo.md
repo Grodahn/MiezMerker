@@ -39,6 +39,8 @@ ordinary organization bootstrap or open an HTTP listener.
 
 Start the backend normally afterward (`cd backend; ./mvnw.cmd spring-boot:run`;
 use `COOKIE_SECURE=false` for local HTTP) and the PWA (`cd app; npm ci; npm run dev`).
+For a physical Android phone connecting to the ESP32 via Web Bluetooth, use
+the **HTTPS** setup below instead of the HTTP loopback-only development server.
 Open `http://127.0.0.1:5173/`, log in as `admin@miezmerker.local` with the password
 injected above, and select **MiezMerker Demo** (`miezmerker-demo`). The account is
 ACTIVE, with an independent ACTIVE ADMIN membership. SYSADMIN is granted only via
@@ -99,3 +101,53 @@ chip strings are identical. Removing the demo account/data before go-live remain
 mandatory; the known credential must never exist on a production-accessible instance.
 
 Focused verification: `python scripts/test.py backend --test DevDemoTest`.
+
+## Local HTTPS for Android / Web Bluetooth (IntelliJ + Vite)
+
+Chrome on Android requires a **secure context** for Web Bluetooth. A laptop's
+LAN address such as `http://192.168.68.155:5173/` is **not** a secure
+context; Android's `localhost` exception does not apply to your laptop's IP.
+
+Use a locally trusted `mkcert` development certificate, scoped to your
+computer/phone. From a Windows PowerShell in the repository root:
+
+```powershell
+winget install --exact --id FiloSottile.mkcert
+# Open a new shell if mkcert is not immediately found.
+mkcert -install
+New-Item -ItemType Directory -Force app\.cert | Out-Null
+# Replace 192.168.68.155 with the current laptop Wi-Fi address:
+mkcert -key-file app\.cert\dev-key.pem -cert-file app\.cert\dev-cert.pem 192.168.68.155 localhost 127.0.0.1
+cd app
+npm ci
+npm run dev:https
+```
+
+In IntelliJ, use the `app` working directory and either run
+`npm run dev:https` in its terminal or configure an npm Run Configuration
+with script `dev:https`. This script binds Vite to `0.0.0.0:5173` and
+activates HTTPS using the files in `app/.cert/`. Regular `npm run dev` stays
+HTTP/loopback for existing development and CI behavior. Backend `/api` and
+`/admin` requests continue through Vite's existing HTTP backend proxy, so no
+second public backend endpoint is required.
+
+On the **Android test device**, explicitly install/trust the **public**
+`rootCA.pem` from the directory shown by `mkcert -CAROOT` as a CA certificate,
+following that device's Android security/certificate settings.
+**Never copy, upload or commit `rootCA-key.pem` or `dev-key.pem`.**
+Installing a private development CA gives it certificate-signing trust on that
+device: use only personal test hardware, secure the CA key on the laptop and
+remove the CA certificate when testing is done. The project's
+`app/.cert/` is ignored by Git.
+
+Open `https://192.168.68.155:5173/` on the phone (substitute the address
+used when generating the certificate). The browser must accept TLS **without**
+a certificate warning. Then `window.isSecureContext` should be `true`, and
+`navigator.bluetooth` should exist in Chrome on a supported Android device.
+A certificate warning or HTTP URL is **not** an acceptable Web Bluetooth fix.
+If the LAN IP changes, regenerate the leaf certificate for the new IP. Check
+Windows Firewall private-network access to TCP 5173 if the phone cannot connect.
+
+The HTTPS files are optional and **not needed** for production builds or CI.
+For production use deploy a publicly trusted HTTPS certificate; never deploy
+the local `mkcert` private keys.
