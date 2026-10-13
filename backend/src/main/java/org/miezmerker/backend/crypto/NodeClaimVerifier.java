@@ -15,11 +15,12 @@ import org.springframework.stereotype.Service;
  * MM-CLAIM-v1\n{nodeId}\n{publicKeyX_b64u}\n{publicKeyY_b64u}\n{timestampMillis}\nclaim-mode
  * </pre>
  * The node signs these bytes with its device private key (ECDSA/SHA256, raw 64-byte
- * {@code r||s} transported as base64url). The firmware only produces such an advertisement
- * while its physical claim mode is active (abstract {@code ClaimMode} port; fake for tests,
- * real button handling in #4). The backend verifies the signature, the
- * {@code claim-mode} marker and timestamp freshness (5 minutes), so a PWA flag alone
- * cannot claim a node that is not physically in claim mode.
+ * {@code r||s} transported as base64url). Any ready UNCLAIMED node may sign
+ * this proof without a physical gate (#154). The historical {@code claim-mode}
+ * suffix is retained as a domain-separation marker for wire compatibility; it
+ * is not evidence of a button press. Signature and 5-minute freshness remain
+ * mandatory for first ownership reservation. Same-owner/key recovery verifies
+ * authenticity while allowing the original expired proof.
  */
 @Service
 public class NodeClaimVerifier {

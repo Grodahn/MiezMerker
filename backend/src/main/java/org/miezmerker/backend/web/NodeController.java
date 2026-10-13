@@ -37,7 +37,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Node provisioning/claiming (#18).
  *
  * <p>Node identity is a persistent random UUIDv4 plus a persistent P-256 device key pair
- * (never MAC/DB id). Claim requires ACTIVE ADMIN + UNCLAIMED node + physical claim mode
+ * (never MAC/DB id). Claim requires ACTIVE ADMIN + UNCLAIMED node + signed device proof
  * (verified via the node's signed claim advertisement). The operation is atomic and
  * idempotent for retries. Cross-organization reuse requires factory reset/new identity.
  *
@@ -125,7 +125,7 @@ public class NodeController {
 
     @PostMapping(value = "/claim", consumes = "application/json", produces = "application/json")
     @Operation(operationId = "claimNode",
-            summary = "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + claim mode)")
+            summary = "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + signed node identity)")
     @Transactional
     public ClaimReceiptView claim(@Valid @RequestBody ClaimNodeRequest request,
             @AuthenticationPrincipal AppUserDetails principal) {
@@ -156,8 +156,8 @@ public class NodeController {
             claimVerifier.verify(request.nodeId(), request.publicKeyX(), request.publicKeyY(),
                     request.timestampMillis(), request.claimSignature(), !retry);
         } catch (IllegalArgumentException e) {
-            // Includes: outside claim mode (bad signature/marker), stale advertisement.
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "claim mode proof invalid: "
+            // Includes: invalid signature/marker, stale advertisement.
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "claim identity proof invalid: "
                     + e.getMessage());
         }
 

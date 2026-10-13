@@ -85,7 +85,7 @@ extern "C" void app_main() {
     ESP_LOGI(tag, "app_main ESP32-C3 IDF=%s firmware=%s", esp_get_idf_version(), esp_app_get_description()->version);
     BoardClock clock;
     BoardRandom random;
-    PhysicalClaimMode physical(clock);
+    DirectClaimMode direct_claim;
     // Bootloader entropy is off before app_main. Enable it only while radio/ADC
     // are unused; the BLE controller supplies entropy after NimBLE starts.
     bootloader_random_enable();
@@ -98,14 +98,13 @@ extern "C" void app_main() {
     NvsBlob evidence_blob("node_state", "time_v1");
     require(evidence_blob.open(), "time evidence storage");
     PersistentTimeEvidence evidence(evidence_blob);
-    NodeIdentityManager identity(identity_store, physical, random, crypto, clock);
+    NodeIdentityManager identity(identity_store, direct_claim, random, crypto, clock);
     Core core(clock, observations, observations, identity, random, CoreConfig{2000, &evidence});
     require(miezmerker::esp32::initialize(core) && identity.ready(), "firmware-core initialization");
     require(crypto.keypair_valid(identity.identity()), "persisted keypair consistency");
     // Secure time bootstrap (#130): challenge-bound backend proofs only.
-    // BLE transport of challenge/proof/acceptance belongs to #131; this
-    // manager exposes the minimal pre-auth operation (challenge, proof,
-    // verification result, durable acceptance) without new GATT opcodes.
+    // #154 connects the registration challenge/proof bridge to this manager.
+    // Durable acceptance stays here; full evidence retrieval/ACK is #131.
     node_time::NodeTimeBootstrapManager time_bootstrap(
         clock, random, crypto, evidence, verify_time_proof, crypto.issuer());
     require(time_bootstrap.on_boot(core.node_id(), core.incarnation(), core.boot_counter()),
@@ -129,6 +128,7 @@ extern "C" void app_main() {
     ble::SyncServer sync(core, authorizer, clock, signer, config);
     ble_gatt::OwnerMetadata owner{identity.identity().organization_id, "", identity.identity().organization_name, identity.identity().public_contact};
     ble_gatt::GattRouter router(sync, owner); router.set_node_identity(&identity);
+    router.set_time_bootstrap(&time_bootstrap);
     ble_gatt::GattEndpoint endpoint(router, sync);
     auto mutex = xSemaphoreCreateRecursiveMutex(); require(mutex != nullptr, "state mutex");
     NimblePeripheral peripheral(router, endpoint, clock, mutex);
@@ -166,14 +166,12 @@ extern "C" void app_main() {
             const auto held = now - pressed_at; pressed_at = 0;
             if (held >= 12000) {
                 if (now < reset_armed_until) {
-                    peripheral.close_session(); physical.cancel();
+                    peripheral.close_session();
                     require(core.factory_reset(), "intentional physical factory reset");
                     esp_restart();
                 }
                 reset_armed_until = now + 30000;
                 ESP_LOGW(tag, "factory reset ARMED for 30s; hold BOOT 12s and release again to confirm data/key loss");
-            } else if (held >= 2000 && held <= 5000 && !identity.claimed()) {
-                physical.activate(); ESP_LOGI(tag, "physical claim window opened (120s); trusted UTC still required");
             } else reset_armed_until = 0;
         }
 #if CONFIG_MM_DEV_GPIO_RFID

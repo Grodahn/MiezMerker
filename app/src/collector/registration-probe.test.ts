@@ -23,7 +23,7 @@ async function transport(tamper = false) {
     write: vi.fn().mockResolvedValue(undefined), read: vi.fn().mockResolvedValue(encodeFrame({ version: 1,
       opcode: Opcode.ClaimAdvertisementResponse, payload: encodeClaimAdvertisement({ nodeId: NODE, publicKey, timestampMillis, signature }) })) };
 }
-test('real signed physical claim advertisement verifies without server mutations', async () => {
+test('real signed claim advertisement verifies without server mutations', async () => {
   const ble = await transport();
   await verifyRegistrationCandidate(ble, NODE, 'org');
   expect(ble.write).toHaveBeenCalledTimes(1);
@@ -34,9 +34,9 @@ test('forged signature fails closed and disconnects', async () => {
   await expect(verifyRegistrationCandidate(ble, NODE, 'org')).rejects.toThrow('Signatur');
   expect(ble.disconnect).toHaveBeenCalled();
 });
-test('missing physical claim mode / UTC proof fails closed', async () => {
+test('missing signed UTC bootstrap fails closed', async () => {
   const ble = await transport(); ble.read.mockResolvedValue(encodeFrame({ version: 1, opcode: Opcode.Error, payload: new Uint8Array([1]) }));
-  await expect(verifyRegistrationCandidate(ble, NODE, 'org')).rejects.toThrow('vertrauenswürdige UTC');
+  await expect(verifyRegistrationCandidate(ble, NODE, 'org')).rejects.toThrow('Vertrauenswürdige UTC');
 });
 test('spoofed public UUID is not accepted', async () => {
   hello.mockResolvedValue({ nodeId: 'other', claimState: 0 });

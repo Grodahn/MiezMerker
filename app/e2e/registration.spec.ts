@@ -78,7 +78,8 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
   await expect(dialog).not.toBeVisible();
   await expect(add).toBeFocused();
   await add.click();
-  await dialog.getByRole('button', { name: 'Ja', exact: true }).click();
+  await expect(dialog).toContainText('Kein Tastendruck am Napf erforderlich.');
+  await dialog.getByRole('button', { name: 'Napf registrieren', exact: true }).click();
   await expect(dialog.getByLabel('Futterstelle auswählen')).toBeVisible();
   await expect(dialog.getByPlaceholder('Der Grüne')).toBeFocused();
   await dialog.getByPlaceholder('Der Grüne').fill('Der Grüne');

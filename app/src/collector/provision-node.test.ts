@@ -1,6 +1,8 @@
 // @vitest-environment node
 import 'fake-indexeddb/auto';
 import claimVector from '../../../protocol/fixtures/claim-advertisement-v1.hex?raw';
+import timeVector from '../../../protocol/fixtures/node-time-v1.json';
+import { fromBase64Url } from '../platform/device-keys';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 const { post, auth, listeners } = vi.hoisted(() => ({ post: vi.fn(), auth: vi.fn(), listeners: new Set<() => void>() }));
 vi.mock('../api/client', () => ({ api: { POST: post } }));
@@ -25,12 +27,13 @@ beforeEach(async () => {
   auth.mockReturnValue({ user: { userId: 'admin', memberships: [{ organizationId: 'org-a', status: 'ACTIVE', role: 'ADMIN' }] },
     activeOrganizationId: 'org-a', csrfToken: 'csrf', sessionChecked: true, sessionVerified: true });
   Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
-  post.mockResolvedValue({ data: { nodeId: NODE, organizationId: 'org-a', receipt: 'signed-receipt' } });
+  post.mockImplementation(async path => ({ data: path === '/api/v1/nodes/time-bootstrap'
+    ? { proof: timeVector.proof } : { nodeId: NODE, organizationId: 'org-a', receipt: 'signed-receipt' } }));
 });
 afterEach(async () => { await new CollectorDatabase().delete(); });
 
 class ClaimTransport {
-  claimed = false; physicalMode = true; dropReceipt = false;
+  claimed = false; trustedTime = true; dropReceipt = false; bootstrapAvailable = true; rejectReceiptOnce = false;
   last = new Uint8Array(); operations: Opcode[] = [];
   async connect() {} async disconnect() {} async read() { return this.last; }
   async write(bytes: Uint8Array) {
@@ -44,13 +47,27 @@ class ClaimTransport {
         opcode = Opcode.OwnerResponse; payload = encodeOwnerResponse({ nodeId: NODE, claimState: this.claimed ? 1 : 0,
           organizationId: this.claimed ? 'org-a' : '', organizationName: this.claimed ? 'Org A' : '', organizationSlug: '', publicContact: '' }); break;
       case Opcode.ClaimAdvertisementRequest:
-        if (!this.physicalMode) { opcode = Opcode.Error; payload = new Uint8Array(); break; }
+        if (!this.trustedTime) { opcode = Opcode.Error; payload = new Uint8Array(); break; }
         opcode = Opcode.ClaimAdvertisementResponse; payload = encodeClaimAdvertisement({ nodeId: NODE,
           publicKey: new Uint8Array(65).fill(4), signature: new Uint8Array(64).fill(1), timestampMillis: 1790899200000n }); break;
+      case Opcode.RegistrationTimeChallengeRequest: {
+        if (!this.bootstrapAvailable) { opcode = Opcode.Error; payload = new Uint8Array(); break; }
+        opcode = Opcode.RegistrationTimeChallengeResponse; payload = new Uint8Array(239);
+        const view = new DataView(payload.buffer), c = timeVector.challenge;
+        const uuid = (value: string) => new Uint8Array(value.replaceAll('-', '').match(/../g)!.map(b => parseInt(b, 16)));
+        view.setUint16(0, 1, true); payload.set(uuid(NODE), 2); payload.set(uuid(c.incarnation), 18);
+        view.setUint32(34, c.bootCounter, true); payload.set(fromBase64Url(c.challengeNonce), 38);
+        view.setBigUint64(70, 1000n, true); payload.set(fromBase64Url(c.devicePublicKey), 78);
+        payload.set(fromBase64Url(c.devicePublicKeyFingerprint), 143); payload.set(fromBase64Url(c.deviceChallengeSignature), 175);
+        break;
+      }
+      case Opcode.RegistrationTimeProofRequest:
+        this.trustedTime = true; opcode = Opcode.RegistrationTimeProofResponse; payload = new Uint8Array([0]); break;
       case Opcode.ClaimReceiptRequest:
         const db = new CollectorDatabase();
         expect((await db.nodeMeta.get(NODE))?.claimReceipt).toBe('signed-receipt'); db.close();
         if (this.dropReceipt) { this.dropReceipt = false; throw new Error('BLE disconnected'); }
+        if (this.rejectReceiptOnce) { this.rejectReceiptOnce = false; opcode = Opcode.Error; payload = new Uint8Array(); break; }
         this.claimed = true; opcode = Opcode.ClaimReceiptResponse; payload = new Uint8Array([0]); break;
       default: throw new Error('Protected request during claim');
     }
@@ -74,9 +91,32 @@ test('MEMBER cannot read or deliver claim material', async () => {
   const transport = new ClaimTransport(); await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('Nur ADMIN');
   expect(transport.operations).toEqual([]); expect(post).not.toHaveBeenCalled();
 });
-test('inactive physical claim mode never requests a backend receipt', async () => {
-  const transport = new ClaimTransport(); transport.physicalMode = false;
-  await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('Claiming abgelehnt'); expect(post).not.toHaveBeenCalled();
+test('missing trusted time cannot obtain a claim receipt without signed bootstrap', async () => {
+  const transport = new ClaimTransport(); transport.trustedTime = false; transport.bootstrapAvailable = false;
+  await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('Vertrauenswürdige UTC'); expect(post).not.toHaveBeenCalled();
+});
+
+test('cold UNCLAIMED registration installs signed time, claims, and updates durable state without button interaction', async () => {
+  const transport = new ClaimTransport(); transport.trustedTime = false;
+  await provisionNode(transport, NODE, 'org-a');
+  expect(post.mock.calls.map(call => call[0])).toEqual(['/api/v1/nodes/time-bootstrap', '/api/v1/nodes/claim']);
+  expect(transport.claimed).toBe(true);
+  const db = new CollectorDatabase(); expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
+});
+
+test('reboot after interrupted reservation restores time and delivers the cached receipt', async () => {
+  const transport = new ClaimTransport(); transport.dropReceipt = true;
+  await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('disconnected');
+  transport.trustedTime = false; await provisionNode(transport, NODE, 'org-a');
+  expect(post.mock.calls.filter(call => call[0] === '/api/v1/nodes/claim')).toHaveLength(1);
+  expect(transport.claimed).toBe(true);
+});
+
+test('expired receipt or wide old time interval triggers one secure bootstrap and same-owner renewal', async () => {
+  const transport = new ClaimTransport(); transport.rejectReceiptOnce = true;
+  await provisionNode(transport, NODE, 'org-a');
+  expect(post.mock.calls.map(call => call[0])).toEqual(['/api/v1/nodes/claim', '/api/v1/nodes/time-bootstrap', '/api/v1/nodes/claim']);
+  expect(transport.claimed).toBe(true);
 });
 
 test('a claim response received after switching organization is saved but never delivered to BLE', async () => {

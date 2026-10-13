@@ -454,8 +454,8 @@ void router_claim_round_trip() {
     ble_gatt::GattRouter router(server, f.owner); router.set_node_identity(&manager);
     const auto request = encode_frame(Frame{1, Opcode::ClaimAdvertisementRequest, {}});
     auto response = decode_frame(router.handle_frame(request, 1790899300));
-    CHECK(response && response->opcode == Opcode::Error);
-    mode.enabled = true;
+    CHECK(response && response->opcode == Opcode::ClaimAdvertisementResponse); // no physical gate
+    mode.enabled = false;
     response = decode_frame(router.handle_frame(request, 1790899300));
     CHECK(response && response->opcode == Opcode::ClaimAdvertisementResponse);
     auto advertisement = decode_claim_advertisement(response->payload);

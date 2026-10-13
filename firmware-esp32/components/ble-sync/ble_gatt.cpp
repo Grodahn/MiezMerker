@@ -67,7 +67,9 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         fragments.clear();
         expected_total = 0;
         auto decoded = decode_frame(assembled);
-        if (!decoded || decoded->opcode != (receipt ? Opcode::ClaimReceiptRequest : Opcode::AuthRequest)) return reject();
+        if (!decoded || (receipt
+            ? decoded->opcode != Opcode::ClaimReceiptRequest && decoded->opcode != Opcode::RegistrationTimeProofRequest
+            : decoded->opcode != Opcode::AuthRequest)) return reject();
         return handle_frame(assembled, now_s);
     }
     auto frame = decode_frame(request);
@@ -76,10 +78,45 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         return error_frame(SyncError::UnknownVersion, "unsupported version");
     }
     switch (frame->opcode) {
+        case Opcode::RegistrationTimeChallengeRequest: {
+            if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad time challenge request");
+            if (!identity_ || !identity_->ready() || !time_bootstrap_)
+                return error_frame(SyncError::ClockUnavailable, "signed time bootstrap unavailable");
+            node_time::NodeTimeChallenge challenge;
+            const auto& node = identity_->identity();
+            if (!time_bootstrap_->create_challenge(node.public_key, node.private_key, challenge))
+                return error_frame(SyncError::ClockUnavailable, "time challenge unavailable");
+            // 239 bytes, bounded below ATT's 512-byte attribute limit. Explicit
+            // little-endian encoding, never memcpy of a padded native struct.
+            std::vector<std::uint8_t> payload;
+            auto append = [&](const auto& bytes) { payload.insert(payload.end(), bytes.begin(), bytes.end()); };
+            auto integer = [&](std::uint64_t value, unsigned size) {
+                for (unsigned i = 0; i < size; ++i) payload.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+            };
+            integer(challenge.version, 2);
+            append(challenge.node_id.bytes); append(challenge.incarnation.bytes);
+            integer(challenge.boot_counter, 4); append(challenge.nonce);
+            integer(challenge.challenge_uptime_ms, 8); append(challenge.device_public_key);
+            append(challenge.fingerprint); append(challenge.signature);
+            return encode_frame({1, Opcode::RegistrationTimeChallengeResponse, payload});
+        }
+        case Opcode::RegistrationTimeProofRequest: {
+            auto proof = decode_claim_receipt(frame->payload); // same bounded UTF-8/JWS envelope
+            if (!proof) return error_frame(SyncError::InvalidFrame, "bad time proof");
+            if (!identity_ || !identity_->ready() || !time_bootstrap_)
+                return error_frame(SyncError::ClockUnavailable, "signed time bootstrap unavailable");
+            const auto& node = identity_->identity();
+            std::string acceptance;
+            if (!time_bootstrap_->submit_proof(*proof, node.public_key, node.private_key, acceptance))
+                return error_frame(SyncError::InvalidProof, "time proof rejected");
+            // The manager durably records the anchor and signed acceptance before
+            // success. This exchange grants time trust only, never ownership/auth.
+            return encode_frame({1, Opcode::RegistrationTimeProofResponse, {0}});
+        }
         case Opcode::ClaimAdvertisementRequest: {
             ClaimAdvertisement advertisement;
             if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad claim request");
-            if (!identity_ || !identity_->sign_claim(advertisement)) return error_frame(SyncError::InvalidState, "physical claim mode required");
+            if (!identity_ || !identity_->sign_claim(advertisement)) return error_frame(SyncError::InvalidState, "UNCLAIMED ready identity and trusted UTC required");
             ClaimAdvertisementPayload payload;
             const auto& node = identity_->identity();
             for (std::size_t i = 0; i < 16; ++i) payload.node_id.bytes[i] = std::to_integer<std::uint8_t>(node.node_id[i]);

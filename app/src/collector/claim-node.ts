@@ -1,7 +1,7 @@
 // Node claiming orchestration (issue #8, provisioning #18).
 //
-// For an UNCLAIMED node only ACTIVE ADMIN may claim it, the node must be in
-// physical claim mode (#18/#6), the existing backend/provisioning API is used,
+// For an UNCLAIMED node only ACTIVE ADMIN may claim it; no physical release
+// is required (#154). The backend/provisioning API is used,
 // and interrupted/retried claiming stays safe (idempotent same-owner retry).
 // MEMBER never receives a hidden escalation path: the client gates on role
 // and the backend enforces ACTIVE ADMIN again server-side.
@@ -12,7 +12,7 @@ import { CollectorDatabase } from '../platform/offline-store';
 
 export type ClaimFailureKind =
   | 'forbidden-role'
-  | 'claim-mode'
+  | 'trusted-time'
   | 'conflict-foreign'
   | 'backend'
   | 'offline';
@@ -72,13 +72,9 @@ async function csrfHeaders(): Promise<Record<string, string>> {
 export async function claimNode(
   organizationId: string,
   input: ClaimInput,
-  options: { claimModeConfirmed: boolean; assertActive?: () => void } = { claimModeConfirmed: false },
+  options: { assertActive?: () => void } = {},
 ): Promise<ClaimOutcome> {
   assertAdminMayClaim(organizationId);
-  if (!options.claimModeConfirmed) {
-    throw new ClaimError('claim-mode',
-      'Physischer Claim-Modus am Node erforderlich (Taste/Power-On-Geste per #4). Bitte am Gerät bestätigen.');
-  }
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new ClaimError('offline', 'Claiming benötigt Internet (Backend-Provisionierung). Bitte online erneut versuchen.');
   }
@@ -102,7 +98,7 @@ export async function claimNode(
     const status = (response as Response | undefined)?.status;
     if (status === 403) {
       throw new ClaimError('forbidden-role',
-        'Claiming verweigert: ACTIVE ADMIN erforderlich oder Claim-Modus-Nachweis ungültig.');
+        'Registrierung verweigert: ACTIVE ADMIN erforderlich oder signierter Identitäts-/Zeitnachweis ungültig.');
     }
     if (status === 409) {
       throw new ClaimError('conflict-foreign',

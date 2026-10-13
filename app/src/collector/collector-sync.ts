@@ -140,7 +140,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     emit({ owner: hello.owner });
     if (hello.claimState !== 1) {
       emit({ nodeState: 'failed', unclaimed: true,
-        nodeMessage: 'Node ist UNCLAIMED. Nur ADMIN kann ihn im physischen Claim-Modus claimen.' });
+        nodeMessage: 'Node ist UNCLAIMED. Ein aktiver ADMIN kann ihn direkt registrieren.' });
       return view;
     }
     if (hello.owner && hello.owner.organizationId.toLowerCase() !== organizationId.toLowerCase()) {
@@ -191,7 +191,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
 
     if (engineResult.unclaimed) {
       emit({ nodeState: 'failed', unclaimed: true, owner: engineResult.owner,
-        nodeMessage: 'Node ist UNCLAIMED. Nur ADMIN kann ihn im physischen Claim-Modus claimen.' });
+        nodeMessage: 'Node ist UNCLAIMED. Ein aktiver ADMIN kann ihn direkt registrieren.' });
       return view;
     }
     if (engineResult.foreign) {

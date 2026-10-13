@@ -30,8 +30,8 @@ struct NodeIdentity {
     std::string claim_receipt;
 };
 
-// Physical claim-mode trigger (#18). Real ESP32-C3 button handling is #4; the core
-// only depends on this port so tests can use a fake and later firmware a real one.
+// Legacy adapter retained for source compatibility. Initial claiming no longer
+// consults this port (#154); signed identity, trusted time and receipts govern it.
 class ClaimMode {
 public:
     virtual ~ClaimMode() = default;
@@ -39,7 +39,7 @@ public:
 };
 
 // Trusted node wall clock. Never take proof timestamps from the BLE peer: that
-// would let it stockpile future-dated claims during one physical claim window.
+// would let it stockpile future-dated claims and defeat backend freshness checks.
 class ClaimClock {
 public:
     virtual ~ClaimClock() = default;
@@ -103,12 +103,12 @@ public:
     bool store(const IdentityRecord& record) override;
     bool erase() override { return false; } // Reset must rotate identity and keys.
 
-    // True only while the physical claim mode is active (fake in tests, button in #4).
-    bool in_claim_mode() const { return ready_ && !claimed() && claim_mode_.active(); }
+    // Any ready UNCLAIMED identity can register, in development and production.
+    bool in_claim_mode() const { return ready_ && !claimed(); }
     bool claimed() const { return !identity_.organization_id.empty(); }
     bool apply_claim(const std::string& receipt);
 
-    // Produce the canonical backend claim proof internally, only in claim mode.
+    // Produce the canonical backend claim proof for a ready UNCLAIMED identity.
     bool sign_claim(ClaimAdvertisement& advertisement);
     // A later session challenge proves possession of the persisted device key.
     bool sign_session_challenge(std::span<const std::byte> challenge,
@@ -128,7 +128,6 @@ private:
     bool provision_new();
     bool reload();
     NodeIdentityStore& store_;
-    ClaimMode& claim_mode_;
     RandomSource& random_;
     NodeCrypto& crypto_;
     ClaimClock& clock_;

@@ -130,7 +130,28 @@ class NodeClaimTest {
     }
 
     @Test
-    void adminClaimsUnclaimedNodeInClaimMode() throws Exception {
+    void unauthenticatedDisabledUserAndDisabledOrganizationCannotClaim() throws Exception {
+        Seed s = seed();
+        NodeKeys n = NodeKeys.fresh();
+        long ts = Instant.now().toEpochMilli();
+        String sig = NodeClaimVerifier.signClaim(n.kp().getPrivate(), n.nodeId(), n.x(), n.y(), ts);
+        String body = claimJson(n, s.orgA().getId(), ts, sig);
+        assertEquals(401, post("/api/v1/nodes/claim", body).statusCode());
+        login("admin-a@example.org", "supersecret-password-a");
+        var user = users.findByEmail("admin-a@example.org").orElseThrow();
+        user.setStatus(org.miezmerker.backend.domain.UserStatus.DISABLED);
+        users.save(user);
+        assertEquals(403, post("/api/v1/nodes/claim", body).statusCode());
+        user.setStatus(org.miezmerker.backend.domain.UserStatus.ACTIVE);
+        users.save(user);
+        s.orgA().setStatus(org.miezmerker.backend.domain.OrganizationStatus.DISABLED);
+        organizations.save(s.orgA());
+        assertEquals(403, post("/api/v1/nodes/claim", body).statusCode());
+        assertEquals(0, nodes.count());
+    }
+
+    @Test
+    void regularAdminClaimsUnclaimedNodeWithoutPhysicalRelease() throws Exception {
         Seed s = seed();
         login("admin-a@example.org", "supersecret-password-a");
         NodeKeys n = NodeKeys.fresh();
@@ -171,12 +192,12 @@ class NodeClaimTest {
     }
 
     @Test
-    void adminCannotClaimOutsideClaimMode() throws Exception {
+    void adminCannotClaimWithForgedOrStaleIdentityProof() throws Exception {
         Seed s = seed();
         login("admin-a@example.org", "supersecret-password-a");
         NodeKeys n = NodeKeys.fresh();
         long ts = Instant.now().toEpochMilli();
-        // Fake node without claim mode: signature over garbage / wrong key.
+        // Forged node identity: signature over garbage / wrong key.
         KeyPair other = EcKeyUtils.generateP256();
         String badSig = NodeClaimVerifier.signClaim(other.getPrivate(), n.nodeId(), n.x(), n.y(), ts);
         var res = post("/api/v1/nodes/claim", claimJson(n, s.orgA().getId(), ts, badSig));

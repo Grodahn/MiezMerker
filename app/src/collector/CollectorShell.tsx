@@ -350,7 +350,7 @@ export function CollectorShell(props: {
         else {
           const input = inputs.find(input => input.browserId === candidate.browserId);
           if (input) {
-            setFreigebenMessage('Napf verbunden. Physischer Claim-Nachweis wird geprüft …');
+            setFreigebenMessage('Napf verbunden. Signierter Identitätsnachweis wird geprüft …');
             await verifyRegistrationCandidate(new WebBluetoothTransport(input.device as never), candidate.nodeId!, organizationId, operation.signal);
             if (stillActive()) { setFreigebenMessage(''); verifiedCandidate = candidate; }
           }
@@ -638,8 +638,8 @@ export function CollectorShell(props: {
       onCancel={event => { event.preventDefault(); closeRegistration(); }}>
       {registrationCandidate && <>
         <h2>Neuer Napf gefunden. Registrieren?</h2>
-        <p>Bitte den physischen Claim-Modus am Napf aktiv lassen. Die Registrierung benötigt Internet.</p>
-        <button type="button" onClick={() => claimUnclaimedNode(registrationCandidate)}>Ja</button>
+        <p>Die Registrierung benötigt Internet und eine aktive ADMIN-Mitgliedschaft. Kein Tastendruck am Napf erforderlich.</p>
+        <button type="button" onClick={() => claimUnclaimedNode(registrationCandidate)}>Napf registrieren</button>
         <button ref={declineButton} type="button" onClick={closeRegistration}>Nein</button>
       </>}
       {claimBusy && <Status kind="loading" title="Napf wird sicher registriert …"/>}

@@ -47,7 +47,12 @@ public class NodeTimeService {
                     || existing.getOrganization() == null || !org.equals(existing.getOrganization().getId())) throw denied();
         } else {
             tenants.requireAdmin(user,org);
-            if (existing != null && (existing.getState() != NodeState.UNCLAIMED || existing.getOrganization() != null)) throw denied();
+            // Interrupted registration can reserve ownership before receipt delivery.
+            // After reboot that same ADMIN/key needs time again to verify a receipt.
+            // The checks below still bind the exact registered device key.
+            if (existing != null && (existing.getState() != NodeState.UNCLAIMED || existing.getOrganization() != null)
+                    && (existing.getState() != NodeState.CLAIMED || existing.getOrganization() == null
+                        || !org.equals(existing.getOrganization().getId()))) throw denied();
             if (existing == null && nodes.findByFingerprint(c.devicePublicKeyFingerprint()).isPresent()) throw denied();
         }
         if (existing != null && (!existing.getFingerprint().equals(c.devicePublicKeyFingerprint())

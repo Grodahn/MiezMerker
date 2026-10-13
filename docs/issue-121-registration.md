@@ -6,10 +6,10 @@ in the existing device list; subsequent batch synchronization uses `getDevices()
 Permission alone never establishes proximity, identity or ownership.
 
 The existing public GATT probe connects first. An ACTIVE organization ADMIN sees
-the Ja/Nein dialog only after a read-only, cryptographically verified physical
-claim advertisement binds the device key to the public UUID. Nein/Escape causes
-no claim or deployment. Ja calls the existing #18 provisioning implementation:
-backend signature/freshness verification, signed receipt, physical claim mode,
+the registration dialog only after a cryptographically verified signed
+claim advertisement binds the device key to the public UUID. Cancel/Escape causes
+no claim or deployment. **Napf registrieren** calls provisioning (#154):
+backend signature/freshness verification, signed receipt,
 independent firmware issuer pin and trusted UTC checks remain mandatory. A stale
 advertisement cannot authorize a new backend claim. SYSADMIN alone grants no
 organization rights; MEMBER receives an administrator explanation for UNCLAIMED.
@@ -53,14 +53,14 @@ restore focus to the add action. Main Sync and collapsed diagnostics stay intact
 ## Physical acceptance and blockers
 
 **Android/ESP32: UNVERIFIED for this issue.** No physical device acceptance was
-performed. Current ESP32-C3 composition reports unavailable trusted UTC; an issuer
+performed. #154 adds the signed-time GATT bridge for direct registration; an issuer
 public-key pin must also be configured independently. See
 [firmware prerequisites](../firmware-esp32/README.md#clock-issuer-trust-and-claiming)
 and [existing hardware evidence](../firmware-esp32/hardware/issue108.md).
-Missing prerequisites remain fail-closed. The current GATT error does not separately
-identify inactive physical claim mode versus absent UTC; UI reports both checks
-without pretending to know which failed. Receipt rejection also names issuer pin
-and UTC prerequisites. No clock, signature, expiry or trust bypass was added.
+Missing prerequisites remain fail-closed. Direct registration needs no physical
+claim mode. The PWA distinguishes firmware/bootstrap availability and backend
+UTC-health/issuer failures. Receipt rejection also names issuer pin and UTC
+prerequisites. No clock, signature, expiry or trust bypass was added.
 
 Efficiency: Windows sandbox temporary-file isolation broke Vitest; subsequent
 tests used normal host execution. A few guessed paths were corrected with scoped

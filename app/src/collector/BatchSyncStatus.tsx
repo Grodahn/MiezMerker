@@ -123,8 +123,8 @@ export function BatchNodeCard({ result, context, contextLoading, isAdmin, claimB
       {result.nodeId && <p><code>{result.nodeId}</code></p>}
       {!isAdmin
         ? <p>Nur ADMIN kann einen UNCLAIMED Node claimen. MEMBER hat keinen Zugriff.</p>
-        : onClaim ? <p><button type="button" disabled={claimBusy} onClick={() => onClaim(result)}>Node claimen (ADMIN)</button></p>
-          : <p>Physischen Claim-Modus am Node aktivieren (Taste/Power-On-Geste), dann claimen.</p>}
+        : onClaim ? <p><button type="button" disabled={claimBusy} onClick={() => onClaim(result)}>Napf registrieren</button></p>
+          : <p>Ein aktiver ADMIN kann diesen Napf direkt registrieren. Internet ist erforderlich.</p>}
     </Status>;
   }
   if (result.kind === 'foreign') {

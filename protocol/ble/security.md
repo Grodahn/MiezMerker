@@ -86,7 +86,7 @@ the device key fail here.
 - `NodeIdentityManager` persists `node_id` + P-256 key + sequence + org +
   owner hint + receipt atomically. `UNCLAIMED` → `CLAIMED` only via
   `apply_claim` (backend receipt verified against the pinned issuer key,
-  node-ID/key binding, physical `ClaimMode` for first commit). Same-owner
+  node-ID/key binding, strict trusted-time validity). Same-owner
   redelivery is idempotent; other-org claim is rejected (`409` backend,
   `FORBIDDEN_FOREIGN` on GATT). Reuse across orgs requires factory reset
   (new identity, old data stays with the old org).
@@ -116,5 +116,10 @@ ACTIVE ADMIN → verify node claim advertisement signature + 5-min freshness
 atomically create/adopt `CLAIMED` row → issue signed receipt (org + owner
 display + contact + trust anchor). Node `apply_claim` verifies and stores
 org/owner/receipt with identity. Abort before commit leaves no half-claimed
-state; retry is deterministic. Board claim-mode trigger (BOOT button) is #4;
-the core never claims without `ClaimMode::active()`.
+state; retry is deterministic. #154 removes the physical claim gate for both
+production and DEV. Ready UNCLAIMED nodes can register through an explicit
+ACTIVE organization ADMIN action. The legacy `claim-mode` signed suffix is
+domain separation only. The pre-auth registration-time exchange forwards ADR
+0017 challenges/proofs to the existing pinned verifier and persists acceptance;
+it grants neither ownership nor observation access. No arbitrary phone UTC is
+trusted. Same-owner/key ADMIN bootstrap is allowed after an interrupted reservation.

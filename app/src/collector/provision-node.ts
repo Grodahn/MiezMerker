@@ -5,6 +5,7 @@ import { assertAdminMayClaim, claimNode, ClaimError } from './claim-node';
 import { getAuthState } from '../platform/auth';
 import { bindNodeOperation } from './node-operation';
 import { PublicProbeTransport } from './public-probe';
+import { bootstrapRegistrationTime } from './registration-time';
 import { decodeFrame, decodeClaimAdvertisement, encodeFrame, encodeClaimReceipt, Opcode, PROTOCOL_VERSION } from './ble-codec';
 
 // Reservation and receipt persist before delivery. A retry after disconnect can
@@ -18,7 +19,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     await transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode, payload }));
     const frame = decodeFrame(await transport.read());
     if (!frame || frame.version !== PROTOCOL_VERSION || frame.opcode !== opcode + 1) {
-      throw new ClaimError('claim-mode', 'Claiming abgelehnt. Physischen Claim-Modus und Firmware prüfen. Gespeichertes Receipt bleibt retrybar.');
+      throw new ClaimError('backend', 'Registrierung abgelehnt. Signierten Identitätsnachweis und vertrauenswürdige UTC-Zeit prüfen. Gespeichertes Receipt bleibt retrybar.');
     }
     return frame.payload;
   };
@@ -31,22 +32,53 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     if (hello.claimState === 1) throw new ClaimError('backend', 'Dieser Napf ist bereits registriert. Bitte erneut auslesen und Einrichtung fortsetzen; kein erneutes Claiming.');
     const receipt = (await db.nodeMeta.get(nodeId));
     let savedReceipt = receipt?.organizationId === organizationId ? receipt.claimReceipt : undefined;
+    let issuanceWaitMs = 2100;
     await transport.connect();
-    if (!savedReceipt) {
-      const advertisement = decodeClaimAdvertisement(await roundTrip(Opcode.ClaimAdvertisementRequest));
-      if (!advertisement || advertisement.nodeId !== nodeId || advertisement.timestampMillis > BigInt(Number.MAX_SAFE_INTEGER)) {
-        throw new ClaimError('backend', 'Ungültiger Claim-Nachweis vom Node.');
-      }
+    // Even cached receipt recovery needs fresh trusted time after a node reboot.
+    await transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode: Opcode.ClaimAdvertisementRequest, payload: new Uint8Array() }));
+    let frame = decodeFrame(await transport.read());
+    if (frame?.opcode === Opcode.Error) {
+      issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
+      frame = decodeFrame(encodeFrame({ version: 1, opcode: Opcode.ClaimAdvertisementResponse,
+        payload: await roundTrip(Opcode.ClaimAdvertisementRequest) }));
+    }
+    const advertisement = frame?.version === 1 && frame.opcode === Opcode.ClaimAdvertisementResponse
+      ? decodeClaimAdvertisement(frame.payload) : null;
+    if (!advertisement || advertisement.nodeId !== nodeId || advertisement.timestampMillis > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new ClaimError('backend', 'Ungültiger Claim-Nachweis vom Node.');
+    }
+    const retrieveReceipt = async () => {
       const outcome = await claimNode(organizationId, {
         nodeId, publicKeyX: toBase64Url(advertisement.publicKey.slice(1, 33)),
         publicKeyY: toBase64Url(advertisement.publicKey.slice(33)),
         claimSignature: toBase64Url(advertisement.signature), timestampMillis: Number(advertisement.timestampMillis),
-      }, { claimModeConfirmed: true, assertActive: operation.assertActive });
-      savedReceipt = outcome.receipt;
-    }
+      }, { assertActive: operation.assertActive });
+      return outcome.receipt;
+    };
+    if (!savedReceipt) savedReceipt = await retrieveReceipt();
     operation.assertActive();
     if (!savedReceipt) throw new ClaimError('backend', 'Claim-Receipt fehlt.');
-    const response = await roundTrip(Opcode.ClaimReceiptRequest, encodeClaimReceipt(savedReceipt));
+    // ADR 0017 includes a 1000 ms server error bound plus sampling/drift.
+    // A freshly issued receipt's iat may initially overlap the lower bound.
+    // Let monotonic time advance; firmware still applies the strict [L,U] guard.
+    const waitForIssuanceBound = async () => {
+      await new Promise(resolve => setTimeout(resolve, issuanceWaitMs));
+      operation.assertActive();
+    };
+    await waitForIssuanceBound();
+    let response: Uint8Array;
+    try { response = await roundTrip(Opcode.ClaimReceiptRequest, encodeClaimReceipt(savedReceipt)); }
+    catch (error) {
+      // A bounded retry renews an expired receipt or an older, wider security
+      // interval. Disconnect/abort errors propagate without another reservation.
+      if (!(error instanceof ClaimError)) throw error;
+      operation.assertActive();
+      issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
+      savedReceipt = await retrieveReceipt();
+      if (!savedReceipt) throw new ClaimError('backend', 'Claim-Receipt fehlt.');
+      await waitForIssuanceBound();
+      response = await roundTrip(Opcode.ClaimReceiptRequest, encodeClaimReceipt(savedReceipt));
+    }
     if (response.length !== 1 || response[0] !== 0) throw new ClaimError('backend', 'Node hat Receipt nicht bestätigt. Bitte erneut versuchen.');
     await transport.disconnect();
     const after = await new PublicProbeTransport(transport).readPublicHello();

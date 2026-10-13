@@ -91,7 +91,7 @@ test('Ja uses existing provisioning and opens resumable setup only after confirm
   vi.mocked(provisionNode).mockResolvedValue();
   vi.mocked(fetchNodeSetupState).mockResolvedValue({ claimed: true, nodeId: 'node-new', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 });
   await selectUnclaimed();
-  fireEvent.click(await screen.findByRole('button', { name: 'Ja' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Napf registrieren' }));
   await vi.waitFor(() => expect(provisionNode).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(localStorage.getItem('miezmerker-last-setup-node')).toContain('node-new'));
   expect(await screen.findByRole('dialog', { name: 'Napf registrieren' })).toBeTruthy();
@@ -104,7 +104,7 @@ test.each(['MEMBER', 'SYSADMIN'])('%s has no organization ADMIN claim path', asy
   await screen.findByText('Ein Organisationsadmin muss diesen Napf registrieren.');
   expect(verifyRegistrationCandidate).not.toHaveBeenCalled();
   expect(provisionNode).not.toHaveBeenCalled();
-  expect(screen.queryByRole('button', { name: 'Ja' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Napf registrieren' })).toBeNull();
 });
 
 test('missing security prerequisites never display registration confirmation', async () => {
@@ -112,7 +112,7 @@ test('missing security prerequisites never display registration confirmation', a
   vi.mocked(verifyRegistrationCandidate).mockRejectedValue(new Error('Vertrauenswürdige UTC fehlt.'));
   await selectUnclaimed();
   await screen.findByText('Vertrauenswürdige UTC fehlt.');
-  expect(screen.queryByRole('button', { name: 'Ja' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Napf registrieren' })).toBeNull();
   expect(provisionNode).not.toHaveBeenCalled();
 });
 
@@ -124,7 +124,7 @@ test('an organization switch discards a late signed preflight response', async (
   await vi.waitFor(() => expect(verifyRegistrationCandidate).toHaveBeenCalled());
   act(() => { session.activeOrganizationId = 'org-b'; listeners.forEach(listener => listener()); });
   await act(async () => finish());
-  expect(screen.queryByRole('button', { name: 'Ja' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Napf registrieren' })).toBeNull();
   expect(provisionNode).not.toHaveBeenCalled();
 });
 

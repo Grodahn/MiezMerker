@@ -55,7 +55,7 @@ whether any exist.
 ## Claim interplay (#18)
 
 - `UNCLAIMED` nodes expose `claim_state=UNCLAIMED` and empty owner fields.
-  Claiming uses the separate claim flow (physical claim mode + signed claim
+  Claiming uses the separate claim flow (ACTIVE ADMIN + signed claim
   advertisement + backend receipt); sync `Batch/Ack/Time` stay unavailable
   until claimed (server returns `INVALID_STATE` if called early).
 - `CLAIMED` nodes expose the backend-provisioned owner hint publicly and

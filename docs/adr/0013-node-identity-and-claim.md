@@ -1,10 +1,10 @@
-# 0013 — Node identity, claim mode and provisioning lifecycle
+# 0013 — Node identity and provisioning lifecycle
 Status: Accepted (implements #18).
 
 ## Context
 
 #18 requires a persistent node identity that survives reboot/power loss/firmware update,
-a physical claim-mode gate, atomic claim with deterministic retry, and public owner
+atomic claim with deterministic retry, and public owner
 metadata for foreign organizations.
 
 ## Decision
@@ -24,16 +24,19 @@ PK or FeedingSite ID.
   `NodeIdentityStore` serializes the full record and replaces it atomically; the C++
   object contains strings and must not be stored using raw `memcpy`.
 
-**Claim mode** is the `ClaimMode` port. The core never claims without `active() == true`.
-Tests use `FakeClaimMode`; the real ESP32-C3 button handling belongs to #4. The backend
-additionally requires a node-signed claim advertisement (canonical message + ECDSA
-signature + 5-minute freshness), so a PWA flag alone cannot claim a node that is not
-physically in claim mode.
+**Direct registration (#154)** supersedes the original physical claim-mode gate.
+Every ready UNCLAIMED identity may produce a node-signed claim advertisement;
+an authenticated ACTIVE organization ADMIN explicitly registers it through the PWA.
+This is identical in DEV and production. The legacy `ClaimMode` constructor port
+is retained for adapter source compatibility but is not consulted. The canonical
+`MM-CLAIM-v1` message retains the historical `claim-mode` suffix solely as a
+domain-separation marker, not proof of physical interaction. ECDSA identity binding
+and 5-minute freshness remain mandatory for the first backend reservation.
 
 The signing API returns a `ClaimAdvertisement` with a timestamp sampled from the
 node's trusted `ClaimClock`; the BLE caller cannot choose that timestamp. Otherwise
-a peer could stockpile future-dated signatures during one physical window and submit
-them long after the window closed. An unavailable clock (`0`) fails closed. The clock
+a peer could stockpile future-dated signatures and defeat freshness checks.
+An unavailable clock (`0`) fails closed. The clock
 adapter must obtain current epoch time independently of untrusted peer input.
 
 **Claim flow** (backend, transactional):
@@ -55,12 +58,15 @@ Concurrent claims have one winner; a loser cannot overwrite ownership.
 
 The node calls `apply_claim(receipt)`. The crypto adapter verifies ES256 with a backend
 key pinned independently of the incoming receipt, plus issuer/kind/version/expiry.
-The core checks node ID and public-key binding, requires physical claim mode for the
-first commit, and atomically stores organization, owner metadata and the signed trust
+The core checks node ID and public-key binding and atomically stores organization,
+owner metadata and the signed trust
 context together with the identity. Same-owner receipt delivery is idempotent after
 commit; another organization is rejected. If transport fails between backend reservation
-and node commit, repeat receipt retrieval and delivery (reactivate physical claim mode
-if necessary). There is no distributed atomic transaction across backend and BLE.
+and node commit, repeat receipt retrieval and delivery. A same-owner ADMIN with the
+exact registered key may bootstrap time after reboot while the device is still
+UNCLAIMED; foreign organizations remain denied. Expired cached receipts are renewed
+through the idempotent backend path, never accepted by disabling expiry.
+There is no distributed atomic transaction across backend and BLE.
 
 ## Later node authenticity
 

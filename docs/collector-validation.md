@@ -62,8 +62,7 @@ Perform on current Android + current Chrome/Chromium, PWA installed:
    starten” message; online renewal path.
 10. Foreign organization node: verify only public owner metadata
     (“Dieser MiezMerker gehört …”) and no observation reads.
-11. UNCLAIMED node: verify MEMBER blocked and ADMIN provisioning with the physical
-    claim mode active. The PWA reads the node-signed advertisement, requests a
+11. UNCLAIMED node: verify MEMBER blocked and ADMIN direct provisioning without physical interaction. The PWA reads the node-signed advertisement, requests a
     backend receipt, persists it, delivers it over BLE and verifies CLAIMED owner
     metadata. Interrupt receipt delivery and retry using the saved receipt.
 

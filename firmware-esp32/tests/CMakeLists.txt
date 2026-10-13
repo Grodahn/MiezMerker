@@ -66,6 +66,7 @@ add_test(NAME node-time-verify COMMAND node-time-verify-test
 set_tests_properties(node-time-verify PROPERTIES LABELS "auth")
 
 add_executable(node-time-bootstrap-test node_time_bootstrap_test.cpp
+  ../components/ble-sync/ble_gatt.cpp ../components/ble-sync/gatt_endpoint.cpp
   ../components/offline-auth/offline_auth.cpp
   ../components/offline-auth/node_time_verify.cpp
   ../src/persistent_state.cpp

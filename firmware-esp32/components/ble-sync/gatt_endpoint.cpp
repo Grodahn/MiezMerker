@@ -15,7 +15,8 @@ bool matches(Characteristic c, Opcode op) {
         case Characteristic::Batch: return op == Opcode::BatchRequest;
         case Characteristic::Ack: return op == Opcode::AckRequest || op == Opcode::CompactRequest;
         case Characteristic::Time: return op == Opcode::TimeRequest;
-        case Characteristic::ClaimReceipt: return op == Opcode::ClaimReceiptRequest;
+        case Characteristic::ClaimReceipt: return op == Opcode::ClaimReceiptRequest
+            || op == Opcode::RegistrationTimeChallengeRequest || op == Opcode::RegistrationTimeProofRequest;
         default: return false;
     }
 }

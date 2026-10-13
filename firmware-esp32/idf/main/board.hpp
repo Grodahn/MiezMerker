@@ -64,15 +64,10 @@ public:
     void fill_random(std::span<std::uint8_t> out) override;
     static bool fill(std::span<unsigned char> out);
 };
-class PhysicalClaimMode final : public ClaimMode {
+// Compatibility adapter: no physical release window is required for registration.
+class DirectClaimMode final : public ClaimMode {
 public:
-    explicit PhysicalClaimMode(BoardClock& clock) : clock_(clock) {}
-    bool active() const override { return clock_.monotonic_ms() < until_; }
-    void activate() { until_ = clock_.monotonic_ms() + 120000; }
-    void cancel() { until_ = 0; }
-private:
-    BoardClock& clock_;
-    std::uint64_t until_{0};
+    bool active() const override { return true; }
 };
 class BoardCrypto final : public NodeCrypto {
 public:

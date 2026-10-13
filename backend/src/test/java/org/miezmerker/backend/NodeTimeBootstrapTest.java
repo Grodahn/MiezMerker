@@ -144,11 +144,20 @@ class NodeTimeBootstrapTest {
             assertFalse(res.body().contains(s.orgA().getId().toString())); assertFalse(res.body().contains(c.devicePublicKeyFingerprint()));
         }
         login("admin-a@example.org","supersecret-password-a");
-        assertEquals(403,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
         var other=NodeKeys.fresh(); var substitute=new NodeKeys(n.nodeId(),other.kp(),other.x(),other.y());
         assertEquals(403,post(PATH,request(s,"CLAIMED",challenge(substitute))).statusCode());
         assertEquals(1,nodes.count()); assertEquals(c.devicePublicKeyFingerprint(),nodes.findById(n.nodeId()).orElseThrow().getFingerprint());
         org.mockito.Mockito.verifyNoInteractions(time);
+    }
+    @Test void reservedSameOwnerAdminCanBootstrapAfterInterruptedClaim() throws Exception {
+        var s=seed(); var n=NodeKeys.fresh(); claimed(s,n); var c=challenge(n);
+        login("admin-a@example.org","supersecret-password-a");
+        org.mockito.Mockito.when(time.issuanceMillis()).thenReturn(UTC);
+        assertEquals(200,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
+        assertEquals(1,nodes.count());
+        assertEquals(s.orgA().getId(),nodes.findById(n.nodeId()).orElseThrow().getOrganization().getId());
+        login("member-a@example.org","supersecret-password-m");
+        assertEquals(403,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
     }
     @Test void malformedFieldsEncodingsAndLargeBodiesAreRejectedBeforeIssuance() throws Exception {
         var s=seed(); var c=challenge(NodeKeys.fresh()); login("admin-a@example.org","supersecret-password-a");
