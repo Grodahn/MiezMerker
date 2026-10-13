@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "api:generate": "node scripts/generate-api.mjs",
-    "api:check": "node scripts/generate-api.mjs --check"
+    "api:check": "node scripts/generate-api.mjs --check",
+    "dev:https": "vite --host 0.0.0.0 --mode local-https"
   },
   "dependencies": {
     "dexie": "4.4.6",
