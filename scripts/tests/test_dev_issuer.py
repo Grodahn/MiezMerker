@@ -82,12 +82,14 @@ class DevIssuerTest(unittest.TestCase):
         self.success(self.run_setup())
         def quote(value):
             return "'" + str(value).replace("'", "''") + "'"
-        command = f"& {quote(SCRIPT)} -KeyDirectory {quote(self.directory)} -AttestHealthyUtc; "
+        command = "$env:SPRING_CONFIG_ADDITIONAL_LOCATION='file:///existing-local.properties'; "
+        command += f"& {quote(SCRIPT)} -KeyDirectory {quote(self.directory)} -AttestHealthyUtc; "
         command += "if ($env:TIME_BOOTSTRAP_CLOCK_HEALTHY -ne 'true') { throw 'attestation not exported' }; "
-        command += "if (!$env:SPRING_CONFIG_ADDITIONAL_LOCATION.StartsWith('file:')) { throw 'missing import' }; "
+        command += "if (!$env:SPRING_CONFIG_ADDITIONAL_LOCATION.StartsWith('file:///existing-local.properties,file:')) { throw 'existing config lost' }; "
         command += "if (Get-Variable pair -ErrorAction SilentlyContinue) { throw 'secret escaped script scope' }; "
         command += f"& {quote(SCRIPT)} -KeyDirectory {quote(self.directory)}; "
         command += "if ($env:TIME_BOOTSTRAP_CLOCK_HEALTHY -ne 'false') { throw 'unchecked attestation stayed open' }; "
+        command += "if ($env:SPRING_CONFIG_ADDITIONAL_LOCATION.Split(',').Length -ne 2) { throw 'duplicate import' }; "
         command += f"$dir = {quote(self.directory)}; "
         command += "if ($IsWindows) { $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value; "
         command += "foreach ($item in @((Get-Item -LiteralPath $dir)) + @(Get-ChildItem -LiteralPath $dir -File)) { "

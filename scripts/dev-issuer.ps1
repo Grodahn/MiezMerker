@@ -132,7 +132,12 @@ try {
         ($env:ISSUER_PUBLIC_SPKI_B64 -and $env:ISSUER_PUBLIC_SPKI_B64 -cne $pair.public)) {
         throw 'Inherited issuer environment differs from the local pair. Remove overrides before starting the backend.'
     }
-    $env:SPRING_CONFIG_ADDITIONAL_LOCATION = ([Uri]::new($propertiesPath)).AbsoluteUri
+    $issuerLocation = ([Uri]::new($propertiesPath)).AbsoluteUri
+    if (!$env:SPRING_CONFIG_ADDITIONAL_LOCATION) {
+        $env:SPRING_CONFIG_ADDITIONAL_LOCATION = $issuerLocation
+    } elseif ($issuerLocation -cnotin $env:SPRING_CONFIG_ADDITIONAL_LOCATION.Split(',')) {
+        $env:SPRING_CONFIG_ADDITIONAL_LOCATION += ',' + $issuerLocation
+    }
     $env:TIME_BOOTSTRAP_CLOCK_HEALTHY = if ($AttestHealthyUtc) { 'true' } else { 'false' }
     Write-Host "Issuer public SHA256(point)=$fingerprint"
     Write-Host "Backend configuration: $propertiesPath"

@@ -71,6 +71,8 @@ TIME_BOOTSTRAP_CLOCK_HEALTHY=true
 Copy the printed configuration path as a file URI for custom paths. The location
 is required, not `optional:`: a missing file must prevent startup. The second
 variable records the explicit check in step 2; use false until that check passes.
+If additional locations already configure your database, append the issuer URI
+to that variable with a comma; the script preserves these locations automatically.
 Keep your existing database/auth/profile configuration. Remove conflicting
 issuer environment variables, JVM `-D` settings or command-line property
 overrides. Restart the backend; an already running IntelliJ process does not
