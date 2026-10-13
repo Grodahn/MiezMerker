@@ -15,3 +15,5 @@ __pycache__/
 .env
 .idea/
 .vscode/
+# Local mkcert certificates and private keys for Android Web Bluetooth testing.
+/app/.cert/
