@@ -8,6 +8,14 @@
 <div th:replace="~{admin/layout :: nav('dashboard')}"></div>
 <main>
 <h1>Backoffice-Übersicht</h1>
+<div class="card" th:if="${devCaEnabled}">
+<h2>Nur lokale Entwicklung: Android-Zertifikat</h2>
+<p>Öffentliches mkcert-CA-Zertifikat für eigene Testgeräte herunterladen.
+Achtung: HTTP schützt weder die Anmeldung noch den Zertifikatsdownload gegen
+Manipulation im WLAN. Vor der Installation den SHA-256-Fingerabdruck über
+einen unabhängigen vertrauenswürdigen Kanal mit der Backend-Konsole abgleichen.</p>
+<p><a th:href="@{/admin/dev/root-ca.crt}" download>Öffentliches CA-Zertifikat (.crt) herunterladen</a></p>
+</div>
 <p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong>
 <span th:text="' (' + ${activeOrg.slug} + ')'"> (slug)</span></p>
 <div class="grid">
