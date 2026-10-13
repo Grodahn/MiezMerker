@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 import org.miezmerker.backend.security.AppUserDetails;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -35,9 +36,11 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/admin")
 public class AdminController {
     private final AdminService admins;
+    private final ObjectProvider<DevCaController> devCa;
 
-    public AdminController(AdminService admins) {
+    public AdminController(AdminService admins, ObjectProvider<DevCaController> devCa) {
         this.admins = admins;
+        this.devCa = devCa;
     }
 
     @GetMapping("/login")
@@ -97,6 +100,7 @@ public class AdminController {
             active = admins.selectOrg(principal.getId(), orgs.get(0).id(), session);
         }
         fillCommon(principal, active, orgs, model);
+        model.addAttribute("devCaEnabled", devCa.getIfAvailable() != null);
         return "admin/dashboard";
     }
 
