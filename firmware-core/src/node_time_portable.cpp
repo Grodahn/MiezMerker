@@ -716,6 +716,13 @@ bool NodeTimeBootstrapManager::submit_proof(
     anchor.proof_id_or_digest = claims.jti;
     anchor.proof.assign(jws.begin(), jws.end());
     anchor.acceptance = acceptance;
+    anchor.challenge = challenge_to_json(pending);
+    auto signed_challenge = challenge_signing_bytes(pending);
+    signed_challenge.insert(signed_challenge.end(), pending.signature.begin(), pending.signature.end());
+    anchor.challenge_bytes = base64url_encode(signed_challenge);
+    auto signed_acceptance = accept_bytes;
+    signed_acceptance.insert(signed_acceptance.end(), accept_sig_u8.begin(), accept_sig_u8.end());
+    anchor.acceptance_bytes = base64url_encode(signed_acceptance);
     if (!anchor.valid_verified()) {
         fail_preserving_trust();
         return false;

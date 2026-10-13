@@ -31,10 +31,13 @@ struct TimeAnchorV1 {
     std::string proof_id_or_digest;
     // Opaque exact proof/acceptance bytes for later #130/#131; never an auth input here.
     std::string proof, acceptance;
+    // Added by #131; empty on legacy evidence, never reconstructed from phone data.
+    std::string challenge, challenge_bytes, acceptance_bytes;
     bool valid() const {
         return format_version == 1 && anchor_id.is_set() && node_id.is_set()
             && incarnation.is_set() && boot_counter != 0 && utc_ms > 0
             && static_cast<unsigned>(source) <= 2 && !verified_security_time
+            && challenge.size() <= 1024 && challenge_bytes.size() <= 512 && acceptance_bytes.size() <= 512
             && proof_id_or_digest.size() <= 128 && proof.size() <= 4096 && acceptance.size() <= 512;
     }
     // Verified anchors additionally require BACKEND_SIGNED provenance plus the
@@ -45,6 +48,7 @@ struct TimeAnchorV1 {
         return format_version == 1 && anchor_id.is_set() && node_id.is_set()
             && incarnation.is_set() && boot_counter != 0 && utc_ms > 0
             && source == AnchorSource::BACKEND_SIGNED && verified_security_time
+            && challenge.size() <= 1024 && challenge_bytes.size() <= 512 && acceptance_bytes.size() <= 512
             && proof_id_or_digest.size() <= 128 && !proof_id_or_digest.empty()
             && !proof.empty() && proof.size() <= 4096
             && !acceptance.empty() && acceptance.size() <= 512;
@@ -90,6 +94,7 @@ struct VerifiedAnchorTestAccess {
 // Failure may have committed: adapter latches failure until open/reboot.
 // ACK/compaction of raw observations NEVER deletes this evidence. #131 owns
 // evidence export/receipt; no evidence pruning before durable downstream ACK.
+enum class EvidenceReceiptResult { Rejected, Retained, Removed };
 struct TimeEvidenceStore {
     virtual ~TimeEvidenceStore() = default;
     virtual bool open() = 0;
@@ -98,6 +103,10 @@ struct TimeEvidenceStore {
     virtual PutResult append_verified(const VerifiedAnchor& verified) = 0;
     virtual std::vector<BootEpochV1> boots() const = 0;
     virtual std::vector<TimeAnchorV1> anchors() const = 0;
+    // Receipt is separate from raw ACK. Caller enforces same-org auth; the
+    // collector sends it only for independently backend-confirmed evidence.
+    virtual EvidenceReceiptResult acknowledge(bool, const NodeId&, const IncarnationId&,
+            std::uint32_t, const NodeId&) { return EvidenceReceiptResult::Rejected; }
     virtual bool clear_for_factory_reset() = 0;
 };
 } // namespace miezmerker

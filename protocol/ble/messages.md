@@ -47,7 +47,32 @@ Opcodes (v1):
 | `0x1A` | RegistrationTimeChallengeResponse | S→C | `version u16, node 16 B, incarnation 16 B, boot u32, nonce 32 B, uptime u64, device key 65 B, fingerprint 32 B, signature 64 B` (239 B, integers LE) |
 | `0x1B` | RegistrationTimeProofRequest | C→S | exact backend compact JWS as `str`, <=4096 B; ClaimReceipt characteristic / `0x4e` fragment envelope |
 | `0x1C` | RegistrationTimeProofResponse | S→C | `error u8` (`0` after pinned verification and durable time-anchor acceptance) |
+| `0x1D` | SecurityTimeStatusRequest | C→S | empty; ClaimReceipt characteristic, public technical status only |
+| `0x1E` | SecurityTimeStatusResponse | S→C | `usable u8` (0/1; firmware rechecks monotonic continuity/trust age) |
+| `0x1F` | TimeEvidenceRequest | C→S | Batch characteristic, authorized: `kind u8 (0=boot,1=anchor), index u32, offset u16`, LE |
+| `0x20` | TimeEvidenceResponse | S→C | echoes 7 request bytes, `total u16 LE`, 1–480 exact UTF-8 bytes; `total=0` with no bytes ends this kind |
+| `0x21` | TimeEvidenceReceiptRequest | C→S | Batch characteristic, authorized: `kind u8, node 16 B, incarnation 16 B, boot u32 LE, anchor 16 B` (zero anchor for boot) |
+| `0x22` | TimeEvidenceReceiptResponse | S→C | echoes 53 request bytes, `retained u8` (0=durably removed/already absent, 1=current/referenced boot retained) |
+
 | `0xFF` | Error | S→C | `code u8, msg str` |
+
+Capability `0x0020` advertises the additive signed-time/evidence extension;
+legacy required capability mask `0x001F` is unchanged. Existing `0x19`/`0x1B`
+registration time operations are reused for normal CLAIMED sync. Proof success
+grants time only; credential/PoP and pinned NodeProof still gate evidence/raw
+access. `0x0F` TimeCorrect remains authorized.
+
+Evidence requests/responses use version 1 envelopes; each body is at most 8192
+bytes, delivered in 480-byte UTF-8 fragments. Kind-specific indexes are bounded
+by 128 boot / 16 anchor slots. Restart at index/offset zero after reconnect;
+the immutable node/incarnation/boot/anchor identity is the durable dedupe key.
+The collector sends `0x21` only for durably backend-confirmed evidence. Node
+removal is atomic and repeatable; current/referenced boot markers are retained.
+Receipt writes use the existing ordered fragment header with marker `0x4f`,
+20-byte writes and an exact 57-byte assembled-frame bound, including MTU 23.
+Each fragment and the final receipt require authorization.
+These receipts never reuse or advance the observation watermark. Details and
+hardware acceptance: [issue 131 integration](../../docs/issue131-signed-time-sync.md).
 
 Registration-time opcodes `0x19`–`0x1c` use write/read on the existing
 ClaimReceipt characteristic (`…5b0b`), independently of observation authorization.

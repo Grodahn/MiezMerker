@@ -12,11 +12,11 @@ bool matches(Characteristic c, Opcode op) {
     switch (c) {
         case Characteristic::Auth: return op == Opcode::AuthRequest;
         case Characteristic::NodeProof: return op == Opcode::NodeProofRequest;
-        case Characteristic::Batch: return op == Opcode::BatchRequest;
+        case Characteristic::Batch: return op == Opcode::BatchRequest || op == Opcode::TimeEvidenceRequest || op == Opcode::TimeEvidenceReceiptRequest;
         case Characteristic::Ack: return op == Opcode::AckRequest || op == Opcode::CompactRequest;
         case Characteristic::Time: return op == Opcode::TimeRequest;
         case Characteristic::ClaimReceipt: return op == Opcode::ClaimReceiptRequest
-            || op == Opcode::RegistrationTimeChallengeRequest || op == Opcode::RegistrationTimeProofRequest;
+            || op == Opcode::RegistrationTimeChallengeRequest || op == Opcode::RegistrationTimeProofRequest || op == Opcode::SecurityTimeStatusRequest;
         default: return false;
     }
 }
@@ -38,11 +38,12 @@ AccessResult GattEndpoint::write(Characteristic c, const std::vector<std::uint8_
     if (protected_characteristic(c) && !server_.authorized(now)) return AccessResult::unauthorized;
     auto& value = values_[static_cast<unsigned>(c)]; value.clear();
     if (bytes.empty() || bytes.size() > 512) return AccessResult::invalid;
-    const bool envelope = bytes[0] == 0x4d || bytes[0] == 0x4e;
+    const bool envelope = bytes[0] == 0x4d || bytes[0] == 0x4e || bytes[0] == 0x4f;
     auto frame = ble::decode_frame(bytes);
     if (envelope) {
         if ((bytes[0] == 0x4d && c != Characteristic::Auth)
-            || (bytes[0] == 0x4e && c != Characteristic::ClaimReceipt)) return AccessResult::invalid;
+            || (bytes[0] == 0x4e && c != Characteristic::ClaimReceipt)
+            || (bytes[0] == 0x4f && c != Characteristic::Batch)) return AccessResult::invalid;
     } else if (!frame || !matches(c, frame->opcode)) return AccessResult::invalid;
     auto request = bytes;
     if (!envelope && frame->version == 1 && c == Characteristic::Batch) {

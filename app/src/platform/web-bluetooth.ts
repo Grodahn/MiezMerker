@@ -180,14 +180,17 @@ export function characteristicForRequest(opcode: Opcode): string {
     case Opcode.AuthRequest: return BLE_CHAR_UUIDS.auth;
     case Opcode.NodeProofRequest: return BLE_CHAR_UUIDS.nodeProof;
     case Opcode.StatusRequest: return BLE_CHAR_UUIDS.status;
-    case Opcode.BatchRequest: return BLE_CHAR_UUIDS.batch;
+    case Opcode.BatchRequest:
+    case Opcode.TimeEvidenceRequest:
+    case Opcode.TimeEvidenceReceiptRequest: return BLE_CHAR_UUIDS.batch;
     case Opcode.AckRequest:
     case Opcode.CompactRequest: return BLE_CHAR_UUIDS.ack;
     case Opcode.TimeRequest: return BLE_CHAR_UUIDS.time;
     case Opcode.ClaimAdvertisementRequest: return BLE_CHAR_UUIDS.claimAdvertisement;
     case Opcode.ClaimReceiptRequest: return BLE_CHAR_UUIDS.claimReceipt;
     case Opcode.RegistrationTimeChallengeRequest:
-    case Opcode.RegistrationTimeProofRequest: return BLE_CHAR_UUIDS.claimReceipt;
+    case Opcode.RegistrationTimeProofRequest:
+    case Opcode.SecurityTimeStatusRequest: return BLE_CHAR_UUIDS.claimReceipt;
     default: throw new BluetoothTransportError('protocol', `Unbekannte Protokoll-Operation (${opcode}).`);
   }
 }
@@ -411,7 +414,9 @@ export class WebBluetoothTransport implements NodeTransport {
     // Web Bluetooth rejects attribute values above 512 bytes. Auth uses the
     // v1 transport envelope documented in messages.md, never a truncated JWT.
     const chunks = uuid === BLE_CHAR_UUIDS.auth ? authWriteChunks(frame)
-      : uuid === BLE_CHAR_UUIDS.claimReceipt ? transportWriteChunks(frame, 0x4e, 4102) : [frame];
+      : uuid === BLE_CHAR_UUIDS.claimReceipt ? transportWriteChunks(frame, 0x4e, 4102)
+      : uuid === BLE_CHAR_UUIDS.batch && decodeFrame(frame)?.opcode === Opcode.TimeEvidenceReceiptRequest
+        ? evidenceReceiptWriteChunks(frame) : [frame];
     for (const chunk of chunks) {
       await withTimeout(char.writeValueWithResponse(new Uint8Array(chunk)), GATT_OP_TIMEOUT_MS, 'Schreiben zeitüberschritten.');
     }
@@ -442,6 +447,13 @@ export class WebBluetoothTransport implements NodeTransport {
 
 export function authWriteChunks(frame: Uint8Array): Uint8Array[] {
   return transportWriteChunks(frame, 0x4d, 2118);
+}
+export function evidenceReceiptWriteChunks(frame: Uint8Array): Uint8Array[] {
+  const decoded = decodeFrame(frame);
+  if (!decoded || decoded.version !== 1 || decoded.opcode !== Opcode.TimeEvidenceReceiptRequest || decoded.payload.length !== 53) {
+    throw new BluetoothTransportError('protocol', 'Ungültige Zeitbelegquittung.');
+  }
+  return transportWriteChunks(frame, 0x4f, 57);
 }
 function transportWriteChunks(frame: Uint8Array, marker: number, maxLength: number): Uint8Array[] {
   if (frame.length <= 20) return [frame];

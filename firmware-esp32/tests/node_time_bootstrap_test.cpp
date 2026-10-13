@@ -647,17 +647,24 @@ int main(int argc, char** argv) {
         assert(manager.current_interval(lower_after, upper_after));
         assert(lower_after > lower_before && upper_after > upper_before);
         assert(evidence.anchors().size() == 1);
-        // Fill the store: 15 more successful bootstraps bind to the same
-        // proof nonce (sticky RNG) with distinct anchor IDs.
+        // Fill the bounded byte/anchor store. #131 retains the exact signed
+        // challenge as well, so the byte limit may precede the 16-anchor limit.
+        // The separate capacity test above still exercises all 16 anchor slots.
+        unsigned accepted = 1;
         for (unsigned i = 0; i < 15; ++i) {
             NodeTimeChallenge fill;
             assert(manager.create_challenge(fixture.device_pub, fixture.device_priv, fill));
             std::string fill_accept;
-            assert(manager.submit_proof(fixture.proof, fixture.device_pub,
-                                        fixture.device_priv, fill_accept));
+            const auto before = cell.data;
+            if (!manager.submit_proof(fixture.proof, fixture.device_pub, fixture.device_priv, fill_accept)) {
+                assert(manager.state() == SecurityTimeState::BOUNDED);
+                assert(evidence.anchors().size() == accepted && cell.data == before);
+                break;
+            }
+            ++accepted;
             assert(manager.state() == SecurityTimeState::BOUNDED);
         }
-        assert(evidence.anchors().size() == 16);
+        assert(evidence.anchors().size() == accepted);
         const auto full_bytes = cell.data;
         // One more valid proof: persistence is FULL, but the live anchor and
         // its interval survive the failed re-bootstrap.
@@ -667,7 +674,7 @@ int main(int argc, char** argv) {
         assert(!manager.submit_proof(fixture.proof, fixture.device_pub,
                                      fixture.device_priv, overflow_accept));
         assert(manager.state() == SecurityTimeState::BOUNDED);
-        assert(evidence.anchors().size() == 16);
+        assert(evidence.anchors().size() == accepted);
         assert(cell.data == full_bytes);
         // Trust is live on the newest anchor (accepted at 1400 with D=0).
         std::int64_t lower_final = 0, upper_final = 0;

@@ -55,12 +55,17 @@ public class TimeEvidenceService {
             var claims=verifier.verify(r.proof(),r.challenge());
             utc=claims.path("utc_ms").asLong(); jti=UUID.fromString(claims.path("jti").asText());
         } catch(IllegalArgumentException e) { throw denied(); }
+        if(r.nodeMetadata()!=null) {
+            var m=NodeTimeProtocol.json(r.nodeMetadata().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            if(m.path("utcMs").asLong()!=utc || !m.path("proofIdOrDigest").asText().equals(jti.toString()))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Metadata proof binding");
+        }
         // #18 stores no incarnation/monotonic claim receipt chain. Pre-claim UTC cannot
         // independently prove continuity: reject until that chain is available.
         if(node.getClaimedAt()==null || utc<node.getClaimedAt().toEpochMilli()) throw denied();
         var existing=anchors.findByAnchorIdAndOrganizationIdAndNodeIdAndIncarnationAndBootCounter(UUID.fromString(r.acceptance().anchorId()),org,nodeId,UUID.fromString(r.boot().incarnation()),r.boot().bootCounter()).orElse(null);
         if(existing!=null) {
-            if(!existing.getProof().equals(r.proof()) || !existing.getChallengeBytes().equals(r.challengeBytes())
+            if(!Objects.equals(existing.getNodeMetadata(),r.nodeMetadata()) || !existing.getProof().equals(r.proof()) || !existing.getChallengeBytes().equals(r.challengeBytes())
                     || !existing.getAcceptanceBytes().equals(r.acceptanceBytes()) || !sameBoot(boots.findById(existing.getBootEpochId()).orElseThrow(),r.boot()))
                 throw conflict();
             return receipt(existing,"DUPLICATE_IDENTICAL");

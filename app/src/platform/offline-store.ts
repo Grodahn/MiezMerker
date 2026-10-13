@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { StoredTimeEvidence } from '../collector/time-evidence';
 
 // Local transport envelope; this is not an HTTP DTO. Payload is opaque BLE data.
 export interface PendingUpload {
@@ -16,6 +17,7 @@ export interface Outbox {
   pending(organizationId: string): Promise<PendingUpload[]>;
 }
 export class CollectorDatabase extends Dexie {
+  timeEvidence!: Table<StoredTimeEvidence, string>;
   uploads!: Table<PendingUpload, string>;
   observations!: Table<StoredObservation, [string, string, string]>;
   syncSessions!: Table<SyncSessionState, string>;
@@ -31,6 +33,7 @@ export class CollectorDatabase extends Dexie {
       syncSessions: 'nodeId',
       nodeMeta: 'nodeId',
     });
+    this.version(3).stores({ timeEvidence: 'id, organizationId, [organizationId+nodeId]' });
   }
 }
 

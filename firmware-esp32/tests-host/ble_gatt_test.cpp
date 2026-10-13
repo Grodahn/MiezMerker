@@ -497,9 +497,96 @@ void claim_codec_golden() {
     CHECK(miezmerker::ble::encode_claim_advertisement(*decoded) == bytes);
 }
 
+void time_evidence_transport() {
+    using namespace miezmerker;
+    using namespace miezmerker::ble;
+    struct Evidence : TimeEvidenceStore {
+        BootEpochV1 boot;
+        TimeAnchorV1 anchor;
+        bool has_anchor{true};
+        bool open() override { return true; }
+        PutResult append_boot(const BootEpochV1&) override { return PutResult::OK; }
+        PutResult append_anchor(const TimeAnchorV1&) override { return PutResult::IO_ERROR; }
+        PutResult append_verified(const VerifiedAnchor&) override { return PutResult::IO_ERROR; }
+        std::vector<BootEpochV1> boots() const override { return {boot}; }
+        std::vector<TimeAnchorV1> anchors() const override { return has_anchor ? std::vector<TimeAnchorV1>{anchor} : std::vector<TimeAnchorV1>{}; }
+        EvidenceReceiptResult acknowledge(bool is_anchor,const NodeId&,const IncarnationId&,std::uint32_t,const NodeId&) override {
+            if (!is_anchor) return EvidenceReceiptResult::Retained;
+            has_anchor=false; return EvidenceReceiptResult::Removed;
+        }
+        bool clear_for_factory_reset() override { return false; }
+    } evidence;
+    Fixture f; auto core = f.make_core();
+    f.clock.set_wall_clock(ClockStatus::SYNCED, 1790899200000ULL);
+    CHECK(core->initialize()); claim_capture_fixture(*core, f.identity);
+    SyncServer server(*core, f.auth, f.rtc, f.signer, f.config);
+    miezmerker::ble_gatt::GattRouter router(server, f.owner); router.set_time_evidence(&evidence);
+    evidence.boot.node_id = core->node_id(); evidence.boot.incarnation = core->incarnation();
+    evidence.boot.boot_counter = core->boot_counter(); evidence.boot.first_possible_sequence = UINT64_MAX;
+    evidence.anchor.node_id = evidence.boot.node_id; evidence.anchor.incarnation = evidence.boot.incarnation;
+    evidence.anchor.boot_counter = evidence.boot.boot_counter; evidence.anchor.anchor_id.bytes.fill(6);
+    evidence.anchor.proof = std::string(1000, 'p'); evidence.anchor.acceptance = "{}"; evidence.anchor.challenge = "{}";
+    const auto request = [&](unsigned kind, unsigned index, unsigned offset, std::int64_t now = 1790899300) {
+        std::vector<std::uint8_t> payload{static_cast<std::uint8_t>(kind)};
+        for (unsigned i = 0; i < 4; ++i) payload.push_back(static_cast<std::uint8_t>(index >> (8*i)));
+        payload.push_back(static_cast<std::uint8_t>(offset)); payload.push_back(static_cast<std::uint8_t>(offset >> 8));
+        return decode_frame(router.handle_frame(encode_frame({1, Opcode::TimeEvidenceRequest, payload}), now));
+    };
+    std::vector<std::uint8_t> receipt(53); receipt[0]=1;
+    std::copy(evidence.boot.node_id.bytes.begin(),evidence.boot.node_id.bytes.end(),receipt.begin()+1);
+    std::copy(evidence.boot.incarnation.bytes.begin(),evidence.boot.incarnation.bytes.end(),receipt.begin()+17);
+    const auto counter=evidence.boot.boot_counter;
+    for(unsigned i=0;i<4;++i) receipt[33+i]=static_cast<std::uint8_t>(counter>>(8*i));
+    std::copy(evidence.anchor.anchor_id.bytes.begin(),evidence.anchor.anchor_id.bytes.end(),receipt.begin()+37);
+    const auto receipt_request=encode_frame({1,Opcode::TimeEvidenceReceiptRequest,receipt});
+    CHECK(decode_frame(router.handle_frame(receipt_request,1790899300))->opcode == Opcode::Error);
+    CHECK(request(0,0,0)->opcode == Opcode::Error);
+    std::array<std::uint8_t,32> nonce{}; CHECK(server.begin_challenge(nonce));
+    std::array<std::uint8_t,64> proof{}; proof.fill(0xaa);
+    CHECK(server.authorize("valid-credential",proof,1790899300));
+    const auto boot = request(0,0,0); CHECK(boot && boot->opcode == Opcode::TimeEvidenceResponse);
+    std::string boot_json(boot->payload.begin()+9,boot->payload.end());
+    CHECK(boot_json.find("18446744073709551615") != std::string::npos);
+    std::string assembled; unsigned total = 0;
+    do {
+        const auto response = request(1,0,static_cast<unsigned>(assembled.size()));
+        CHECK(response && response->opcode == Opcode::TimeEvidenceResponse && response->payload.size() <= 489);
+        const unsigned size = response->payload[7] | (unsigned(response->payload[8]) << 8);
+        CHECK(!total || total == size); total = size;
+        assembled.append(response->payload.begin()+9,response->payload.end());
+    } while(assembled.size() < total);
+    CHECK(assembled.find(evidence.anchor.proof) != std::string::npos);
+    CHECK(request(1,0,total+1)->opcode == Opcode::Error);
+    CHECK(request(2,0,0)->opcode == Opcode::Error);
+    CHECK(request(0,129,0)->opcode == Opcode::Error);
+    CHECK(request(1,1,0)->payload.size() == 9);
+    // Raw compaction and disconnect never prune either evidence lifetime.
+    router.handle_frame(encode_frame({1,Opcode::CompactRequest,{}}),1790899300);
+    CHECK(request(1,0,0)->payload.size() == 489);
+    auto wrong=receipt; wrong[17]^=1;
+    CHECK(decode_frame(router.handle_frame(encode_frame({1,Opcode::TimeEvidenceReceiptRequest,wrong}),1790899300))->opcode == Opcode::Error);
+    CHECK(evidence.has_anchor);
+    std::optional<Frame> confirmed;
+    for (std::size_t offset=0;offset<receipt_request.size();offset+=12) {
+        std::vector<std::uint8_t> fragment{0x4f,0x4d,1,static_cast<std::uint8_t>(offset==0),57,0,
+            static_cast<std::uint8_t>(offset),0};
+        const auto end=std::min(offset+12,receipt_request.size());
+        fragment.insert(fragment.end(),receipt_request.begin()+offset,receipt_request.begin()+end);
+        CHECK(fragment.size()<=20 && evidence.has_anchor);
+        const auto response=router.handle_frame(fragment,1790899300);
+        if(end<receipt_request.size()) CHECK(response.empty()); else confirmed=decode_frame(response);
+    }
+    CHECK(confirmed && confirmed->opcode == Opcode::TimeEvidenceReceiptResponse && confirmed->payload.size()==54 && confirmed->payload.back()==0);
+    CHECK(!evidence.has_anchor);
+    CHECK(decode_frame(router.handle_frame(receipt_request,1790899300))->opcode == Opcode::TimeEvidenceReceiptResponse);
+    CHECK(request(1,0,480,1917129600)->opcode == Opcode::Error);
+    router.disconnect(); CHECK(request(1,0,0)->opcode == Opcode::Error);
+    CHECK(evidence.anchors().empty() && evidence.boots().size() == 1);
+}
 }  // namespace
 
 int main() {
+    time_evidence_transport();
     router_public_and_auth();
     router_foreign_no_leak();
     router_fragmented_auth();

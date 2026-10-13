@@ -172,6 +172,26 @@ class TimeEvidenceTest {
         var a=anchors.findAll().getFirst(); assertEquals(r.proof(),a.getProof()); assertEquals(r.acceptanceBytes(),a.getAcceptanceBytes()); assertEquals(r.challengeBytes(),a.getChallengeBytes());
         assertEquals(1,ingest.ingestBatch(userA.getId(),orgA.getId(),List.of(new ObservationIngestService.IngestItem(node.getNodeId(),1,"SAME-CHIP",null,"UNKNOWN",incarnation.toString(),900L,42))).duplicates());
     }
+    @Test void firmwareMetadataIsDurableAuditOnlyAndConflictingRetriesFail() throws Exception {
+        var r=request(42,1000,1300,UTC);
+        String metadata="{\"anchorId\":\""+r.acceptance().anchorId()+"\",\"formatVersion\":1,\"verifiedSecurityTime\":true,\"proofIdOrDigest\":\""
+                +NodeTimeProtocol.json(java.util.Base64.getUrlDecoder().decode(r.proof().split("\\.")[1])).path("jti").asText()
+                +"\",\"uptimeMs\":1300,\"utcMs\":"+UTC+",\"source\":0,\"uncertaintyMinusMs\":18446744073709551615,\"uncertaintyPlusMs\":18446744073709551615,\"driftPpmBound\":4294967295}";
+        var withMetadata=new TimeEvidenceProtocol.Request(r.organizationId(),r.boot(),r.challenge(),r.proof(),r.acceptance(),r.challengeBytes(),r.acceptanceBytes(),metadata);
+        var parsed=TimeEvidenceProtocol.parse(mapper.writeValueAsBytes(withMetadata));
+        assertEquals(metadata,parsed.nodeMetadata());
+        assertEquals("CREATED",evidence.ingest(userA.getId(),parsed).status());
+        var saved=anchors.findAll().getFirst();
+        assertEquals(metadata,saved.getNodeMetadata());
+        // Sender's unsigned maximum bounds never change the independently calibrated policy.
+        assertNotEquals(new BigInteger("18446744073709551615"),BigInteger.valueOf(saved.getUncertaintyMinusMs()));
+        assertEquals("DUPLICATE_IDENTICAL",evidence.ingest(userA.getId(),parsed).status());
+        var conflicting=new TimeEvidenceProtocol.Request(r.organizationId(),r.boot(),r.challenge(),r.proof(),r.acceptance(),r.challengeBytes(),r.acceptanceBytes(),metadata.replace("4294967295","1"));
+        status(409,()->evidence.ingest(userA.getId(),conflicting));
+        var wrong=new TimeEvidenceProtocol.Request(r.organizationId(),r.boot(),r.challenge(),r.proof(),r.acceptance(),r.challengeBytes(),r.acceptanceBytes(),metadata.replace("\"uptimeMs\":1300","\"uptimeMs\":1301"));
+        status(400,()->evidence.ingest(userA.getId(),wrong));
+        assertEquals(metadata,anchors.findAll().getFirst().getNodeMetadata());
+    }
     @Test void evidenceBeforeRawAndSeparateBootRetriesRemainDurable() {
         var r=request(42,1000,1300,UTC); evidence.ingest(userA.getId(),r); raw(1,42,900);
         assertEquals(RECONSTRUCTED,page(0,10).items().getFirst().quality());

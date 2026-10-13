@@ -42,6 +42,12 @@ export enum Opcode {
   RegistrationTimeChallengeResponse = 0x1a,
   RegistrationTimeProofRequest = 0x1b,
   RegistrationTimeProofResponse = 0x1c,
+  SecurityTimeStatusRequest = 0x1d,
+  SecurityTimeStatusResponse = 0x1e,
+  TimeEvidenceRequest = 0x1f,
+  TimeEvidenceResponse = 0x20,
+  TimeEvidenceReceiptRequest = 0x21,
+  TimeEvidenceReceiptResponse = 0x22,
   Error = 0xff,
 }
 
@@ -592,3 +598,6 @@ export function encodeClaimReceipt(receipt: string): Uint8Array {
   if (!receipt || new TextEncoder().encode(receipt).length > 4096) throw new Error('Invalid claim receipt');
   const w = new Writer(); w.str16(receipt); return w.toBytes();
 }
+
+// Additive ADR 0017 extension, independent of legacy required v1 bits.
+export const CAP_TIME_EVIDENCE = 0x0020;
