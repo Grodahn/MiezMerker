@@ -83,6 +83,20 @@ std::uint64_t SyncServer::ack_watermark() const {
     return core_->ack_watermark();
 }
 
+std::optional<std::vector<std::uint8_t>> SyncServer::clock_snapshot(TrustedEpochSeconds now_s) const {
+    if (!authorized(now_s) || !claimed() || !core_->monotonic_valid()) return std::nullopt;
+    std::vector<std::uint8_t> bytes{1}; // Snapshot format, independent of frame version.
+    const auto node = core_->node_id(); const auto incarnation = core_->incarnation();
+    const auto boot = core_->boot_counter(); const auto uptime = core_->monotonic_ms();
+    // The clock adapter may latch a discontinuity while sampling uptime.
+    if (!core_->monotonic_valid()) return std::nullopt;
+    bytes.insert(bytes.end(), node.bytes.begin(), node.bytes.end());
+    bytes.insert(bytes.end(), incarnation.bytes.begin(), incarnation.bytes.end());
+    for (unsigned i = 0; i < 4; ++i) bytes.push_back(static_cast<std::uint8_t>(boot >> (8*i)));
+    for (unsigned i = 0; i < 8; ++i) bytes.push_back(static_cast<std::uint8_t>(uptime >> (8*i)));
+    return bytes;
+}
+
 std::optional<StatusResponse> SyncServer::status(TrustedEpochSeconds now_s) const {
     if (!authorized(now_s)) return std::nullopt;
     if (!claimed()) return std::nullopt;

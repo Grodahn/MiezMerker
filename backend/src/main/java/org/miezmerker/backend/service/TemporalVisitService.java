@@ -17,7 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Interval visits are separate rebuildable projections: never exact DerivedVisit rows. */
 @Service
 public class TemporalVisitService {
-    public static final String VERSION = "visit-interval-v1";
+    public static final String VERSION = "visit-interval-v2";
     public static final int GAP_SECONDS = 60;
     private static final int CAPACITY = 4096;
     @PersistenceContext private EntityManager entities;
@@ -127,7 +127,8 @@ public class TemporalVisitService {
     }
     private static boolean eligible(Read r) {
         var p=r.time();
-        return (p.quality()==TemporalProjectionEngine.Quality.RECONSTRUCTED || p.quality()==TemporalProjectionEngine.Quality.VERIFIED)
+        return (p.quality()==TemporalProjectionEngine.Quality.RECONSTRUCTED || p.quality()==TemporalProjectionEngine.Quality.VERIFIED
+            || (p.quality()==TemporalProjectionEngine.Quality.ESTIMATED && p.uncertaintyPolicies().contains("PHONE_ESTIMATE")))
             && p.incarnation()!=null && p.bootCounter()!=null && p.bootCounter()>0 && p.monotonicMs()!=null
             && p.earliestUtcMs()!=null && p.latestUtcMs()!=null && p.earliestUtcMs()>0
             && p.latestUtcMs()>=p.earliestUtcMs() && p.derivedFeedingSiteId()!=null;

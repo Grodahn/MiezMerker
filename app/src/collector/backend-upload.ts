@@ -135,7 +135,7 @@ export class BackendUploader {
             const csrf = await fetchCsrfToken();
             this.options.assertActive?.();
             if (controller.signal.aborted || !active()) throw new Error('Zeitbeleg-Upload abgebrochen.');
-            const endpoint = row.kind === 0 ? '/api/v1/nodes/boot-evidence' : '/api/v1/nodes/time-evidence';
+            const endpoint = row.kind === 0 ? '/api/v1/nodes/boot-evidence' : row.kind === 2 ? '/api/v1/nodes/phone-time-evidence' : '/api/v1/nodes/time-evidence';
             // The raw, previously persisted JSON preserves every uint64 integer.
             const { data, error, response } = await api.POST(endpoint, {
               body: {} as never, bodySerializer: () => body, headers: { 'X-XSRF-TOKEN': csrf },
@@ -160,7 +160,9 @@ export class BackendUploader {
             const receipt = data as Record<string, unknown>, payload = parseEvidenceJson(row.payload);
             const matches = row.kind === 0
               ? receipt.nodeId === row.nodeId && receipt.incarnation === row.incarnation && String(receipt.bootCounter) === row.bootCounter
-              : receipt.anchorId === payload.acceptance.anchorId && receipt.trustStatus === 'DEVICE_ACCEPTANCE_VERIFIED';
+              : row.kind === 2
+                ? receipt.anchorId === payload.anchorId && receipt.trustStatus === 'PHONE_ESTIMATE'
+                : receipt.anchorId === payload.acceptance.anchorId && receipt.trustStatus === 'DEVICE_ACCEPTANCE_VERIFIED';
             if (!matches || receipt.version !== 1 || !['CREATED', 'DUPLICATE_IDENTICAL'].includes(String(receipt.status))) throw new Error('Zeitbeleg-Bestätigung passt nicht zum Upload.');
             await this.store.confirmTimeEvidence(row.id);
             uploaded++; break;

@@ -104,6 +104,76 @@ class TimeEvidenceTest {
         var result=ingest.ingestBatch(userA.getId(),orgA.getId(),List.of(new ObservationIngestService.IngestItem(node.getNodeId(),seq,"SAME-CHIP",null,"UNKNOWN",incarnation.toString(),uptime,boot)));
         assertEquals(1,result.inserted());
     }
+    TimeEvidenceProtocol.PhoneRequest phone(int boot,long uptime,long utc) {
+        return new TimeEvidenceProtocol.PhoneRequest(orgA.getId().toString(),UUID.randomUUID().toString(),node.getNodeId().toString(),incarnation.toString(),boot,BigInteger.valueOf(uptime),utc,120,"PHONE_ESTIMATE",1);
+    }
+    @Test void phoneLateUploadReprojectsRawIntoEstimatedHistoricalVisitWithoutSecurityEvidence() {
+        raw(1,42,900); raw(2,42,2000);
+        var before=raws.findByNodeNodeIdAndSequence(node.getNodeId(),1).orElseThrow();
+        assertEquals(UNKNOWN,page(0,10).items().getFirst().quality());
+        var historical=sites.save(new FeedingSite(orgA,"Historical",null,null,null,null));
+        var current=sites.save(new FeedingSite(orgA,"Current",null,null,null,null));
+        deployments.save(new NodeDeployment(orgA,node,historical,Instant.ofEpochMilli(UTC-100000),Instant.ofEpochMilli(UTC+5000)));
+        deployments.save(new NodeDeployment(orgA,node,current,Instant.ofEpochMilli(UTC+5000),null));
+        var request=phone(42,1300,UTC);
+        var receipt=evidence.ingestPhone(userA.getId(),request);
+        assertEquals("PHONE_ESTIMATE",receipt.trustStatus()); assertFalse(receipt.boundedUtc());
+        assertEquals("DUPLICATE_IDENTICAL",evidence.ingestPhone(userA.getId(),request).status());
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM phone_time_anchors",Integer.class));
+        assertEquals(0,anchors.count()); // No signed proof or verified security time manufactured.
+        var estimated=page(0,10).items().getFirst(); assertEquals(ESTIMATED,estimated.quality());
+        assertEquals(UTC-400,estimated.earliestUtcMs()); assertEquals(estimated.earliestUtcMs(),estimated.approximateUtcMs());
+        assertEquals(historical.getId(),estimated.derivedFeedingSiteId());
+        var visit=temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,20).items().getFirst();
+        assertEquals("ESTIMATED",visit.quality()); assertEquals("VISIT",visit.kind()); assertEquals(2,visit.observationCount());
+        var after=raws.findByNodeNodeIdAndSequence(node.getNodeId(),1).orElseThrow();
+        assertEquals(before.getId(),after.getId()); assertNull(after.getObservedAtMs()); assertNull(after.getFeedingSite());
+        assertEquals(before.getMonotonicMs(),after.getMonotonicMs()); assertEquals(before.getClockStatus(),after.getClockStatus());
+        // A wider span straddling a move must lose derived site attribution, never use today's site.
+        evidence.ingestPhone(userA.getId(),phone(42,2300,UTC+11000));
+        var span=page(0,10).items().getFirst(); assertEquals(ESTIMATED,span.quality());
+        assertNull(span.approximateUtcMs()); assertNull(span.derivedFeedingSiteId());
+        assertTrue(span.latestUtcMs()>span.earliestUtcMs()); assertEquals(2,raws.count());
+        assertEquals("OBSERVATION",temporalVisits.read(userA.getId(),orgA.getId(),"SAME-CHIP",0,20).items().getFirst().kind());
+    }
+    @Test void phoneTenantNodeIncarnationBootBindingConflictingRetryAndConcurrentDuplicate() throws Exception {
+        var request=phone(42,1300,UTC);
+        status(403,()->evidence.ingestPhone(userB.getId(),request));
+        var unknownNode=new TimeEvidenceProtocol.PhoneRequest(request.organizationId(),request.anchorId(),UUID.randomUUID().toString(),request.incarnation(),42,request.uptimeMs(),UTC,120,"PHONE_ESTIMATE",1);
+        status(403,()->evidence.ingestPhone(userA.getId(),unknownNode));
+        var foreign=new TimeEvidenceProtocol.PhoneRequest(orgB.getId().toString(),request.anchorId(),request.nodeId(),request.incarnation(),42,request.uptimeMs(),UTC,120,"PHONE_ESTIMATE",1);
+        status(403,()->evidence.ingestPhone(userB.getId(),foreign));
+        var pool=Executors.newFixedThreadPool(2);
+        try {
+            var one=pool.submit(()->evidence.ingestPhone(userA.getId(),request));
+            var two=pool.submit(()->evidence.ingestPhone(userA.getId(),request));
+            assertEquals(Set.of("CREATED","DUPLICATE_IDENTICAL"),Set.of(one.get().status(),two.get().status()));
+        } finally { pool.shutdownNow(); }
+        for(var changed:List.of(
+            new TimeEvidenceProtocol.PhoneRequest(request.organizationId(),request.anchorId(),request.nodeId(),request.incarnation(),43,request.uptimeMs(),UTC,120,"PHONE_ESTIMATE",1),
+            new TimeEvidenceProtocol.PhoneRequest(request.organizationId(),request.anchorId(),request.nodeId(),UUID.randomUUID().toString(),42,request.uptimeMs(),UTC,120,"PHONE_ESTIMATE",1),
+            new TimeEvidenceProtocol.PhoneRequest(request.organizationId(),request.anchorId(),request.nodeId(),request.incarnation(),42,request.uptimeMs(),UTC+1,120,"PHONE_ESTIMATE",1)))
+            status(409,()->evidence.ingestPhone(userA.getId(),changed));
+        raw(1,43,900); assertNotEquals(ESTIMATED,page(0,10).items().getFirst().quality());
+        status(403,()->pageForForeign());
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM phone_time_anchors",Integer.class));
+    }
+    void pageForForeign() { projections.read(userB.getId(),orgA.getId(),node.getNodeId(),0,10); }
+    @Test void phoneEndpointRequiresSessionCsrfOwnerAndStrictUntrustedSchema() throws Exception {
+        String json=mapper.writeValueAsString(phone(42,1300,UTC));
+        assertNotEquals(200,http("POST","/api/v1/nodes/phone-time-evidence",json,true).statusCode());
+        assertEquals(200,http("POST","/api/v1/auth/login","{\"email\":\"a@example.org\",\"password\":\"test-password\"}",true).statusCode());
+        assertEquals(403,http("POST","/api/v1/nodes/phone-time-evidence",json,false).statusCode());
+        for(String bad:List.of(json.replaceFirst("\\{","{\"verifiedSecurityTime\":true,"),json.replace("PHONE_ESTIMATE","BACKEND_SIGNED"),
+            json.replace("\"uptimeMs\":1300","\"uptimeMs\":\"1300\""),json.replace("\"bootCounter\":42","\"bootCounter\":0"),json+"{}"))
+            assertEquals(400,http("POST","/api/v1/nodes/phone-time-evidence",bad,true).statusCode(),bad);
+        var response=http("POST","/api/v1/nodes/phone-time-evidence",json,true); assertEquals(200,response.statusCode(),response.body());
+        assertEquals("no-store",response.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals("PHONE_ESTIMATE",mapper.readTree(response.body()).path("trustStatus").asText());
+        assertEquals(0,anchors.count()); assertEquals(0,boots.count());
+        var maximum=json.replace("\"uptimeMs\":1300","\"uptimeMs\":18446744073709551615");
+        assertEquals(TimeEvidenceProtocol.U64_MAX,TimeEvidenceProtocol.parsePhone(maximum.getBytes(java.nio.charset.StandardCharsets.UTF_8)).uptimeMs());
+    }
     TemporalProjectionService.Page page(long after,int size) { return projections.read(userA.getId(),orgA.getId(),node.getNodeId(),after,size); }
     static void status(int status,org.junit.jupiter.api.function.Executable code) {
         assertEquals(status,assertThrows(ResponseStatusException.class,code).getStatusCode().value());

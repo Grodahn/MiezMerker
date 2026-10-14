@@ -13,6 +13,66 @@ class TemporalProjectionEngineTest {
     static Evidence a(long boot,long uptime,long lower,long upper,long ppm) {
         return new Evidence(UUID.randomUUID(),boot,u(uptime),lower,upper,ppm,"test-measured-v1");
     }
+    static Evidence phone(long boot,long uptime,long utc) { return Evidence.phone(UUID.randomUUID(),boot,u(uptime),utc); }
+    @Test void phoneSingleBootSeveralReadsAcrossThreeDaysHasNoDriftOrPrecisionBudget() {
+        long day=86400000, s=1791748800000L;
+        var engine=new TemporalProjectionEngine(List.of(phone(1,3*day,s)),List.of(),false);
+        for(long uptime:List.of(0L,day,2*day,3*day+123)) {
+            var result=engine.project(1,u(uptime));
+            assertEquals(Quality.ESTIMATED,result.quality());
+            assertEquals(s-3*day+uptime,result.earliestUtcMs()); assertEquals(result.earliestUtcMs(),result.latestUtcMs());
+        }
+    }
+    @Test void repeatedPhoneSyncsShowAllOffsetsWithoutCorrectionThresholdOrFavoredTimestamp() {
+        long s=1791748800000L;
+        for(long difference:List.of(1L,59999L,300000L,86400000L)) {
+            var engine=new TemporalProjectionEngine(List.of(phone(1,1000,s),phone(1,2000,s+1000+difference)),List.of(),false);
+            var result=engine.project(1,u(900));
+            assertEquals(Quality.ESTIMATED,result.quality()); assertEquals(s-100,result.earliestUtcMs());
+            assertEquals(s-100+difference,result.latestUtcMs()); assertEquals(2,result.anchorIds().size());
+            assertEquals(s+900,engine.project(1,u(1900)).earliestUtcMs());
+        }
+    }
+    @Test void reversedPhoneChronologyConflictsAndNeverSelectsAnAnchor() {
+        var engine=new TemporalProjectionEngine(List.of(phone(1,1000,10000),phone(1,2000,9000)),List.of(),false);
+        assertEquals(Quality.CONFLICT,engine.project(1,u(1200)).quality());
+        assertNull(engine.project(1,u(1200)).earliestUtcMs());
+    }
+    @Test void phoneRebootKeepsAnchorsInTheirOwnEpoch() {
+        var engine=new TemporalProjectionEngine(List.of(phone(1,86400000,100000000),phone(2,100,200000000)),List.of(),false);
+        assertEquals(13600000,engine.project(1,u(0)).earliestUtcMs());
+        assertEquals(199999900,engine.project(2,u(0)).earliestUtcMs());
+    }
+    @Test void phoneMultipleIntermediateBootsPreserveRelativeOrderAndOnlyDefensibleOuterBounds() {
+        var ranges=List.of(new BootRange(2,2,3,u(100),u(1100)),new BootRange(3,4,5,u(10),u(2010)));
+        var engine=new TemporalProjectionEngine(List.of(phone(1,1000,10000),phone(4,100,20000)),ranges,false);
+        assertEquals(Quality.BOUNDED,engine.project(2,u(100)).quality());
+        assertEquals(10000,engine.project(2,u(100)).earliestUtcMs());
+        assertEquals(17000,engine.project(2,u(100)).latestUtcMs());
+        assertEquals(11000,engine.project(3,u(10)).earliestUtcMs());
+        assertEquals(20000,engine.project(3,u(2010)).latestUtcMs());
+        var preceding=new TemporalProjectionEngine(List.of(phone(1,1000,10000)),ranges,false).project(3,u(10));
+        assertEquals(11000,preceding.earliestUtcMs()); assertNull(preceding.latestUtcMs()); assertEquals(Quality.UNKNOWN,preceding.quality());
+        var following=new TemporalProjectionEngine(List.of(phone(4,100,20000)),ranges,false).project(2,u(100));
+        assertNull(following.earliestUtcMs()); assertEquals(17000,following.latestUtcMs());
+        var unknown=new TemporalProjectionEngine(List.of(),ranges,false).project(2,u(100));
+        assertEquals(Quality.UNKNOWN,unknown.quality()); assertNull(unknown.earliestUtcMs()); assertNull(unknown.latestUtcMs());
+    }
+    @Test void phoneBusinessAuthorityDoesNotRelabelExistingSignedAnchors() {
+        var signed=a(1,1000,10000,10100,20);
+        assertEquals(Quality.RECONSTRUCTED,new TemporalProjectionEngine(List.of(signed),List.of(),false).project(1,u(1000)).quality());
+        var phone=phone(1,1000,15000);
+        var result=new TemporalProjectionEngine(List.of(signed,phone),List.of(),false).project(1,u(1000));
+        assertEquals(Quality.ESTIMATED,result.quality()); assertEquals(15000,result.earliestUtcMs());
+    }
+    @Test void repeatedPhoneSyncCapacityDoesNotInheritSignedAnchorLimitOrQuadraticProjection() {
+        var evidence=new ArrayList<Evidence>();
+        for(int i=0;i<4096;i++) evidence.add(phone(1,i+1000,100000+i));
+        assertTimeout(java.time.Duration.ofSeconds(3),()->{
+            var engine=new TemporalProjectionEngine(evidence,List.of(),false);
+            for(int i=0;i<100;i++) assertEquals(99000+i,engine.project(1,u(i)).earliestUtcMs());
+        });
+    }
     @Test void tv5AsymmetricLatencyBeforeAndAfterAnchor() {
         long s=1791748800000L;
         assertEquals(new TemporalMath.Interval(s-500,s),TemporalMath.propagate(s-100,s+400,u(1300),u(900),0));

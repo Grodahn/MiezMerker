@@ -26,6 +26,27 @@ public final class TimeEvidenceProtocol {
     }
     @Schema(additionalProperties=Schema.AdditionalPropertiesValue.FALSE,requiredProperties={"organizationId","boot"})
     public record BootRequest(String organizationId,Boot boot) {}
+    @Schema(additionalProperties=Schema.AdditionalPropertiesValue.FALSE,requiredProperties={"organizationId","anchorId","nodeId","incarnation","bootCounter","uptimeMs","utcMs","transportDurationMs","source","formatVersion"})
+    public record PhoneRequest(String organizationId,String anchorId,String nodeId,String incarnation,long bootCounter,
+            @Schema(implementation=Long.class,type="integer",format="uint64") BigInteger uptimeMs,
+            long utcMs,long transportDurationMs,String source,int formatVersion) {}
+    public static PhoneRequest parsePhone(byte[] body) {
+        var n=NodeTimeProtocol.json(body);
+        NodeTimeProtocol.fields(n,"organizationId","anchorId","nodeId","incarnation","bootCounter","uptimeMs","utcMs","transportDurationMs","source","formatVersion");
+        var r=new PhoneRequest(NodeTimeProtocol.text(n,"organizationId"),NodeTimeProtocol.text(n,"anchorId"),
+            NodeTimeProtocol.text(n,"nodeId"),NodeTimeProtocol.text(n,"incarnation"),u32(n,"bootCounter"),integer(n,"uptimeMs",U64_MAX),
+            integer(n,"utcMs",BigInteger.valueOf(Long.MAX_VALUE)).longValueExact(),
+            integer(n,"transportDurationMs",BigInteger.valueOf(Long.MAX_VALUE)).longValueExact(),NodeTimeProtocol.text(n,"source"),
+            integer(n,"formatVersion",BigInteger.valueOf(65535)).intValueExact());
+        validatePhone(r); return r;
+    }
+    public static void validatePhone(PhoneRequest r) {
+        NodeTimeProtocol.uuid(r.organizationId()); NodeTimeProtocol.uuid(r.anchorId());
+        NodeTimeProtocol.uuid(r.nodeId()); NodeTimeProtocol.uuid(r.incarnation());
+        if(r.formatVersion()!=1 || !"PHONE_ESTIMATE".equals(r.source()) || r.bootCounter()<1 || r.bootCounter()>0xffff_ffffL
+            || r.uptimeMs()==null || r.uptimeMs().signum()<0 || r.uptimeMs().compareTo(U64_MAX)>0 || r.utcMs()<=0 || r.transportDurationMs()<0)
+            throw new IllegalArgumentException("Invalid phone estimate");
+    }
     public static BootRequest parseBoot(byte[] body) {
         var n=NodeTimeProtocol.json(body); NodeTimeProtocol.fields(n,"organizationId","boot");
         String org=NodeTimeProtocol.text(n,"organizationId"); NodeTimeProtocol.uuid(org);

@@ -67,7 +67,12 @@ public class TemporalProjectionService {
                         var evidence=anchors.findByOrganizationIdAndNodeIdAndIncarnationOrderByBootCounterAscUptimeMsAscIdAsc(org,nodeId,incarnation,PageRequest.of(0,4097));
                         if(evidence.size()>4096) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Evidence projection capacity exceeded");
                         var verified=new ArrayList<TemporalProjectionEngine.Evidence>();
-                        for(var a:evidence) if(a.getDriftPpm()!=null && a.getFingerprint().equals(node.getFingerprint())
+                        var phone=jdbc.query("SELECT anchor_id,boot_counter,uptime_ms,utc_ms FROM phone_time_anchors WHERE organization_id=? AND node_id=? AND incarnation=? ORDER BY boot_counter,uptime_ms,anchor_id LIMIT 4097",
+                            (rs,n)->TemporalProjectionEngine.Evidence.phone(rs.getObject(1,UUID.class),rs.getLong(2),rs.getBigDecimal(3).toBigIntegerExact(),rs.getLong(4)),org,nodeId,incarnation);
+                        if(phone.size()+evidence.size()>4096) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Evidence projection capacity exceeded");
+                        verified.addAll(phone);
+                        var phoneBoots=phone.stream().map(TemporalProjectionEngine.Evidence::boot).collect(java.util.stream.Collectors.toSet());
+                        for(var a:evidence) if(!phoneBoots.contains(a.getBootCounter()) && a.getDriftPpm()!=null && a.getFingerprint().equals(node.getFingerprint())
                                 && node.getClaimedAt()!=null && a.getUtcMs()>=node.getClaimedAt().toEpochMilli())
                             verified.add(new TemporalProjectionEngine.Evidence(a.getAnchorId(),a.getBootCounter(),a.getUptimeMs(),
                                 Math.subtractExact(a.getUtcMs(),a.getUncertaintyMinusMs()),Math.addExact(a.getUtcMs(),a.getUncertaintyPlusMs()),a.getDriftPpm(),a.getSamplingMs(),a.getPolicyProvenance()));
@@ -107,7 +112,9 @@ public class TemporalProjectionService {
                 }
             }
             views.add(new Projection(raw.getId(),raw.getSequence(),inc,raw.getBootCounter(),raw.getMonotonicMs(),TemporalProjectionEngine.VERSION,
-                result.quality(),result.earliestUtcMs(),result.latestUtcMs(),null,result.anchorIds(),result.reason(),policies.getOrDefault(inc,List.of()),site,deployment,attribution));
+                result.quality(),result.earliestUtcMs(),result.latestUtcMs(),
+                result.quality()==TemporalProjectionEngine.Quality.ESTIMATED && Objects.equals(result.earliestUtcMs(),result.latestUtcMs())?result.earliestUtcMs():null,
+                result.anchorIds(),result.reason(),policies.getOrDefault(inc,List.of()),site,deployment,attribution));
         }
         return List.copyOf(views);
     }

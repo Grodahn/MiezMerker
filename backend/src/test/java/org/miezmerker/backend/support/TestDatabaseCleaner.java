@@ -85,6 +85,7 @@ public class TestDatabaseCleaner {
         jdbc.update("DELETE FROM demo_fixture_records WHERE record_key <> 'lock'");
         derivedVisits.deleteAllInBatch();
         jdbc.update("DELETE FROM time_anchors");
+        jdbc.update("DELETE FROM phone_time_anchors");
         jdbc.update("DELETE FROM boot_epochs");
         observations.deleteAllInBatch();
         deployments.deleteAllInBatch();

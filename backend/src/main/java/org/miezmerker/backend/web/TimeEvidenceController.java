@@ -48,6 +48,16 @@ public class TimeEvidenceController {
         catch(IllegalArgumentException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid boot evidence"); }
         return ResponseEntity.ok().header("Cache-Control","no-store").body(evidence.ingestBoot(user,parsed));
     }
+    @PostMapping(value="/phone-time-evidence",consumes="application/json",produces="application/json")
+    @Operation(operationId="ingestPhoneTimeEvidence",summary="Owner-reported observation-time estimate; never security-trusted UTC",
+        requestBody=@io.swagger.v3.oas.annotations.parameters.RequestBody(required=true,content=@Content(schema=@Schema(implementation=TimeEvidenceProtocol.PhoneRequest.class))))
+    public ResponseEntity<TimeEvidenceService.Receipt> phone(HttpServletRequest request,@AuthenticationPrincipal AppUserDetails principal) throws IOException {
+        UUID user=TenantService.currentUserId(principal); var bytes=body(request,user);
+        TimeEvidenceProtocol.PhoneRequest parsed;
+        try { parsed=TimeEvidenceProtocol.parsePhone(bytes); }
+        catch(IllegalArgumentException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid phone estimate"); }
+        return ResponseEntity.ok().header("Cache-Control","no-store").body(evidence.ingestPhone(user,parsed));
+    }
     @GetMapping(value="/{nodeId}/temporal-projections",produces="application/json")
     @Operation(operationId="listNodeTemporalProjections",summary="Owner-only immutable observation UTC intervals ordered by sequence")
     public ResponseEntity<TemporalProjectionService.Page> read(@PathVariable UUID nodeId,@RequestParam UUID organizationId,
