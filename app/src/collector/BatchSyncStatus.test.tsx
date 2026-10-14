@@ -5,6 +5,16 @@ import type { BatchNodeResult } from './batch-sync';
 
 afterEach(cleanup);
 
+test('connected device with stalled GATT discovery gets service recovery rather than power/reachability advice', () => {
+  const result: BatchNodeResult = { ...ok('unused', 'browser-device'), kind: 'unreachable', nodeId: null,
+    ownerNodeId: null, message: 'Service-Suche zeitüberschritten.', recordsReceived: 0, watermark: null };
+  render(<><BatchSummary results={[result]}/><BatchNodeList results={[result]} contexts={new Map()}/></>);
+  expect(screen.getAllByText('Bluetooth-Dienstsuche fehlgeschlagen')).toHaveLength(2);
+  expect(screen.getAllByText(/Bluetooth am Smartphone aus-/)).toHaveLength(2);
+  expect(screen.queryByText(/Napf nicht erreichbar/)).toBeNull();
+  expect(screen.queryByText(/näher heranhalten/)).toBeNull();
+});
+
 function ok(id: string, browserId = id): BatchNodeResult {
   return {
     browserId, browserLabel: `Browser ${browserId}`, kind: 'success', nodeId: id,

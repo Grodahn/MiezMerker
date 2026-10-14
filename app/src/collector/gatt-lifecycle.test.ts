@@ -73,6 +73,45 @@ test('discovery timeout is reported as a timeout and disconnects immediately', a
   expect(server.disconnect).toHaveBeenCalledTimes(1);
 });
 
+test('one stalled service discovery reconnects the same permitted device before reading identity', async () => {
+  vi.useFakeTimers();
+  const { service, server, transport } = fakeDevice();
+  server.getPrimaryService.mockImplementationOnce(() => new Promise(() => {}));
+  const connected = transport.connect();
+  await vi.advanceTimersByTimeAsync(10_000);
+  await connected;
+  expect(server.connect).toHaveBeenCalledTimes(2);
+  expect(server.disconnect).toHaveBeenCalledTimes(1);
+  expect(server.getPrimaryService).toHaveBeenCalledTimes(2);
+  expect(service.getCharacteristic).toHaveBeenCalledTimes(11);
+  expect(transport.connected).toBe(true);
+});
+
+test('repeated service discovery timeout remains bounded and preserves its phase', async () => {
+  vi.useFakeTimers();
+  const { server, transport } = fakeDevice();
+  server.getPrimaryService.mockImplementation(() => new Promise(() => {}));
+  const rejected = expect(transport.connect()).rejects.toMatchObject({ kind: 'timeout', stage: 'service' });
+  await vi.advanceTimersByTimeAsync(20_000);
+  await rejected;
+  expect(server.connect).toHaveBeenCalledTimes(2);
+  expect(server.disconnect).toHaveBeenCalledTimes(2);
+  expect(transport.connected).toBe(false);
+});
+
+test('cancellation during service discovery never reconnects after the timeout', async () => {
+  vi.useFakeTimers();
+  const { server, transport } = fakeDevice();
+  server.getPrimaryService.mockImplementation(() => new Promise(() => {}));
+  const rejected = expect(transport.connect()).rejects.toMatchObject({ kind: 'disconnected' });
+  await vi.advanceTimersByTimeAsync(1);
+  await transport.disconnect();
+  await vi.advanceTimersByTimeAsync(10_000);
+  await rejected;
+  expect(server.connect).toHaveBeenCalledTimes(1);
+  expect(transport.connected).toBe(false);
+});
+
 test('only missing optional claim characteristics are tolerated on older nodes', async () => {
   const { service, transport } = fakeDevice();
   service.getCharacteristic.mockImplementation(async (uuid?: string) => {

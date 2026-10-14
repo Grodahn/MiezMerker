@@ -61,7 +61,8 @@ export async function bootstrapNodeTime(transport: NodeTransport, nodeId: string
     headers: csrf ? { 'X-XSRF-TOKEN': csrf } : {}, signal: AbortSignal.timeout(10_000),
   }).catch(error => {
     assertActive();
-    throw new TimeBootstrapUnavailableError(error instanceof Error ? error.message : 'Zeitservice nicht erreichbar.');
+    const detail = error instanceof Error ? error.message : 'Keine Antwort.';
+    throw new TimeBootstrapUnavailableError(`Backend-Zeitservice nicht erreichbar. Signierter Zeit-Bootstrap noch nicht bestätigt. Internet und Backend prüfen. ${detail}`);
   });
   assertActive();
   if (error || !data?.proof) {

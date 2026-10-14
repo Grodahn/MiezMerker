@@ -273,6 +273,10 @@ export class WebBluetoothTransport implements NodeTransport {
   }
 
   async connect(): Promise<void> {
+    return this.connectAttempt(true);
+  }
+
+  private async connectAttempt(retryServiceDiscovery: boolean): Promise<void> {
     let stage: 'connect' | 'service' | 'characteristic' = 'connect';
     let discoveryName = '';
     const generation = ++this.connectionGeneration;
@@ -325,8 +329,21 @@ export class WebBluetoothTransport implements NodeTransport {
       this.channel = new FrameChannel(ops);
       this.connectedFlag = true;
     } catch (error) {
-      if (generation === this.connectionGeneration) await this.disconnect();
-      if (error instanceof BluetoothTransportError) throw error;
+      if (generation !== this.connectionGeneration) {
+        throw new BluetoothTransportError('disconnected', 'BLE-Verbindungsaufbau abgebrochen. Bitte erneut starten.', error, stage);
+      }
+      await this.disconnect();
+      // disconnect() awaits Android teardown. Cancellation during that wait
+      // must not revive an old claim/sync operation with another connection.
+      if (this.connectionGeneration !== generation + 1) {
+        throw new BluetoothTransportError('disconnected', 'BLE-Verbindungsaufbau abgebrochen. Bitte erneut starten.', error, stage);
+      }
+      if (retryServiceDiscovery && stage === 'service' && error instanceof BluetoothTransportError && error.kind === 'timeout') {
+        return this.connectAttempt(false);
+      }
+      if (error instanceof BluetoothTransportError) {
+        throw new BluetoothTransportError(error.kind, error.message, error.cause, error.stage ?? stage);
+      }
       const step = stage === 'connect' ? 'GATT-Verbindungsaufbau'
         : stage === 'service' ? 'Dienstsuche' : `Characteristic-Suche (${discoveryName})`;
       throw new BluetoothTransportError('connection-failed',

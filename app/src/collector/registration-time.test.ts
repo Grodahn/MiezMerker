@@ -88,6 +88,16 @@ test('organization switch after HTTP prevents proof delivery', async () => {
   expect(ble.write).toHaveBeenCalledTimes(1);
 });
 
+test('backend time request timeout remains a time-service failure and never submits a proof', async () => {
+  post.mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+  const ble = transport();
+  const failure = await bootstrapRegistrationTime(ble, NODE, 'org', () => {}).catch(error => error);
+  expect(failure.kind).toBe('trusted-time');
+  expect(failure.message).toContain('Backend-Zeitservice nicht erreichbar');
+  expect(failure.message).toContain('noch nicht bestätigt');
+  expect(ble.write).toHaveBeenCalledTimes(1);
+});
+
 
 test('ACTIVE MEMBER normal sync reuses the signed bootstrap with CLAIMED backend authorization', async () => {
   auth.mockReturnValue({ user: { memberships: [{ organizationId: 'org', status: 'ACTIVE', role: 'MEMBER' }] }, csrfToken: 'csrf' });

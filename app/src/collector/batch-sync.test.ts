@@ -6,6 +6,7 @@ import {
   type BatchNodeInput,
 } from './batch-sync';
 import { initialCollectorView } from './collector-sync';
+import { TimeBootstrapUnavailableError } from './registration-time';
 
 function input(id: string, label = id): BatchNodeInput {
   return { device: { id }, browserId: id, browserLabel: label };
@@ -27,6 +28,22 @@ function successView(nodeId: string, records = 3) {
 }
 
 describe('batch orchestration (issue #76)', () => {
+  test('backend bootstrap timeout is not a BLE reachability failure and the next node continues', async () => {
+    let calls = 0;
+    const results = await runBatchSync([input('time-service-failure'), input('healthy')], {
+      createTransport: () => ({ connect: async () => {}, disconnect: async () => {},
+        read: async () => new Uint8Array(), write: async () => {} }),
+      runSingleNode: async () => {
+        if (calls++ === 0) throw new TimeBootstrapUnavailableError('Backend-Zeitservice Timeout');
+        return successView('healthy');
+      },
+    });
+    expect(results.map(r => r.kind)).toEqual(['failed', 'success']);
+    expect(results[0].message).toContain('Backend-Zeitservice');
+  });
+  test('time-bootstrap view errors retain backend attribution even when they include Timeout', () => {
+    expect(classifyBatchView({ ...initialCollectorView, nodeState: 'failed', nodeMessage: 'Zeit-Bootstrap nicht verfügbar: Timeout' }, false).kind).toBe('failed');
+  });
   test('two authorized reachable nodes are processed sequentially without a chooser', async () => {
     const order: string[] = [];
     const disconnects: string[] = [];

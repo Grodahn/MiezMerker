@@ -151,6 +151,9 @@ export function classifyBatchView(view: CollectorViewState, signalAborted: boole
     return { kind: 'foreign', nodeId: view.owner?.nodeId ?? null, message: viewMessage(view) };
   }
   const text = viewMessage(view);
+  if (/Zeit-Bootstrap|Zeitservice|Signierter UTC-Proof/i.test(text)) {
+    return { kind: 'failed', nodeId: view.owner?.nodeId ?? null, message: text };
+  }
   if (/Offline-Credential|Credential|Autorisierung abgelehnt|Node-Authentizität|Node-Identität offline unbekannt|Keine aktive Mitgliedschaft|Bitte zuerst anmelden|Zugriff nicht erlaubt/i.test(text)) {
     return { kind: 'unauthorized', nodeId: view.owner?.nodeId ?? null, message: text };
   }
@@ -167,6 +170,7 @@ function classifyThrown(error: unknown, signalAborted: boolean): { kind: BatchNo
   const text = error instanceof Error ? error.message : String(error);
   const name = error && typeof error === 'object' && 'name' in error ? String((error as { name: unknown }).name) : '';
   const kind = error && typeof error === 'object' && 'kind' in error ? error.kind : undefined;
+  if (kind === 'trusted-time') return { kind: 'failed', message: text };
   if (kind === 'timeout' || name === 'NetworkError' || /zeitüberschritten|Timeout|Verbindung|disconnected|nicht erreichbar|Kein Node gefunden/i.test(text)) {
     return { kind: 'unreachable', message: text };
   }
