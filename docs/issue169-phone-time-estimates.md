@@ -69,6 +69,14 @@ and ACK boundaries, signed security-time separation and ticket scope.
   authorization, raw mutation, tenant/sharing or historical-attribution blocker
   remains after focused repair verification.
 
+## Second review before merge
+
+Fixed order-dependent contradiction detection when several phone anchors share
+one uptime: every later uptime now checks against the maximum UTC across all
+earlier uptime groups, not an arbitrary last tied anchor. Permutation regressions
+cover ties on either side of a reversal; equal-uptime disagreement alone remains
+an explicit estimated span. No security/authorization or persistence contract changes.
+
 ## Boundaries and physical acceptance
 
 No account/session/credential invalidation (#170), FIELD_ALPHA security-clock

@@ -38,6 +38,25 @@ class TemporalProjectionEngineTest {
         assertEquals(Quality.CONFLICT,engine.project(1,u(1200)).quality());
         assertNull(engine.project(1,u(1200)).earliestUtcMs());
     }
+    @Test void tiedPhoneUptimesCannotHideReversedChronologyInAnyInputOrder() {
+        var low=phone(1,1000,10000); var high=phone(1,1000,20000); var later=phone(1,2000,15000);
+        for(var evidence:List.of(List.of(low,high,later),List.of(high,low,later),
+            List.of(later,low,high),List.of(later,high,low))) {
+            var result=new TemporalProjectionEngine(evidence,List.of(),false).project(1,u(1200));
+            assertEquals(Quality.CONFLICT,result.quality()); assertNull(result.earliestUtcMs()); assertNull(result.latestUtcMs());
+        }
+    }
+    @Test void tiedLaterPhoneUptimesCheckEveryTimestampAgainstAllEarlierAnchors() {
+        var earlier=phone(1,1000,20000); var low=phone(1,2000,15000); var high=phone(1,2000,25000);
+        for(var evidence:List.of(List.of(earlier,low,high),List.of(earlier,high,low)))
+            assertEquals(Quality.CONFLICT,new TemporalProjectionEngine(evidence,List.of(),false).project(1,u(1500)).quality());
+        // Equal-uptime disagreement alone remains a visible estimate span;
+        // it does not invent sub-millisecond ordering or a tolerance threshold.
+        for(var evidence:List.of(List.of(low,high),List.of(high,low))) {
+            var result=new TemporalProjectionEngine(evidence,List.of(),false).project(1,u(2000));
+            assertEquals(Quality.ESTIMATED,result.quality()); assertEquals(15000,result.earliestUtcMs()); assertEquals(25000,result.latestUtcMs());
+        }
+    }
     @Test void phoneRebootKeepsAnchorsInTheirOwnEpoch() {
         var engine=new TemporalProjectionEngine(List.of(phone(1,86400000,100000000),phone(2,100,200000000)),List.of(),false);
         assertEquals(13600000,engine.project(1,u(0)).earliestUtcMs());

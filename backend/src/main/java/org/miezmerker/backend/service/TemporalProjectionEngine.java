@@ -55,9 +55,17 @@ public final class TemporalProjectionEngine {
                 }
                 phoneOffsets.put(ordered.getFirst().boot(),new PhoneOffsets(lower,upper));
             }
-            for(int i=1;i<ordered.size();i++) {
-                var previous=ordered.get(i-1); var next=ordered.get(i);
-                if(next.uptime().compareTo(previous.uptime())>0 && next.lower()<previous.lower()) bad=true;
+            BigInteger currentUptime=null;
+            Long precedingMaxUtc=null,currentMaxUtc=null;
+            for(var a:ordered) {
+                if(!a.uptime().equals(currentUptime)) {
+                    precedingMaxUtc=max(precedingMaxUtc,currentMaxUtc);
+                    currentUptime=a.uptime(); currentMaxUtc=null;
+                }
+                // All anchors at an earlier uptime matter. A tied uptime's
+                // arbitrary UUID/input ordering must not hide a contradiction.
+                if(precedingMaxUtc!=null && a.lower()<precedingMaxUtc) bad=true;
+                currentMaxUtc=max(currentMaxUtc,a.lower());
             }
         }
         try {
