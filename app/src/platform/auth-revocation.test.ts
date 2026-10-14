@@ -67,6 +67,85 @@ test('an incomplete login response cannot remove otherwise valid offline credent
   expect(await db.credentials.count()).toBe(2);
 });
 
+test.each(['missing-role', 'empty-organization', 'duplicate-organization'])('%s session replies cannot replace offline authorization', async kind => {
+  get.mockResolvedValue({ data: { ...user, memberships: kind === 'missing-role'
+    ? [{ organizationId: 'a', status: 'ACTIVE' }]
+    : kind === 'empty-organization' ? [{ ...user.memberships[0], organizationId: '' }]
+      : [user.memberships[0], { ...user.memberships[0], status: 'DISABLED' }] } });
+  await expect(auth.fetchSession()).rejects.toThrow('Sitzung konnte nicht geladen werden');
+  expect(auth.activeOrganizationIds()).toEqual(['a', 'b']);
+  expect(await db.credentials.count()).toBe(2);
+});
+
+test('blocked localStorage does not crash authentication startup', async () => {
+  const access = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+  try {
+    vi.resetModules();
+    const fresh = await import('./auth');
+    expect(fresh.getAuthState().user).toBeNull();
+  } finally { access.mockRestore(); }
+});
+
+test('a failed authentication lock cannot suppress subsequent confirmed revocation', async () => {
+  const status = await import('./authorization-status');
+  const lock = vi.spyOn(status, 'withAuthorizationLock').mockRejectedValueOnce(new Error('lock unavailable'));
+  try {
+    await expect(auth.login(user.email, 'password')).rejects.toThrow('lock unavailable');
+    get.mockResolvedValue(disabled());
+    await auth.fetchSession();
+    expect(auth.getAuthState().user).toBeNull();
+  } finally { lock.mockRestore(); }
+});
+
+test.each(['account', 'organization'])('%s revocation during the last credential read is observed without a storage event', async scope => {
+  await auth.fetchSession();
+  const status = await import('./authorization-status');
+  const original = db.invalidations.get.bind(db.invalidations);
+  let reads = 0;
+  const read = vi.spyOn(db.invalidations, 'get').mockImplementation(key => original(key).then(result => {
+    if (++reads === 2) status.publishAuthorization(user.userId, scope === 'account', scope === 'account' ? [] : ['b']);
+    return result;
+  }));
+  try {
+    expect(await identity.credential(user.userId, 'a')).toBeNull();
+    expect(auth.getAuthState().user?.memberships[0].status).toBe('ACTIVE'); // Event has not arrived.
+  } finally { read.mockRestore(); }
+});
+
+test.each(['account', 'organization'])('%s revocation blocks BLE and provisioning before the storage event arrives', async scope => {
+  const { bindNodeOperation } = await import('../collector/node-operation');
+  const { requireActiveRole } = await import('../collector/authorization');
+  const { assertAdminMayProvision } = await import('../collector/node-setup');
+  const raw = { connect: vi.fn(), read: vi.fn(), write: vi.fn(), disconnect: vi.fn().mockResolvedValue(undefined) };
+  const operation = bindNodeOperation(raw, user.userId, 'a');
+  try {
+    (await import('./authorization-status')).publishAuthorization(user.userId, scope === 'account', scope === 'account' ? [] : ['b']);
+    expect(() => requireActiveRole('a')).toThrow('Keine aktive Mitgliedschaft');
+    expect(() => assertAdminMayProvision('a')).toThrow('Keine aktive Mitgliedschaft');
+    await expect(operation.transport.write(new Uint8Array([1]))).rejects.toThrow('abgebrochen');
+    expect(raw.write).not.toHaveBeenCalled();
+    expect(raw.disconnect).toHaveBeenCalledOnce();
+  } finally { await operation.close(); }
+});
+
+test('evidence persistence rechecks revocation after its pending database read', async () => {
+  const { CollectorDatabase } = await import('./offline-store');
+  const { CollectorObservationStore } = await import('../collector/observation-store');
+  const collector = new CollectorDatabase(`evidence-fence-${crypto.randomUUID()}`);
+  const store = new CollectorObservationStore(collector, user.userId);
+  const status = await import('./authorization-status');
+  const original = collector.timeEvidence.get.bind(collector.timeEvidence);
+  const read = vi.spyOn(collector.timeEvidence, 'get').mockImplementation(key => original(key).then(row => {
+    status.publishAuthorization(user.userId, true, []);
+    return row;
+  }));
+  try {
+    await expect(store.putTimeEvidence({ id: 'late', organizationId: 'a', nodeId: 'node', incarnation: 'inc',
+      bootCounter: '1', kind: 0, payload: 'exact-boot-bytes', uploaded: false })).rejects.toThrow('Offline-Daten');
+    expect(await collector.timeEvidence.count()).toBe(0);
+  } finally { read.mockRestore(); await collector.delete(); }
+});
+
 test.each(['DISABLED', 'removed', 'inactive-organization'])('%s removes A while retaining B and prevents stale restoration', async reason => {
   await auth.fetchSession();
   const memberships = reason === 'DISABLED' ? [{ ...user.memberships[0], status: 'DISABLED' }, user.memberships[1]] : [user.memberships[1]];
@@ -191,6 +270,13 @@ test('pending RFID records, boot/time evidence and sync metadata survive revocat
     expect(await other.pendingUploads('a')).toEqual([]);
     expect(await other.pendingTimeEvidence('a')).toEqual([]);
     expect(await other.pendingUploads('b')).toEqual([]);
+    const record = { nodeId: 'node', incarnation: 'incarnation', sequence: '1' };
+    await other.markUploading([record]); await other.markUploaded([record]);
+    await other.markUploadResult(record, true, null);
+    await other.confirmTimeEvidence('boot'); await other.confirmNodeEvidenceReceipt('time');
+    expect((await collector.observations.get(['node', 'incarnation', '1']))?.uploadState).toBe('pending');
+    expect((await collector.timeEvidence.get('boot'))?.uploaded).toBe(false);
+    expect((await collector.timeEvidence.get('time'))?.nodeAcknowledged).toBeUndefined();
     await expect(other.putObservations([{ nodeId: 'node', incarnation: 'incarnation', sequence: 1n, chipId: 'secret-chip',
       clockStatus: 0, epochMs: null, monotonicMs: 25n, bootCounter: 1 }], 'a')).rejects.toThrow('another offline account');
     // Original user plus confirmed current authorization can recover the queue.

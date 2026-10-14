@@ -111,6 +111,12 @@ export class OfflineIdentity {
         || (cached.organizationGeneration ?? 0) !== (status?.organizationGenerations[organizationId] ?? 0)
         || Date.now() >= cached.expiresAt || !authorizationPermits(userId, organizationId)) return null;
     if (((await this.database.invalidations.get(userId))?.generation ?? 0) !== generation) return null;
+    // No await may follow this fence: another tab can revoke while the final
+    // IndexedDB read is pending, before its storage event updates this tab.
+    const latest = authorizationStatus(userId);
+    if (Date.now() >= cached.expiresAt || !authorizationPermits(userId, organizationId)
+        || (cached.credentialGeneration ?? 0) !== (latest?.credentialGeneration ?? 0)
+        || (cached.organizationGeneration ?? 0) !== (latest?.organizationGenerations[organizationId] ?? 0)) return null;
     return cached.credential;
   }
 

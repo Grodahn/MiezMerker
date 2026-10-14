@@ -53,8 +53,10 @@ function restoreOfflineContext(): AuthState {
         sessionChecked: false, sessionVerified: false };
     }
   } catch { /* Offline context is optional; a valid credential is still required for BLE. */ }
-  return { user: null, csrfToken: null, activeOrganizationId: null, sessionChecked: false, sessionVerified: false,
-    revocationMessage: typeof localStorage !== 'undefined' && localStorage.getItem('miezmerker-revoked-account') ? accountDisabledMessage : undefined };
+  let revocationMessage: string | undefined;
+  try { if (localStorage.getItem('miezmerker-revoked-account')) revocationMessage = accountDisabledMessage; }
+  catch { /* Storage access itself can be blocked; authentication must still start. */ }
+  return { user: null, csrfToken: null, activeOrganizationId: null, sessionChecked: false, sessionVerified: false, revocationMessage };
 }
 let state: AuthState = restoreOfflineContext();
 const listeners = new Set<(state: AuthState) => void>();
@@ -66,11 +68,13 @@ let authenticationQueue: Promise<void> = Promise.resolve();
 function changeAuthentication<T>(operation: () => Promise<T>): Promise<T> {
   const pending = authenticationQueue.then(async () => {
     changingAuthentication = true;
-    await withAuthorizationLock(() => {
-      sessionGeneration++;
-      advanceAuthenticationEpoch();
-    });
-    try { return await operation(); }
+    try {
+      await withAuthorizationLock(() => {
+        sessionGeneration++;
+        advanceAuthenticationEpoch();
+      });
+      return await operation();
+    }
     finally { changingAuthentication = false; sessionGeneration++; }
   });
   authenticationQueue = pending.then(() => {}, () => {});
@@ -143,8 +147,9 @@ type CompleteSession = components['schemas']['SessionView'] & {
 };
 function completeSession(data: components['schemas']['SessionView'] | undefined): data is CompleteSession {
   return Boolean(data && typeof data.userId === 'string' && data.userId && typeof data.email === 'string' && data.email
-    && Array.isArray(data.memberships) && data.memberships.every(m => m && typeof m.organizationId === 'string'
-      && ['ACTIVE', 'PENDING', 'DISABLED'].includes(m.status ?? '')));
+    && Array.isArray(data.memberships) && data.memberships.every(m => m && typeof m.organizationId === 'string' && m.organizationId.length > 0
+      && ['ACTIVE', 'PENDING', 'DISABLED'].includes(m.status ?? '') && ['ADMIN', 'MEMBER'].includes(m.role ?? ''))
+    && new Set(data.memberships.map(m => m.organizationId)).size === data.memberships.length);
 }
 
 export async function fetchSession(): Promise<SessionUser | null> {

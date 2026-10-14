@@ -62,6 +62,15 @@ Cross-tab propagation depends on browser storage facilities; installations do
 not receive revocation while disconnected. Persistently unavailable/corrupted
 storage requires recovery and must not be represented as successful data cleanup.
 
+The follow-up review additionally fences credential reads and BLE/provisioning
+operations against the shared revocation status before a storage event arrives.
+Queued renewal cleanup retains its originating revision. Failed lock acquisition
+releases the authentication transition, and blocked storage cannot crash startup.
+Membership responses with missing roles or duplicate organizations are inconclusive.
+Observation/evidence status mutations enforce the same owner boundary as reads;
+revoked or replacement accounts cannot mark quarantined records as uploaded or
+acknowledged. Evidence persistence rechecks access after its asynchronous read.
+
 ## Verification
 
 Focused auth/credential/storage regressions cover explicit account deactivation,

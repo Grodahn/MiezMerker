@@ -12,6 +12,7 @@
 
 import { getAuthState } from '../platform/auth';
 import type { OfflineIdentity } from '../platform/offline-identity';
+import { authorizationPermits } from '../platform/authorization-status';
 
 export type CredentialFailureKind =
   | 'no-session'
@@ -38,6 +39,7 @@ export interface CredentialResolution {
 
 function activeRole(organizationId: string): string | null {
   const user = getAuthState().user;
+  if (user && !authorizationPermits(user.userId, organizationId)) return null;
   const membership = user?.memberships.find(m => m.organizationId === organizationId && m.status === 'ACTIVE');
   return (membership?.role as string | undefined) ?? null;
 }
