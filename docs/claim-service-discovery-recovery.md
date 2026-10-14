@@ -7,7 +7,10 @@ the PWA reported `Service-Suche zeitüberschritten`. This timeout is in
 `getPrimaryService`, before public identity, signed time bootstrap, claim, or
 organization assignment. The reported NimBLE unsupported-remote-feature log
 alone does not establish the cause. #131 did not change the GATT service or
-characteristic registration. Physical cause and recovery remain unverified.
+characteristic registration. After closing the PWA, toggling phone Bluetooth,
+and restarting the node, the user reported successful backend registration,
+followed by `Characteristic-Suche (info)` failing. This confirms progress beyond
+service discovery, but does not yet prove completed firmware ownership.
 
 ## Bounded PWA recovery
 
@@ -23,11 +26,24 @@ toggling phone Bluetooth, restarting the node, and retrying. Backend time
 service failures are separately classified; they must not suggest that the
 node is unreachable.
 
+## Post-receipt ownership confirmation
+
+The firmware refreshes public Hello/Owner from the atomically committed identity
+before acknowledging ClaimReceipt. Read these on the existing connection rather
+than disconnecting and immediately rediscovering all characteristics. Confirm
+node ID, incarnation, CLAIMED state, and organization before updating the local
+claim state. Final cleanup disconnects; later protected synchronization still
+starts a fresh session with the persisted owner context.
+
 ## Verification
 
 Automated coverage includes recovery on the first service timeout, bounded
 failure on the second, cancellation, backend time-service failure classification,
-and the guided browser registration after a simulated discovery timeout.
+and the guided browser registration after a simulated discovery timeout. The
+browser fixture rejects characteristic rediscovery after receipt delivery;
+registration must still verify ownership through the retained connection.
+Mismatched owner, incarnation, or claim status must retain the saved receipt
+without marking local registration confirmed.
 Mocks do not prove ESP32-C3/phone interoperability.
 
 On the affected phone and node, retry after closing the PWA, toggling Bluetooth,

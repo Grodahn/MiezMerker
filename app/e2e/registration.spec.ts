@@ -69,7 +69,9 @@ for (const { width, stallFirstDiscovery } of [
       },
       async getPrimaryService() {
         if (++serviceDiscoveries === 1 && stallFirstDiscovery) await new Promise(() => {});
-        return { async getCharacteristic(uuid: string) { return {
+        return { async getCharacteristic(uuid: string) {
+          if (claimed) throw new DOMException('Post-claim characteristic rediscovery failed', 'NetworkError');
+          return {
         async writeValueWithResponse() { if (uuid.endsWith('5b0b')) claimed = true; },
         async readValue() {
           const bytes = uuid.endsWith('5b01') ? (claimed ? claimedHello : hello)
@@ -105,8 +107,8 @@ for (const { width, stallFirstDiscovery } of [
   await dialog.getByRole('button', { name: 'Einrichtung abschließen' }).click();
   await expect(dialog.getByText(/kann beim nächsten Auslesen mitmachen/)).toBeVisible();
   expect(claims).toBe(1); expect(deployments).toBe(1); expect(displayName).toBe('Der Grüne');
-  // Both discovery/preflight attempts retain their connection; no immediate reconnect.
-  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { connects: number } }).registrationEvents.connects)).toBe(4 + Number(stallFirstDiscovery));
+  // Two preflight visits plus provisioning, including post-claim owner reads.
+  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { connects: number } }).registrationEvents.connects)).toBe(3 + Number(stallFirstDiscovery));
   // Two explicit Add clicks open the chooser; the automatic retry adds none.
   expect(await page.evaluate(() => (window as unknown as { registrationEvents: { chooser: number } }).registrationEvents.chooser)).toBe(2);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('miezmerker-last-setup-node'))).toBeNull();
