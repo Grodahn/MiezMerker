@@ -43,7 +43,7 @@ export function UploadStatus({ view, retry, disabled, compact = false }: { view:
     (view.backendState === 'failed' && 'retry' in status && status.retry === true);
   const snapshot = view.backendState === 'complete';
   const countsKnown = ['complete', 'waiting-for-network'].includes(view.backendState) || view.pendingUploads > 0 || view.uploadedCount > 0;
-  if (compact) return <Status kind={view.backendState === 'failed' ? 'error' : view.backendState === 'uploading' ? 'loading' : 'info'}
+  if (compact) return <Status kind={view.backendState === 'failed' ? status.kind : view.backendState === 'uploading' ? 'loading' : 'info'}
     title={view.backendState === 'uploading' ? 'Daten werden an den Server übertragen …'
       : view.backendState === 'failed' ? status.title
         : view.backendState === 'waiting-for-network' ? 'Daten warten auf Internet'

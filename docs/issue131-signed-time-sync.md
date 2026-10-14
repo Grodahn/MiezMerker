@@ -64,6 +64,15 @@ cannot progress; no eviction of unconfirmed evidence or raw records is allowed.
   Normal post-claim anchors upload independently and still support the same boot.
   Resolving the pre-claim continuity contract is outside this transport change;
   the tenant/continuity rejection and its security tests remain unchanged.
+  A valid same-owner, signature-verified pre-claim time anchor is still rejected
+  with HTTP 403, now with `X-MM-Time-Evidence:
+  PRE_CLAIM_CONTINUITY_UNVERIFIED`. This diagnostic is emitted only after all
+  owner and signature gates. Foreign callers, invalid proofs and CSRF failures
+  receive no continuity hint. The PWA shows “Historischer Zeitbeleg noch offen”
+  and preserves exact evidence pending without a backend/node receipt; it does
+  not suggest that signing in again will resolve this historical contract gap.
+  Other evidence and raw uploads continue independently. Older backends without
+  the header retain the generic HTTP error; backend and PWA must both be updated.
 - Bounded storage can fill if these legacy/unconfirmed anchors accumulate or
   if uploads remain unavailable. A full store refuses bootstrap/capture according
   to the existing contract. Do not factory-reset or erase data as an automatic

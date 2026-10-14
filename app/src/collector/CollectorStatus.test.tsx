@@ -6,6 +6,16 @@ import { NodeStatus, UploadStatus } from './CollectorStatus';
 afterEach(cleanup);
 const retry = vi.fn();
 
+test.each([false, true])('verified pre-claim continuity rejection stays open without blaming permission or claiming server success (compact=%s)', compact => {
+  render(<UploadStatus compact={compact} view={{ ...initialCollectorView, backendState: 'failed', backendMessage:
+    'Zeitbeleg vor Registrierung noch nicht prüfbar. Beleg bleibt dauerhaft gespeichert und unbestätigt.' }} retry={retry} disabled={false}/>);
+  expect(screen.getByText('Historischer Zeitbeleg noch offen')).toBeTruthy();
+  expect(screen.queryByText('Zugriff nicht erlaubt')).toBeNull();
+  expect(screen.queryByText('Daten an Server übertragen')).toBeNull();
+  expect(screen.getByText(/dauerhaft gespeichert und unbestätigt/)).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
 test('local success requires completed ACK state and durable fertig; pending upload is independent', () => {
   const local = { ...initialCollectorView, nodeState: 'acknowledging' as const, recordsReceived: 8 };
   const { rerender } = render(<><NodeStatus view={local} retry={retry} disabled={false}/>
