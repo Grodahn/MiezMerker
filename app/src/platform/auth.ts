@@ -127,6 +127,17 @@ function storeUser(user: SessionUser | null) {
   emit();
 }
 
+// A shared cookie changes accounts before another document receives its
+// storage event. Withdraw the previous local grant at the confirmed switch,
+// and keep that fence until the original account is confirmed again.
+function fenceAccountChange(previousUser: SessionUser | null, nextUserId: string) {
+  const replaced = previousUser && previousUser.userId !== nextUserId ? previousUser : null;
+  advanceAuthenticationEpoch(replaced?.userId);
+  if (!replaced) return null;
+  const status = publishAuthorization(replaced.userId, false, [], replaced.memberships.map(m => m.organizationId!));
+  return { userId: replaced.userId, revision: status.revision };
+}
+
 export function selectOrganization(organizationId: string): void {
   if (!activeOrganizationIds().includes(organizationId)) throw new Error('Organisation nicht verfügbar');
   state = { ...state, activeOrganizationId: organizationId };
@@ -207,15 +218,18 @@ export async function fetchSession(): Promise<SessionUser | null> {
     };
     const removed = previousUser?.userId === user.userId && previousUser.memberships.some(m =>
       m.status === 'ACTIVE' && !user.memberships.some(next => next.organizationId === m.organizationId && next.status === 'ACTIVE'));
+    const replaced = fenceAccountChange(previousUser, user.userId);
     const status = publishAuthorization(user.userId, false, user.memberships.filter(m => m.status === 'ACTIVE').map(m => m.organizationId!),
       previousUser?.userId === user.userId ? previousUser.memberships.map(m => m.organizationId!) : []);
-    advanceAuthenticationEpoch(previousUser && previousUser.userId !== user.userId ? previousUser.userId : undefined);
     state = { ...state, sessionChecked: true, sessionVerified: true,
       revocationMessage: removed ? 'Du hast keinen Zugriff mehr auf diese Organisation.' : undefined };
     try { localStorage.removeItem('miezmerker-revoked-account'); } catch { /* Optional UX marker. */ }
     storeUser(user);
     const organizations = activeOrganizationIds();
-    cleanup = () => reconcileCredentials(user.userId, organizations, status.revision);
+    cleanup = async () => {
+      if (replaced) await reconcileCredentials(replaced.userId, null, replaced.revision);
+      await reconcileCredentials(user.userId, organizations, status.revision);
+    };
 
     return user;
   });
@@ -262,15 +276,17 @@ export async function login(email: string, password: string): Promise<SessionUse
       displayName: data.displayName ?? null,
       memberships: data.memberships ?? [],
     };
-    await withAuthorizationLock(() => {
+    const replaced = await withAuthorizationLock(() => {
       if (epoch !== authenticationEpoch()) throw new Error('Anmeldung durch neueren Status ersetzt');
+      const previous = fenceAccountChange(previousUser, user.userId);
       publishAuthorization(user.userId, false, user.memberships.filter(m => m.status === 'ACTIVE').map(m => m.organizationId!));
-      advanceAuthenticationEpoch(previousUser && previousUser.userId !== user.userId ? previousUser.userId : undefined);
       try { localStorage.removeItem('miezmerker-revoked-account'); } catch { /* Optional UX marker. */ }
       // The server rotates the CSRF token after authentication.
       state = { ...state, csrfToken: null, sessionChecked: true, sessionVerified: true, revocationMessage: undefined };
       storeUser(user);
+      return previous;
     });
+    if (replaced) await reconcileCredentials(replaced.userId, null, replaced.revision);
     await reconcileCredentials(user.userId, activeOrganizationIds());
     return user;
   });

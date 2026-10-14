@@ -73,6 +73,12 @@ operations against the shared revocation status before a storage event arrives.
 Queued renewal cleanup retains its originating revision. Failed lock acquisition
 releases the authentication transition, and blocked storage cannot crash startup.
 Membership responses with missing roles or duplicate organizations are inconclusive.
+Confirmed account switches withdraw the previous account's shared local grant
+before another tab's storage event arrives. Later status refreshes for the new
+account cannot revive the previous grant; original-account access requires renewed
+backend confirmation and fresh credentials.
+Periodic renewal checks usability as well as expiration, so a retained invalidated
+credential cannot suppress a fresh issuance retry after authorized reactivation.
 Observation/evidence status mutations enforce the same owner boundary as reads;
 revoked or replacement accounts cannot mark quarantined records as uploaded or
 acknowledged. Evidence persistence rechecks access after its asynchronous read.

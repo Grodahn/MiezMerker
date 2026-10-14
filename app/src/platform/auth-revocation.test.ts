@@ -214,6 +214,7 @@ test.each(['account', 'organization'])('%s revocation defeats in-flight issuance
 test('failed cleanup cannot make old credentials usable after backend reactivation, and old cleanup cannot delete a newer grant', async () => {
   const prototype = (await import('./offline-identity')).OfflineIdentity.prototype;
   const cleanup = vi.spyOn(prototype, 'forgetCredentials').mockRejectedValueOnce(new Error('IDB unavailable'));
+  await db.credentials.update([user.userId, 'a'], { expiresAt: Date.now() + 3_600_000 });
   get.mockResolvedValue(disabled()); await auth.fetchSession();
   expect(await db.credentials.count()).toBe(2);
   expect(await identity.credential(user.userId, 'a')).toBeNull();
@@ -222,6 +223,14 @@ test('failed cleanup cannot make old credentials usable after backend reactivati
   expect(await identity.credential(user.userId, 'a')).toBeNull();
   await identity.forgetCredentials(user.userId, revoked.revision);
   expect(await db.credentials.count()).toBe(2); // Obsolete cleanup is ignored.
+  const keys = await identity.keys(user.userId);
+  const credential = 'header.' + btoa(JSON.stringify({ sub: user.userId, org: 'a', dev: 'device',
+    dpk_x: keys.coordinates().x, dpk_y: keys.coordinates().y, exp: Math.floor(Date.now() / 1000) + 3600 })) + '.signature';
+  get.mockResolvedValue({ data: { token: 'csrf' } });
+  post.mockImplementation(async path => path === '/api/v1/devices' ? { data: { id: 'device' } }
+    : { data: { credential, expiresInSeconds: 3600, organizationId: 'a', deviceId: 'device' } });
+  await identity.renewActive(user.userId, ['a'], false);
+  expect(await identity.credential(user.userId, 'a')).toBe(credential); // Timer retries unusable, long-lived cached tokens.
   cleanup.mockRestore();
 });
 
@@ -238,6 +247,37 @@ test('account switch and logout defeat status responses that began under the pre
   get.mockResolvedValue({ data: { token: 'csrf' } }); post.mockResolvedValue({ response: { ok: true, status: 204 } });
   await auth.logout(); finish({ data: user }); await old;
   expect(auth.getAuthState().user).toBeNull();
+});
+
+test.each(['login', 'status'])('a confirmed %s account switch withdraws the previous tab grant without storage events or after later refreshes', async mode => {
+  const previousAuth = auth;
+  const { bindNodeOperation } = await import('../collector/node-operation');
+  const { requireActiveRole } = await import('../collector/authorization');
+  const raw = { connect: vi.fn(), read: vi.fn(), write: vi.fn(), disconnect: vi.fn().mockResolvedValue(undefined) };
+  const operation = bindNodeOperation(raw, user.userId, 'a');
+  try {
+    vi.resetModules();
+    const otherTab = await import('./auth');
+    const next = { ...user, userId: 'replacement-user' };
+    if (mode === 'login') {
+      get.mockResolvedValue({ data: { token: 'csrf' } }); post.mockResolvedValue({ data: next });
+      await otherTab.login(next.email, 'password');
+    } else {
+      get.mockResolvedValue({ data: next }); await otherTab.fetchSession();
+    }
+    expect(previousAuth.getAuthState().user?.userId).toBe(user.userId); // No storage event delivered.
+    expect(() => requireActiveRole('a')).toThrow('Keine aktive Mitgliedschaft');
+    await expect(operation.transport.write(new Uint8Array([1]))).rejects.toThrow('abgebrochen');
+    expect(raw.write).not.toHaveBeenCalled();
+    get.mockResolvedValue({ data: next }); await otherTab.fetchSession();
+    expect(await identity.credential(user.userId, 'a')).toBeNull();
+    expect(() => requireActiveRole('a')).toThrow('Keine aktive Mitgliedschaft');
+    expect(await db.credentials.where('userId').equals(user.userId).count()).toBe(0);
+    post.mockResolvedValue({ data: user }); get.mockResolvedValue({ data: { token: 'csrf' } });
+    await otherTab.login(user.email, 'password');
+    expect(otherTab.activeOrganizationIds()).toEqual(['a', 'b']);
+    expect(await identity.credential(user.userId, 'a')).toBeNull(); // Original key requires fresh issuance.
+  } finally { await operation.close(); }
 });
 
 test('pending RFID records, boot/time evidence and sync metadata survive revocation and stay with their original account', async () => {

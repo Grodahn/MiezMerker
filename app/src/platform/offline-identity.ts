@@ -127,7 +127,9 @@ export class OfflineIdentity {
     for (const organizationId of organizationIds) {
       try {
         const cached = await this.database.credentials.get([userId, organizationId]);
-        if (force || !cached || cached.expiresAt <= Date.now() + 300000) await this.renew(userId, organizationId, generation);
+        if (force || !cached || cached.expiresAt <= Date.now() + 300000 || !await this.credential(userId, organizationId)) {
+          await this.renew(userId, organizationId, generation);
+        }
       } catch (error) { failures.push(error); }
     }
     if (failures.length) throw new AggregateError(failures, 'Some offline credentials could not be renewed');
