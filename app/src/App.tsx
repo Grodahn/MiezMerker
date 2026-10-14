@@ -8,6 +8,7 @@ import { documentNavigation } from './ui/navigation';
 import { Home } from './home/Home';
 import { FeedingSitesPage, LegacyNodesRedirect, isLegacyNodesPath, parseFeedingSitePath } from './feeding-sites/FeedingSites';
 import { Status } from './ui/Status';
+import { getAuthState } from './platform/auth';
 
 const subscribePath = (update: () => void) => {
   window.addEventListener('popstate', update);
@@ -20,6 +21,7 @@ function feedingSitesTitle(path: string): string | undefined {
 }
 function AllowedShell({ path, authenticated, online }: { path: string; authenticated: boolean; online: boolean }) {
   return <ApplicationShell path={path} authenticated={authenticated}>
+    {authenticated && getAuthState().revocationMessage && <Status kind="error" title="Zugriff entzogen" message={getAuthState().revocationMessage}/>}
     <div hidden={authenticated}>{!authenticated && <>
       <Status kind="offline" title="Offline-Betrieb" message="Verwaltung ist ohne gültige Online-Sitzung gesperrt. Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential verfügbar."/>
       {online && <LoginView online={online}/>}

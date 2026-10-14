@@ -10,6 +10,8 @@
 // from durable state and sends ACK. If the transaction fails (quota, crash),
 // no ACK is sent for those observations.
 
+import { getAuthState } from '../platform/auth';
+import { authorizationPermits } from '../platform/authorization-status';
 import type { BleRecord } from './ble-codec';
 import { persistEvidence, type StoredTimeEvidence } from './time-evidence';
 import {
@@ -67,16 +69,32 @@ export interface DurableObservationStore {
 }
 
 export class CollectorObservationStore implements DurableObservationStore {
-  constructor(private readonly db: CollectorDatabase) {}
+  constructor(private readonly db: CollectorDatabase, private readonly ownerUserId?: string) {}
 
-  putTimeEvidence(row: StoredTimeEvidence): Promise<void> { return persistEvidence(this.db, row); }
+  private visible(row: { ownerUserId?: string; organizationId: string | null }): boolean {
+    if (!this.ownerUserId) return true; // Protocol-only stores supply no UI identity.
+    const auth = getAuthState();
+    return row.ownerUserId === this.ownerUserId && auth.user?.userId === this.ownerUserId && Boolean(row.organizationId)
+      && authorizationPermits(this.ownerUserId, row.organizationId!)
+      && Boolean(auth.user.memberships.some(m => m.organizationId === row.organizationId && m.status === 'ACTIVE'));
+  }
+  private assertAccess(organizationId: string | null): void {
+    if (!this.visible({ ownerUserId: this.ownerUserId, organizationId })) {
+      throw new ObservationStoreError('Offline-Daten für diesen Zugang gesperrt.', 'unavailable');
+    }
+  }
+
+  putTimeEvidence(row: StoredTimeEvidence): Promise<void> {
+    this.assertAccess(row.organizationId);
+    return persistEvidence(this.db, { ...row, ...(this.ownerUserId ? { ownerUserId: this.ownerUserId } : {}) });
+  }
   async pendingTimeEvidence(organizationId: string): Promise<StoredTimeEvidence[]> {
-    return (await this.db.timeEvidence.where('organizationId').equals(organizationId).toArray()).filter(r => !r.uploaded);
+    return (await this.db.timeEvidence.where('organizationId').equals(organizationId).toArray()).filter(r => !r.uploaded && this.visible(r));
   }
   async confirmTimeEvidence(id: string): Promise<void> { await this.db.timeEvidence.update(id, { uploaded: true }); }
   async uploadedTimeEvidence(organizationId: string, nodeId: string, incarnation: string): Promise<StoredTimeEvidence[]> {
     return (await this.db.timeEvidence.where('[organizationId+nodeId]').equals([organizationId, nodeId]).toArray())
-      .filter(r => r.incarnation === incarnation && r.uploaded && !r.nodeAcknowledged);
+      .filter(r => this.visible(r) && r.incarnation === incarnation && r.uploaded && !r.nodeAcknowledged);
   }
   async confirmNodeEvidenceReceipt(id: string): Promise<void> { await this.db.timeEvidence.update(id, { nodeAcknowledged: true }); }
 
@@ -92,12 +110,16 @@ export class CollectorObservationStore implements DurableObservationStore {
   // bytes must match exactly; conflicting content is rejected without
   // overwriting, so a lost ACK can safely resend.
   async putObservations(records: BleRecord[], organizationId: string | null = null): Promise<void> {
+    this.assertAccess(organizationId);
     try {
       await this.db.transaction('rw', this.db.observations, async () => {
         for (const r of records) {
           const key: [string, string, string] = [r.nodeId, r.incarnation, r.sequence.toString()];
           const existing = await this.db.observations.get(key);
           if (existing) {
+            if (this.ownerUserId && existing.ownerUserId !== this.ownerUserId) {
+              throw new ObservationStoreError('Observation belongs to another offline account', 'conflict');
+            }
             if (existing.chipId !== r.chipId || existing.clockStatus !== r.clockStatus ||
                 existing.epochMs !== (r.epochMs?.toString() ?? null) ||
                 existing.monotonicMs !== r.monotonicMs.toString() ||
@@ -115,7 +137,7 @@ export class CollectorObservationStore implements DurableObservationStore {
             }
             continue;
           }
-          await this.db.observations.add(toStored(r, organizationId ?? null));
+          await this.db.observations.add({ ...toStored(r, organizationId ?? null), ...(this.ownerUserId ? { ownerUserId: this.ownerUserId } : {}) });
         }
       });
     } catch (error) {
@@ -125,7 +147,7 @@ export class CollectorObservationStore implements DurableObservationStore {
   }
 
   async sequences(nodeId: string, incarnation: string, organizationId?: string | null): Promise<bigint[]> {
-    const rows = await this.db.observations.where('nodeId').equals(nodeId).toArray();
+    const rows = (await this.db.observations.where('nodeId').equals(nodeId).toArray()).filter(r => this.visible(r));
     return rows
       .filter(r => r.incarnation === incarnation &&
         (organizationId == null || r.organizationId === organizationId))
@@ -140,7 +162,7 @@ export class CollectorObservationStore implements DurableObservationStore {
   async pendingUploads(organizationId: string, limit = Number.MAX_SAFE_INTEGER): Promise<StoredObservation[]> {
     const all = await this.db.observations.where('uploadState').anyOf('pending', 'failed', 'uploading').toArray();
     // Unassigned rows require an authenticated retransmission before upload.
-    return all.filter(r => r.organizationId === organizationId).slice(0, limit);
+    return all.filter(r => this.visible(r) && r.organizationId === organizationId).slice(0, limit);
   }
 
   async markPending(sequences: Array<{ nodeId: string; incarnation: string; sequence: string }>): Promise<void> {
@@ -152,7 +174,7 @@ export class CollectorObservationStore implements DurableObservationStore {
   }
 
   async pendingForNode(nodeId: string): Promise<StoredObservation[]> {
-    return this.db.observations.where('nodeId').equals(nodeId).toArray();
+    return (await this.db.observations.where('nodeId').equals(nodeId).toArray()).filter(r => this.visible(r));
   }
 
   async markUploading(sequences: Array<{ nodeId: string; incarnation: string; sequence: string }>): Promise<void> {
@@ -194,7 +216,7 @@ export class CollectorObservationStore implements DurableObservationStore {
   }
 
   async requeueFailed(nodeId: string): Promise<number> {
-    const rows = await this.db.observations.where('nodeId').equals(nodeId).toArray();
+    const rows = (await this.db.observations.where('nodeId').equals(nodeId).toArray()).filter(r => this.visible(r));
     let count = 0;
     await this.db.transaction('rw', this.db.observations, async () => {
       for (const row of rows) {
@@ -210,7 +232,7 @@ export class CollectorObservationStore implements DurableObservationStore {
   }
 
   async uploadStats(nodeId: string): Promise<{ total: number; uploaded: number; pending: number; failed: number }> {
-    const rows = await this.db.observations.where('nodeId').equals(nodeId).toArray();
+    const rows = (await this.db.observations.where('nodeId').equals(nodeId).toArray()).filter(r => this.visible(r));
     return {
       total: rows.length,
       uploaded: rows.filter(r => r.uploadState === 'uploaded').length,
@@ -220,7 +242,7 @@ export class CollectorObservationStore implements DurableObservationStore {
   }
 
   async organizationUploadStats(organizationId: string): Promise<{ uploaded: number; pending: number; failed: number }> {
-    const rows = (await this.db.observations.toArray()).filter(r => r.organizationId === organizationId);
+    const rows = (await this.db.observations.toArray()).filter(r => this.visible(r) && r.organizationId === organizationId);
     return { uploaded: rows.filter(r => r.uploadState === 'uploaded').length,
       pending: rows.filter(r => r.uploadState === 'pending' || r.uploadState === 'uploading').length,
       failed: rows.filter(r => r.uploadState === 'failed').length };

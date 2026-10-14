@@ -67,13 +67,19 @@ export async function resolveCredential(
       'Bitte zuerst anmelden. Ohne Anmeldung und gültiges Offline-Credential kann kein Node-Sync starten.');
   }
   requireActiveRole(organizationId);
+  const assertCurrent = () => {
+    if (getAuthState().user?.userId !== user.userId) throw new CredentialError('no-session', 'Zugang hat sich geändert. Bitte erneut starten.');
+    requireActiveRole(organizationId);
+  };
   const cached = await identity.credential(user.userId, organizationId);
+  assertCurrent();
   if (cached) return { credential: cached, userId: user.userId, organizationId, renewed: false };
 
   const online = typeof navigator === 'undefined' ? true : navigator.onLine;
   if ((options.allowRenew ?? true) && online) {
     try {
       const renewed = await identity.renew(user.userId, organizationId);
+      assertCurrent();
       return { credential: renewed, userId: user.userId, organizationId, renewed: true };
     } catch (error) {
       throw new CredentialError('missing-credential',

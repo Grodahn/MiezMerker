@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { assets } from '../assets';
 
 const { login } = vi.hoisted(() => ({ login: vi.fn() }));
-vi.mock('./auth', () => ({ login }));
+vi.mock('./auth', () => ({ login, getAuthState: () => ({ revocationMessage: undefined }) }));
 import { LoginView } from './LoginView';
 
 beforeEach(() => { login.mockReset(); });

@@ -2,21 +2,26 @@ import Dexie, { type Table } from 'dexie';
 import { api } from '../api/client';
 import { fetchCsrfToken } from './auth';
 import { WebCryptoDeviceKeys, fromBase64Url } from './device-keys';
+import { authorizationPermits, authorizationStatus } from './authorization-status';
 
 interface DeviceIdentity { userId: string; keys: CryptoKeyPair; deviceId?: string }
 interface CachedCredential {
   userId: string; organizationId: string; deviceId: string;
   credential: string; expiresAt: number;
+  credentialGeneration?: number;
+  organizationGeneration?: number;
 }
 
 export class OfflineIdentityDatabase extends Dexie {
   identities!: Table<DeviceIdentity, string>;
   credentials!: Table<CachedCredential, [string, string]>;
   invalidations!: Table<{ userId: string; generation: number }, string>;
+  organizationInvalidations!: Table<{ userId: string; organizationId: string; generation: number }, [string, string]>;
   constructor(name = 'miezmerker-offline-identity') {
     super(name);
     this.version(1).stores({ identities: 'userId', credentials: '[userId+organizationId], userId' });
     this.version(2).stores({ invalidations: 'userId' });
+    this.version(3).stores({ organizationInvalidations: '[userId+organizationId]' });
   }
 }
 
@@ -41,6 +46,9 @@ export class OfflineIdentity {
   }
 
   async renew(userId: string, organizationId: string, expectedGeneration?: number): Promise<string> {
+    if (!authorizationPermits(userId, organizationId)) throw new Error('Offline access revoked');
+    const startingStatus = authorizationStatus(userId);
+    const orgGeneration = (await this.database.organizationInvalidations.get([userId, organizationId]))?.generation ?? 0;
     const currentGeneration = (await this.database.invalidations.get(userId))?.generation ?? 0;
     const generation = expectedGeneration ?? currentGeneration;
     if (generation !== currentGeneration) throw new Error('Offline credential renewal superseded by logout');
@@ -71,12 +79,21 @@ export class OfflineIdentity {
     if (claims.sub !== userId || claims.org !== organizationId || claims.dev !== device.id
         || claims.dpk_x !== keys.coordinates().x || claims.dpk_y !== keys.coordinates().y
         || !Number.isSafeInteger(claims.exp)) throw new Error('Offline credential binding mismatch');
+    const status = authorizationStatus(userId);
     const cached: CachedCredential = { userId, organizationId, deviceId: device.id,
+      credentialGeneration: status?.credentialGeneration ?? 0,
+      organizationGeneration: status?.organizationGenerations[organizationId] ?? 0,
       credential: data.credential, expiresAt: Math.min(claims.exp * 1000,
         startedAt + data.expiresInSeconds * 1000 - 1000) };
-    await this.database.transaction('rw', this.database.invalidations, this.database.credentials, async () => {
+    await this.database.transaction('rw', this.database.invalidations, this.database.organizationInvalidations, this.database.credentials, async () => {
       if (((await this.database.invalidations.get(userId))?.generation ?? 0) !== generation) {
         throw new Error('Offline credential renewal superseded by logout');
+      }
+      if (((await this.database.organizationInvalidations.get([userId, organizationId]))?.generation ?? 0) !== orgGeneration
+          || !authorizationPermits(userId, organizationId)
+          || (authorizationStatus(userId)?.credentialGeneration ?? 0) !== (startingStatus?.credentialGeneration ?? 0)
+          || (authorizationStatus(userId)?.organizationGenerations[organizationId] ?? 0) !== (startingStatus?.organizationGenerations[organizationId] ?? 0)) {
+        throw new Error('Offline credential renewal superseded by authorization status');
       }
       await this.database.credentials.put(cached);
     });
@@ -84,10 +101,16 @@ export class OfflineIdentity {
   }
 
   async credential(userId: string, organizationId: string): Promise<string | null> {
+    if (!authorizationPermits(userId, organizationId)) return null;
+    const generation = (await this.database.invalidations.get(userId))?.generation ?? 0;
     const cached = await this.database.credentials.get([userId, organizationId]);
     const identity = await this.database.identities.get(userId);
+    const status = authorizationStatus(userId);
     if (!cached || !identity || cached.deviceId !== identity.deviceId
-        || Date.now() >= cached.expiresAt) return null;
+        || (cached.credentialGeneration ?? 0) !== (status?.credentialGeneration ?? 0)
+        || (cached.organizationGeneration ?? 0) !== (status?.organizationGenerations[organizationId] ?? 0)
+        || Date.now() >= cached.expiresAt || !authorizationPermits(userId, organizationId)) return null;
+    if (((await this.database.invalidations.get(userId))?.generation ?? 0) !== generation) return null;
     return cached.credential;
   }
 
@@ -104,11 +127,30 @@ export class OfflineIdentity {
     if (failures.length) throw new AggregateError(failures, 'Some offline credentials could not be renewed');
   }
 
-  async forgetCredentials(userId: string): Promise<void> {
+  async forgetCredentials(userId: string, expectedRevision?: string): Promise<void> {
     await this.database.transaction('rw', this.database.invalidations, this.database.credentials, async () => {
       const generation = (await this.database.invalidations.get(userId))?.generation ?? 0;
+      if (expectedRevision && authorizationStatus(userId)?.revision !== expectedRevision) return;
       await this.database.invalidations.put({ userId, generation: generation + 1 });
       await this.database.credentials.where('userId').equals(userId).delete();
     });
+  }
+
+  async forgetOrganization(userId: string, organizationId: string, expectedRevision?: string): Promise<void> {
+    await this.database.transaction('rw', this.database.organizationInvalidations, this.database.credentials, async () => {
+      const generation = (await this.database.organizationInvalidations.get([userId, organizationId]))?.generation ?? 0;
+      if (expectedRevision && authorizationStatus(userId)?.revision !== expectedRevision) return;
+      await this.database.organizationInvalidations.put({ userId, organizationId, generation: generation + 1 });
+      await this.database.credentials.delete([userId, organizationId]);
+    });
+  }
+
+  // Include cached organizations absent from the restored snapshot. Removal is
+  // serialized with issuance; credentials for still-active organizations survive.
+  async reconcileOrganizations(userId: string, organizationIds: string[], revision = authorizationStatus(userId)?.revision): Promise<void> {
+    const cached = await this.database.credentials.where('userId').equals(userId).toArray();
+    for (const organizationId of new Set(cached.map(row => row.organizationId))) {
+      if (!organizationIds.includes(organizationId)) await this.forgetOrganization(userId, organizationId, revision);
+    }
   }
 }

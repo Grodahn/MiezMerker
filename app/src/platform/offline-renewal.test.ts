@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
-  state: { user: null as null | { userId: string; memberships: { organizationId: string; role: string }[] } },
+  state: { sessionVerified: true, user: null as null | { userId: string; memberships: { organizationId: string; role: string }[] } },
   listener: () => {}, renew: vi.fn(), forget: vi.fn(), close: vi.fn(),
 }));
 vi.mock('./auth', () => ({

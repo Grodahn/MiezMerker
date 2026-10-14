@@ -18,9 +18,15 @@ vi.mock('./api/client', () => ({
 vi.mock('./platform/offline-identity', () => ({
   OfflineIdentityDatabase: class {
     credentials = { get: credentialExpiry };
+    invalidations = { get: async () => undefined };
+    transaction(_mode: string, _table: unknown, operation: () => unknown) { return operation(); }
     close() {}
   },
-  OfflineIdentity: class { credential = credentialLookup; },
+  OfflineIdentity: class {
+    credential = credentialLookup;
+    async reconcileOrganizations() {}
+    async forgetCredentials() {}
+  },
 }));
 
 vi.mock('./collector/CollectorShell', async () => {

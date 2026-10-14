@@ -126,7 +126,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
   }
 
   const collectorDb = new CollectorDatabase();
-  const observations = new CollectorObservationStore(collectorDb);
+  const observations = new CollectorObservationStore(collectorDb, auth.user.userId);
   let operation: ReturnType<typeof bindNodeOperation> | undefined;
   try {
     let transport: NodeTransport;

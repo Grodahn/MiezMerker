@@ -22,7 +22,7 @@ export function startOfflineRenewal(): () => void {
     queue = queue.then(async () => {
       await cleanup;
       if (!active || getAuthState().user !== user) return;
-      if (user && navigator.onLine) await identity.renewActive(user.userId, orgs, force);
+      if (user && navigator.onLine && getAuthState().sessionVerified) await identity.renewActive(user.userId, orgs, force);
     }).catch(() => {
       // Retain a still-valid offline credential during a transient online failure.
       if (active) window.dispatchEvent(new Event('offline-credential-renewal-failed'));
