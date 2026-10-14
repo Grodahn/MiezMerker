@@ -22,3 +22,8 @@ __pycache__/
 /app/public/icon-192.png
 /app/public/icon-512.png
 /app/public/icon-maskable-512.png
+
+# ESP32-C3 CI compiler cache (#144): workspace-local ccache directories
+# restored by actions/cache. Never committed; ignored so `git describe
+# --dirty` (used for the firmware PROJECT_VER) stays stable on cache hits.
+/.ccache-esp32c3-*/
