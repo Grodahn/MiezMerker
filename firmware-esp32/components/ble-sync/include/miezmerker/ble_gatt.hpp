@@ -59,6 +59,8 @@ public:
     void set_node_identity(NodeIdentityManager* identity) { identity_ = identity; }
     void set_time_bootstrap(node_time::NodeTimeBootstrapManager* manager) { time_bootstrap_ = manager; }
 
+    void set_time_evidence(TimeEvidenceStore* store) { evidence_ = store; }
+
     /// Handles a raw request frame, returns a raw response frame.
     /// trusted_now_s is trusted UTC seconds (0 = unknown, fails closed).
     std::vector<std::uint8_t> handle_frame(const std::vector<std::uint8_t>& request,
@@ -75,8 +77,11 @@ private:
     std::size_t auth_total_{0};
     NodeIdentityManager* identity_{nullptr};
     node_time::NodeTimeBootstrapManager* time_bootstrap_{nullptr};
+    TimeEvidenceStore* evidence_{nullptr};
     std::vector<std::uint8_t> receipt_fragments_;
     std::size_t receipt_total_{0};
+    std::vector<std::uint8_t> evidence_fragments_;
+    std::size_t evidence_total_{0};
 };
 
 }  // namespace miezmerker::ble_gatt

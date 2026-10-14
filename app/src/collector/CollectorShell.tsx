@@ -238,8 +238,15 @@ export function CollectorShell(props: {
     void (async () => {
       try {
         await store.open();
-        const uploader = new BackendUploader(store);
-        const result = await uploader.upload(state.activeOrganizationId as string);
+        const controller = new AbortController();
+        const unsubscribe = subscribeAuth(() => { if (!contextStillActive()) controller.abort(); });
+        const uploader = new BackendUploader(store, {
+          signal: controller.signal,
+          assertActive: () => { if (controller.signal.aborted || !contextStillActive()) throw new Error('Upload nach Kontextwechsel abgebrochen.'); },
+        });
+        let result;
+        try { result = await uploader.upload(state.activeOrganizationId as string); }
+        finally { unsubscribe(); }
         const stats = await store.organizationUploadStats(state.activeOrganizationId as string);
         if (contextStillActive()) setUploadView({ backendState: result.state, backendMessage: result.message,
           pendingUploads: stats.pending + stats.failed, uploadedCount: stats.uploaded });

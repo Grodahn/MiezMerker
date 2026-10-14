@@ -16,8 +16,9 @@
 // field visit.
 
 import { api } from '../api/client';
-import { fetchCsrfToken, markSessionExpired } from '../platform/auth';
+import { fetchCsrfToken, getAuthState, markSessionExpired, subscribeAuth } from '../platform/auth';
 import type { CollectorObservationStore } from './observation-store';
+import { evidenceRequestJson, parseEvidenceJson } from './time-evidence';
 
 export type BackendSyncState =
   | 'idle'
@@ -39,6 +40,8 @@ export interface UploaderOptions {
   batchSize?: number;
   maxRetries?: number;
   retryDelayMs?: number;
+  assertActive?: () => void;
+  signal?: AbortSignal;
 }
 
 function clockToBackend(clockStatus: number): string {
@@ -60,10 +63,15 @@ export class BackendUploader {
       return { state: 'waiting-for-network', uploaded: 0, duplicates: 0, conflicts: 0, failed: 0,
         message: 'Kein Internet. Upload wartet auf Verbindung.' };
     }
+    this.options.assertActive?.();
+    const evidence = await this.uploadEvidence(organizationId);
+    this.options.assertActive?.();
     const pending = await this.store.pendingUploads(organizationId);
     if (pending.length === 0) {
-      return { state: 'complete', uploaded: 0, duplicates: 0, conflicts: 0, failed: 0,
-        message: 'Alle lokal gespeicherten Beobachtungen sind hochgeladen.' };
+      return { state: evidence.failed ? 'failed' : 'complete', uploaded: 0, duplicates: 0, conflicts: 0, failed: evidence.failed,
+        message: evidence.failed ? evidence.message : evidence.uploaded
+          ? `${evidence.uploaded} Zeit-/Bootbelege vom Backend bestätigt. Alle Beobachtungen sind hochgeladen.`
+          : 'Alle lokal gespeicherten Beobachtungen sind hochgeladen.' };
     }
     const batchSize = this.options.batchSize ?? 200;
     if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 200) {
@@ -72,9 +80,10 @@ export class BackendUploader {
     let uploaded = 0;
     let duplicates = 0;
     let conflicts = 0;
-    let failed = 0;
-    let lastMessage = '';
+    let failed = evidence.failed;
+    let lastMessage = evidence.message;
     for (let offset = 0; offset < pending.length; offset += batchSize) {
+      this.options.assertActive?.();
       const batch = pending.slice(offset, offset + batchSize);
       const outcome = await this.uploadBatch(organizationId, batch.map(r => ({
         nodeId: r.nodeId, incarnation: r.incarnation, sequence: r.sequence,
@@ -100,7 +109,68 @@ export class BackendUploader {
         message: `Teilweise hochgeladen (${uploaded + duplicates}), ${outstanding} ausstehend. Vor-Ort-Sync bleibt gültig.` };
     }
     return { state: 'complete', uploaded, duplicates, conflicts, failed,
-      message: `Backend-Upload erfolgreich (${uploaded + duplicates} Records).` };
+      message: `Backend-Upload erfolgreich (${uploaded + duplicates} Records, ${evidence.uploaded} Zeit-/Bootbelege bestätigt). Zeitrekonstruktion wird separat geprüft.` };
+  }
+
+  private async uploadEvidence(organizationId: string): Promise<{ uploaded: number; failed: number; message: string }> {
+    const rows = await this.store.pendingTimeEvidence?.(organizationId) ?? [];
+    if (!rows.length) return { uploaded: 0, failed: 0, message: '' };
+    const initial = getAuthState();
+    const active = () => {
+      const state = getAuthState();
+      return Boolean(initial.user && state.user?.userId === initial.user.userId &&
+        state.activeOrganizationId === organizationId && state.user.memberships.some(m =>
+          m.organizationId === organizationId && m.status === 'ACTIVE'));
+    };
+    const controller = new AbortController();
+    const unsubscribe = subscribeAuth(() => { if (!active()) controller.abort(); });
+    let uploaded = 0, failed = 0, message = '';
+    try {
+      for (const row of rows) {
+        for (let attempt = 0; attempt <= (this.options.maxRetries ?? 3); attempt++) {
+          try {
+            this.options.assertActive?.();
+            if (controller.signal.aborted || !active()) throw new Error('Zeitbeleg-Upload nach Kontextwechsel abgebrochen.');
+            const body = evidenceRequestJson(row);
+            const csrf = await fetchCsrfToken();
+            this.options.assertActive?.();
+            if (controller.signal.aborted || !active()) throw new Error('Zeitbeleg-Upload abgebrochen.');
+            const endpoint = row.kind === 0 ? '/api/v1/nodes/boot-evidence' : '/api/v1/nodes/time-evidence';
+            // The raw, previously persisted JSON preserves every uint64 integer.
+            const { data, error, response } = await api.POST(endpoint, {
+              body: {} as never, bodySerializer: () => body, headers: { 'X-XSRF-TOKEN': csrf },
+              signal: AbortSignal.any([controller.signal, ...(this.options.signal ? [this.options.signal] : []), AbortSignal.timeout(10_000)]),
+            });
+            if (controller.signal.aborted || !active()) throw new Error('Zeitbeleg-Upload abgebrochen.');
+            const status = (response as Response | undefined)?.status;
+            this.options.assertActive?.();
+            if (error || !data) {
+              if (status === 401) markSessionExpired();
+              if (status && status >= 400 && status < 500 && status !== 429) {
+                failed++; message = `Zeitbeleg-Upload abgelehnt (HTTP ${status}); Belege bleiben dauerhaft gespeichert.`; break;
+              }
+              throw new Error('Backend bestätigt Zeitbelege noch nicht.');
+            }
+            const receipt = data as Record<string, unknown>, payload = parseEvidenceJson(row.payload);
+            const matches = row.kind === 0
+              ? receipt.nodeId === row.nodeId && receipt.incarnation === row.incarnation && String(receipt.bootCounter) === row.bootCounter
+              : receipt.anchorId === payload.acceptance.anchorId && receipt.trustStatus === 'DEVICE_ACCEPTANCE_VERIFIED';
+            if (!matches || receipt.version !== 1 || !['CREATED', 'DUPLICATE_IDENTICAL'].includes(String(receipt.status))) throw new Error('Zeitbeleg-Bestätigung passt nicht zum Upload.');
+            await this.store.confirmTimeEvidence(row.id);
+            uploaded++; break;
+          } catch (error) {
+            if (!controller.signal.aborted && active() && attempt < (this.options.maxRetries ?? 3)) {
+              await new Promise(resolve => setTimeout(resolve, (this.options.retryDelayMs ?? 800) * (attempt + 1)));
+              continue;
+            }
+            failed++; message = `${error instanceof Error ? error.message : 'Zeitbeleg-Upload unterbrochen.'} Dauerhafte Belege bleiben für den nächsten Versuch erhalten.`;
+            break;
+          }
+        }
+        if (controller.signal.aborted || !active()) break;
+      }
+      return { uploaded, failed, message };
+    } finally { unsubscribe(); }
   }
 
   private async uploadBatch(
@@ -115,9 +185,11 @@ export class BackendUploader {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
+        this.options.assertActive?.();
         const csrfToken = await fetchCsrfToken();
+        this.options.assertActive?.();
         const { data, error, response } = await api.POST('/api/v1/observations/ingest', {
-          signal: AbortSignal.timeout(10_000),
+          signal: this.options.signal ? AbortSignal.any([this.options.signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
           headers: { 'X-XSRF-TOKEN': csrfToken },
           body: {
             organizationId,
@@ -133,6 +205,7 @@ export class BackendUploader {
             })),
           },
         });
+        this.options.assertActive?.();
         if (error || !data) {
           const status = (response as Response | undefined)?.status;
           // #31: an expired backend session locks management via the central
@@ -184,6 +257,7 @@ export class BackendUploader {
         }
         return { uploaded, duplicates, conflicts, failed };
       } catch (e) {
+        this.options.assertActive?.();
         lastError = e;
         if (attempt < maxRetries) {
           await new Promise(r => setTimeout(r, retryDelay * (attempt + 1)));

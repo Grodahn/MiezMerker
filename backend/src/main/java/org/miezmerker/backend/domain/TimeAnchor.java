@@ -43,6 +43,8 @@ public class TimeAnchor {
     private String challengeBytes;
     @Column(name="acceptance_bytes", nullable=false,length=512)
     private String acceptanceBytes;
+    @Column(name="node_metadata",length=1024)
+    private String nodeMetadata;
     @Column(name="trust_status", nullable=false,length=32)
     private String trustStatus;
     @Column(name="source", nullable=false,length=32)
@@ -69,6 +71,7 @@ public class TimeAnchor {
         uptimeMs=a.acceptedUptimeMs(); challengeUptimeMs=c.challengeUptimeMs(); utcMs=utc; proofId=jti;
         proofDigest=a.proofDigest(); nonceDigest=a.challengeNonceDigest(); fingerprint=c.devicePublicKeyFingerprint();
         proof=r.proof(); challengeBytes=r.challengeBytes(); acceptanceBytes=r.acceptanceBytes();
+        nodeMetadata=r.nodeMetadata();
         source="BACKEND_SIGNED"; trustStatus="DEVICE_ACCEPTANCE_VERIFIED"; formatVersion=1;
         if(budget != null) {
             serverErrorMs=budget.serverErrorMs(); samplingMs=budget.samplingMs();
@@ -96,6 +99,7 @@ public class TimeAnchor {
     public String getProof() { return proof; }
     public String getChallengeBytes() { return challengeBytes; }
     public String getAcceptanceBytes() { return acceptanceBytes; }
+    public String getNodeMetadata() { return nodeMetadata; }
     public String getTrustStatus() { return trustStatus; }
     public String getSource() { return source; }
     public Long getUncertaintyMinusMs() { return uncertaintyMinusMs; }

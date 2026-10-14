@@ -18,6 +18,42 @@ std::string hint(const std::string& value, std::size_t limit) {
     while (limit && (static_cast<unsigned char>(value[limit]) & 0xc0) == 0x80) --limit;
     return value.substr(0, limit);
 }
+// JSON is only a transport envelope. Signed bytes and uint64 decimal values
+// are copied exactly; the backend independently verifies both signatures.
+std::string quoted(const std::string& value) {
+    std::string out = "\"";
+    constexpr char hex[] = "0123456789abcdef";
+    for (unsigned char c : value) {
+        if (c == '"' || c == '\\') { out += '\\'; out += static_cast<char>(c); }
+        else if (c < 32) { out += "\\u00"; out += hex[c >> 4]; out += hex[c & 15]; }
+        else out += static_cast<char>(c);
+    }
+    return out + "\"";
+}
+std::string boot_json(const BootEpochV1& b) {
+    return "{\"formatVersion\":1,\"nodeId\":" + quoted(b.node_id.to_string()) +
+        ",\"incarnation\":" + quoted(b.incarnation.to_string()) +
+        ",\"bootCounter\":" + std::to_string(b.boot_counter) +
+        ",\"resetReason\":" + std::to_string(b.reset_reason) +
+        ",\"startedUptimeMs\":" + std::to_string(b.started_uptime_ms) +
+        ",\"firstPossibleSequence\":" + std::to_string(b.first_possible_sequence) + "}";
+}
+std::string anchor_json(const BootEpochV1& b, const TimeAnchorV1& a) {
+    return "{\"boot\":" + boot_json(b) + ",\"proof\":" + quoted(a.proof) +
+        ",\"challenge\":" + (a.challenge.empty() ? "null" : a.challenge) +
+        ",\"acceptance\":" + a.acceptance +
+        ",\"challengeBytes\":" + quoted(a.challenge_bytes) +
+        ",\"acceptanceBytes\":" + quoted(a.acceptance_bytes) +
+        ",\"metadata\":{\"anchorId\":" + quoted(a.anchor_id.to_string()) +
+        ",\"formatVersion\":1,\"verifiedSecurityTime\":" + std::string(a.verified_security_time ? "true" : "false") +
+        ",\"proofIdOrDigest\":" + quoted(a.proof_id_or_digest) +
+        ",\"uptimeMs\":" + std::to_string(a.uptime_ms) +
+        ",\"utcMs\":" + std::to_string(a.utc_ms) +
+        ",\"source\":" + std::to_string(static_cast<unsigned>(a.source)) +
+        ",\"uncertaintyMinusMs\":" + std::to_string(a.uncertainty_minus_ms) +
+        ",\"uncertaintyPlusMs\":" + std::to_string(a.uncertainty_plus_ms) +
+        ",\"driftPpmBound\":" + std::to_string(a.drift_ppm_bound) + "}}";
+}
 }  // namespace
 
 GattRouter::GattRouter(ble::SyncServer& server, OwnerMetadata& owner)
@@ -28,6 +64,7 @@ void GattRouter::disconnect() {
     auth_total_ = 0;
     receipt_fragments_.clear();
     receipt_total_ = 0;
+    evidence_fragments_.clear(); evidence_total_ = 0;
     server_->disconnect();
 }
 
@@ -40,10 +77,11 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
                                                    ble::TrustedEpochSeconds now_s) {
     // Auth/receipt transport envelopes. An empty response accepts a partial
     // write; the board retains the final response for the following read.
-    if (!request.empty() && (request[0] == 0x4d || request[0] == 0x4e)) {
+    if (!request.empty() && (request[0] == 0x4d || request[0] == 0x4e || request[0] == 0x4f)) {
+        const bool evidence = request[0] == 0x4f;
         const bool receipt = request[0] == 0x4e;
-        auto& fragments = receipt ? receipt_fragments_ : auth_fragments_;
-        auto& expected_total = receipt ? receipt_total_ : auth_total_;
+        auto& fragments = evidence ? evidence_fragments_ : receipt ? receipt_fragments_ : auth_fragments_;
+        auto& expected_total = evidence ? evidence_total_ : receipt ? receipt_total_ : auth_total_;
         auto reject = [&]() {
             fragments.clear();
             expected_total = 0;
@@ -53,7 +91,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             request[2] != 1 || request[3] > 1) return reject();
         const std::size_t total = request[4] | (static_cast<std::size_t>(request[5]) << 8);
         const std::size_t offset = request[6] | (static_cast<std::size_t>(request[7]) << 8);
-        if (total < (receipt ? 7U : 70U) || total > (receipt ? 4102U : 2118U)) return reject();
+        if (total < (evidence ? 57U : receipt ? 7U : 70U) || total > (evidence ? 57U : receipt ? 4102U : 2118U)) return reject();
         if (request[3] == 1) {
             fragments.clear();
             expected_total = total;
@@ -67,7 +105,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         fragments.clear();
         expected_total = 0;
         auto decoded = decode_frame(assembled);
-        if (!decoded || (receipt
+        if (!decoded || (evidence ? decoded->opcode != Opcode::TimeEvidenceReceiptRequest : receipt
             ? decoded->opcode != Opcode::ClaimReceiptRequest && decoded->opcode != Opcode::RegistrationTimeProofRequest
             : decoded->opcode != Opcode::AuthRequest)) return reject();
         return handle_frame(assembled, now_s);
@@ -78,6 +116,65 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         return error_frame(SyncError::UnknownVersion, "unsupported version");
     }
     switch (frame->opcode) {
+        case Opcode::SecurityTimeStatusRequest: {
+            if (!frame->payload.empty() || !time_bootstrap_)
+                return error_frame(SyncError::ClockUnavailable, "security time unavailable");
+            std::int64_t lower = 0, upper = 0;
+            const bool usable = time_bootstrap_->current_interval(lower, upper);
+            return encode_frame({1, Opcode::SecurityTimeStatusResponse, {static_cast<std::uint8_t>(usable)}});
+        }
+        case Opcode::TimeEvidenceReceiptRequest: {
+            if (!server_->authorized(now_s)) return error_frame(SyncError::Unauthorized, "evidence receipt requires authorization");
+            const auto& p = frame->payload;
+            if (!evidence_ || p.size() != 53 || p[0] > 1) return error_frame(SyncError::InvalidFrame, "bad evidence receipt");
+            NodeId node, anchor; IncarnationId incarnation;
+            std::copy_n(p.begin()+1,16,node.bytes.begin()); std::copy_n(p.begin()+17,16,incarnation.bytes.begin());
+            const std::uint32_t boot = p[33] | (std::uint32_t(p[34]) << 8) | (std::uint32_t(p[35]) << 16) | (std::uint32_t(p[36]) << 24);
+            std::copy_n(p.begin()+37,16,anchor.bytes.begin());
+            const auto hello = server_->public_hello();
+            if (node != hello.node_id || incarnation != hello.incarnation || !boot || (p[0] == 0 && anchor.is_set()) || (p[0] == 1 && !anchor.is_set()))
+                return error_frame(SyncError::InvalidFrame, "wrong evidence receipt lifetime");
+            const auto result = evidence_->acknowledge(p[0] == 1,node,incarnation,boot,anchor);
+            if (result == EvidenceReceiptResult::Rejected) return error_frame(SyncError::Internal, "evidence receipt persistence failed");
+            auto response = p;
+            response.push_back(result == EvidenceReceiptResult::Retained ? 1 : 0);
+            return encode_frame({1,Opcode::TimeEvidenceReceiptResponse,response});
+        }
+        case Opcode::TimeEvidenceRequest: {
+            // Separate append-only boot/anchor indexes, never the raw ACK watermark.
+            // Retain on the Node even after transfer; no pre-auth evidence disclosure.
+            if (!server_->authorized(now_s)) return error_frame(SyncError::Unauthorized, "evidence requires authorization");
+            if (!evidence_ || frame->payload.size() != 7 || frame->payload[0] > 1)
+                return error_frame(SyncError::InvalidFrame, "bad evidence request");
+            const auto& req = frame->payload;
+            const unsigned kind = req[0];
+            const std::uint32_t index = req[1] | (std::uint32_t(req[2]) << 8) | (std::uint32_t(req[3]) << 16) | (std::uint32_t(req[4]) << 24);
+            const unsigned offset = req[5] | (unsigned(req[6]) << 8);
+            if (index > (kind == 0 ? 128U : 16U)) return error_frame(SyncError::InvalidFrame, "evidence index exceeds bounds");
+            const auto boots = evidence_->boots();
+            std::string bytes;
+            if (kind == 0) {
+                if (index < boots.size()) bytes = "{\"boot\":" + boot_json(boots[index]) + "}";
+            } else {
+                const auto anchors = evidence_->anchors();
+                if (index < anchors.size()) {
+                    const auto& a = anchors[index];
+                    auto boot = std::find_if(boots.begin(), boots.end(), [&](const auto& b) {
+                        return b.node_id == a.node_id && b.incarnation == a.incarnation && b.boot_counter == a.boot_counter;
+                    });
+                    if (boot == boots.end()) return error_frame(SyncError::Internal, "missing boot evidence");
+                    bytes = anchor_json(*boot, a);
+                }
+            }
+            if (bytes.size() > 8192 || offset > bytes.size() || (offset && offset == bytes.size()))
+                return error_frame(SyncError::InvalidFrame, "bad evidence offset or size");
+            std::vector<std::uint8_t> payload(req.begin(), req.end());
+            payload.push_back(static_cast<std::uint8_t>(bytes.size()));
+            payload.push_back(static_cast<std::uint8_t>(bytes.size() >> 8));
+            const auto size = std::min<std::size_t>(480, bytes.size() - offset);
+            payload.insert(payload.end(), bytes.begin() + offset, bytes.begin() + offset + size);
+            return encode_frame({1, Opcode::TimeEvidenceResponse, payload});
+        }
         case Opcode::RegistrationTimeChallengeRequest: {
             if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad time challenge request");
             if (!identity_ || !identity_->ready() || !time_bootstrap_)
@@ -146,6 +243,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
                 return error_frame(SyncError::UnknownVersion, "unsupported version");
             }
             HelloPublic hello = server_->public_hello();
+            if (time_bootstrap_ && evidence_) hello.caps |= kCapTimeEvidence;
             return encode_frame(Frame{kProtocolVersion, Opcode::HelloPublic,
                                       encode_hello_public(hello)});
         }

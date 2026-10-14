@@ -1425,6 +1425,11 @@
           "challengeBytes": {
             "type": "string"
           },
+          "nodeMetadata": {
+            "description": "Exact firmware metadata JSON, retained as collector-reported audit data; never an uncertainty/trust authority",
+            "maxLength": 1024,
+            "type": "string"
+          },
           "organizationId": {
             "type": "string"
           },

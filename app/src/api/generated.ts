@@ -1322,6 +1322,8 @@ export interface components {
             boot: components["schemas"]["Boot"];
             challenge: components["schemas"]["NodeTimeChallengeV1"];
             challengeBytes: string;
+            /** @description Exact firmware metadata JSON, retained as collector-reported audit data; never an uncertainty/trust authority */
+            nodeMetadata?: string;
             organizationId: string;
             proof: string;
         };

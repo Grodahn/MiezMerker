@@ -83,6 +83,46 @@ TimeAnchorV1 verified_anchor(std::uint8_t id_byte, const std::string& proof) {
 }  // namespace
 
 int main() {
+    // Backend-confirmed receipts have a distinct durable lifecycle. Current
+    // boots and boots referenced by unreceipted anchors remain replayable.
+    {
+        Cell cell; PersistentTimeEvidence evidence(cell); assert(evidence.open());
+        assert(evidence.append_boot(boot(42)) == PutResult::OK);
+        assert(evidence.append_boot(boot(43)) == PutResult::OK);
+        auto a = verified_anchor(0x44,"receipt-proof");
+        assert(evidence.append_verified(VerifiedAnchorTestAccess::wrap(a)) == PutResult::OK);
+        assert(evidence.acknowledge(false,node_id(),incarnation(),42,{}) == EvidenceReceiptResult::Retained);
+        assert(evidence.acknowledge(false,node_id(),incarnation(),43,{}) == EvidenceReceiptResult::Retained);
+        assert(evidence.acknowledge(true,node_id(),incarnation(),42,a.anchor_id) == EvidenceReceiptResult::Removed);
+        const auto writes = cell.writes;
+        assert(evidence.acknowledge(true,node_id(),incarnation(),42,a.anchor_id) == EvidenceReceiptResult::Removed);
+        assert(cell.writes == writes);
+        assert(evidence.acknowledge(false,node_id(),incarnation(),42,{}) == EvidenceReceiptResult::Removed);
+        PersistentTimeEvidence reopened(cell); assert(reopened.open());
+        assert(reopened.anchors().empty() && reopened.boots().size() == 1 && reopened.boots().front().boot_counter == 43);
+    }
+    for (bool committed : {false,true}) {
+        Cell cell; PersistentTimeEvidence evidence(cell); assert(evidence.open());
+        assert(evidence.append_boot(boot(42)) == PutResult::OK);
+        auto a = verified_anchor(0x45,"power-loss-receipt");
+        assert(evidence.append_verified(VerifiedAnchorTestAccess::wrap(a)) == PutResult::OK);
+        cell.after = committed; cell.before = !committed;
+        assert(evidence.acknowledge(true,node_id(),incarnation(),42,a.anchor_id) == EvidenceReceiptResult::Rejected);
+        assert(evidence.acknowledge(true,node_id(),incarnation(),42,a.anchor_id) == EvidenceReceiptResult::Rejected);
+        assert(evidence.open()); assert(evidence.anchors().size() == (committed ? 0U : 1U));
+        assert(evidence.acknowledge(true,node_id(),incarnation(),42,a.anchor_id) == EvidenceReceiptResult::Removed);
+    }
+    {
+        Cell cell; PersistentTimeEvidence evidence(cell); assert(evidence.open());
+        for(unsigned counter=42;counter<82;++counter) {
+            assert(evidence.append_boot(boot(counter)) == PutResult::OK);
+            auto a = verified_anchor(static_cast<std::uint8_t>(counter),"repeat-proof"); a.boot_counter=counter;
+            assert(evidence.append_verified(VerifiedAnchorTestAccess::wrap(a)) == PutResult::OK);
+            assert(evidence.acknowledge(true,node_id(),incarnation(),counter,a.anchor_id) == EvidenceReceiptResult::Removed);
+            if(counter>42) assert(evidence.acknowledge(false,node_id(),incarnation(),counter-1,{}) == EvidenceReceiptResult::Removed);
+            assert(evidence.boots().size() == 1 && evidence.anchors().empty());
+        }
+    }
     // Binary proof/acceptance (embedded NUL) survives storage and reopen.
     {
         Cell cell;
@@ -92,10 +132,13 @@ int main() {
         std::string proof("proof\0exact", 11);
         proof += std::string("\0tail", 5);
         auto anchor = verified_anchor(0x66, proof);
+        anchor.challenge = std::string("challenge\0exact", 15);
+        anchor.challenge_bytes = "signed-challenge"; anchor.acceptance_bytes = "signed-acceptance";
         assert(evidence.append_verified(VerifiedAnchorTestAccess::wrap(anchor)) ==
                PutResult::OK);
         PersistentTimeEvidence reopen(cell);
         assert(reopen.open() && reopen.anchors().size() == 1);
+        assert(reopen.anchors().front() == anchor);
         assert(reopen.anchors().front().proof == proof);
         assert(reopen.anchors().front().acceptance == std::string("accept\0bytes", 12));
         // Exact retry is idempotent without an extra write.
@@ -110,6 +153,22 @@ int main() {
                PutResult::IO_ERROR);
         // Arbitrary verified writes via the unverified path stay rejected.
         assert(evidence.append_anchor(anchor) == PutResult::IO_ERROR);
+    }
+    // Migrate a checked v1 representation with no invented historical challenge.
+    {
+        Cell cell; PersistentTimeEvidence original(cell); assert(original.open());
+        assert(original.append_boot(boot(42)) == PutResult::OK);
+        auto legacy = verified_anchor(0x55, "legacy-proof");
+        assert(original.append_verified(VerifiedAnchorTestAccess::wrap(legacy)) == PutResult::OK);
+        // The old layout is the same except magic and three absent empty strings.
+        cell.data.resize(cell.data.size()-10); cell.data[3]=1;
+        std::uint32_t checksum=0xffffffff;
+        for(auto byte:cell.data) { checksum^=byte; for(int bit=0;bit<8;++bit) checksum=(checksum>>1)^(0xedb88320U & (0U-(checksum&1))); }
+        checksum=~checksum; for(unsigned i=0;i<4;++i) cell.data.push_back(static_cast<std::uint8_t>(checksum>>(8*i)));
+        PersistentTimeEvidence migrated(cell); assert(migrated.open());
+        assert(migrated.anchors().front()==legacy);
+        assert(migrated.append_boot(boot(43))==PutResult::OK); assert(cell.data[3]==2);
+        PersistentTimeEvidence reopened(cell); assert(reopened.open()); assert(reopened.anchors().front()==legacy);
     }
     // Power loss before/after commit fails closed without deleting data.
     for (bool committed : {false, true}) {

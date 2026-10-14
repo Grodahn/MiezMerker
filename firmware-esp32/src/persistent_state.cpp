@@ -183,7 +183,8 @@ bool PersistentObservations::prune_acked() {
 bool PersistentObservations::clear() { return commit({}, 0, 0); }
 
 namespace {
-constexpr std::uint32_t evidence_magic = 0x01544d4d;
+constexpr std::uint32_t evidence_magic_v1 = 0x01544d4d;
+constexpr std::uint32_t evidence_magic = 0x02544d4d;
 void write_boot(Writer& w, const BootEpochV1& b) {
     w.number(b.format_version, 2); w.array(b.node_id.bytes); w.array(b.incarnation.bytes);
     w.number(b.boot_counter, 4); w.number(b.reset_reason, 4);
@@ -201,8 +202,9 @@ void write_anchor(Writer& w, const TimeAnchorV1& a) {
     w.number(static_cast<unsigned>(a.source), 1); w.number(a.verified_security_time, 1);
     w.number(a.uncertainty_minus_ms, 8); w.number(a.uncertainty_plus_ms, 8); w.number(a.drift_ppm_bound, 4);
     w.string(a.proof_id_or_digest, 128); w.string(a.proof, 4096, true); w.string(a.acceptance, 512, true);
+    w.string(a.challenge, 1024, true); w.string(a.challenge_bytes, 512, true); w.string(a.acceptance_bytes, 512, true);
 }
-TimeAnchorV1 read_anchor(Reader& r) {
+TimeAnchorV1 read_anchor(Reader& r, bool v2) {
     TimeAnchorV1 a; a.format_version = static_cast<std::uint16_t>(r.number(2));
     r.array(a.anchor_id.bytes); r.array(a.node_id.bytes); r.array(a.incarnation.bytes);
     a.boot_counter = static_cast<std::uint32_t>(r.number(4)); a.uptime_ms = r.number(8);
@@ -214,7 +216,9 @@ TimeAnchorV1 read_anchor(Reader& r) {
     a.verified_security_time = verified != 0;
     a.uncertainty_minus_ms = r.number(8); a.uncertainty_plus_ms = r.number(8);
     a.drift_ppm_bound = static_cast<std::uint32_t>(r.number(4));
-    a.proof_id_or_digest = r.string(128); a.proof = r.string(4096, true); a.acceptance = r.string(512, true); return a;
+    a.proof_id_or_digest = r.string(128); a.proof = r.string(4096, true); a.acceptance = r.string(512, true);
+    if (v2) { a.challenge = r.string(1024, true); a.challenge_bytes = r.string(512, true); a.acceptance_bytes = r.string(512, true); }
+    return a;
 }
 bool same_boot(const BootEpochV1& b, const TimeAnchorV1& a) {
     return b.node_id == a.node_id && b.incarnation == a.incarnation && b.boot_counter == a.boot_counter;
@@ -249,12 +253,13 @@ bool PersistentTimeEvidence::open() {
     if (result == BlobResult::missing) { boots_.clear(); anchors_.clear(); ready_ = true; return true; }
     if (bytes.size() > kMaxBytes) return false;
     try {
-        Reader r(bytes); if (r.number(4) != evidence_magic) return false;
+        Reader r(bytes); const auto magic = r.number(4);
+        if (magic != evidence_magic && magic != evidence_magic_v1) return false;
         const auto nb = r.number(2), na = r.number(2);
         if (nb > kMaxBoots || na > kMaxAnchors) return false;
         std::vector<BootEpochV1> boots; std::vector<TimeAnchorV1> anchors;
         for (std::uint64_t i = 0; i < nb; ++i) boots.push_back(read_boot(r));
-        for (std::uint64_t i = 0; i < na; ++i) anchors.push_back(read_anchor(r));
+        for (std::uint64_t i = 0; i < na; ++i) anchors.push_back(read_anchor(r, magic == evidence_magic));
         r.done(); if (!valid_evidence(boots, anchors)) return false;
         boots_ = std::move(boots); anchors_ = std::move(anchors); ready_ = true; return true;
     } catch (const std::exception&) { return false; }
@@ -293,4 +298,28 @@ PutResult PersistentTimeEvidence::append_verified(const VerifiedAnchor& verified
     auto anchors = anchors_; anchors.push_back(a); return commit(boots_, anchors);
 }
 bool PersistentTimeEvidence::clear_for_factory_reset() { return commit({}, {}) == PutResult::OK; }
+EvidenceReceiptResult PersistentTimeEvidence::acknowledge(bool anchor, const NodeId& node,
+        const IncarnationId& incarnation, std::uint32_t boot, const NodeId& id) {
+    if (!ready_) return EvidenceReceiptResult::Rejected;
+    auto boots = boots_; auto anchors = anchors_;
+    if (anchor) {
+        auto found = std::find_if(anchors.begin(), anchors.end(), [&](const auto& a) {
+            return a.node_id == node && a.incarnation == incarnation && a.boot_counter == boot && a.anchor_id == id;
+        });
+        if (found == anchors.end()) return EvidenceReceiptResult::Removed; // lost-response retry
+        anchors.erase(found);
+    } else {
+        auto found = std::find_if(boots.begin(), boots.end(), [&](const auto& b) {
+            return b.node_id == node && b.incarnation == incarnation && b.boot_counter == boot;
+        });
+        if (found == boots.end()) return EvidenceReceiptResult::Removed;
+        // Keep the current boot marker for future captures/anchors and keep
+        // any marker still referenced by an unreceipted anchor.
+        if (found == boots.end()-1 || std::any_of(anchors.begin(), anchors.end(), [&](const auto& a) {
+            return a.node_id == node && a.incarnation == incarnation && a.boot_counter == boot;
+        })) return EvidenceReceiptResult::Retained;
+        boots.erase(found);
+    }
+    return commit(boots, anchors) == PutResult::OK ? EvidenceReceiptResult::Removed : EvidenceReceiptResult::Rejected;
+}
 } // namespace miezmerker::esp32

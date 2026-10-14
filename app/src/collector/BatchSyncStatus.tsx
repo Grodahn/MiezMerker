@@ -94,6 +94,7 @@ export function BatchNodeCard({ result, context, contextLoading, isAdmin, claimB
       : `${result.recordsReceived} Beobachtungen sicher übernommen und quittiert${result.watermark ? ` (Stand ${result.watermark})` : ''}.`;
     return <Status kind="success" title={`${title} ausgelesen`} scope="Vor-Ort-Sync" graphic="success"
       message={`${records}${detail}`}>
+      {result.message && <p>{result.message}</p>}
       <p><Graphic src={assets.placeholders.bowl} alt="" className="avatar"/>{
         context?.displayName ? `Napf „${context.displayName}“` : 'Napf ohne Namen'
       }{result.nodeId ? <> · <code>{result.nodeId}</code></> : null}</p>

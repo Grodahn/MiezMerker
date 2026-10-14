@@ -15,8 +15,15 @@ public final class TimeEvidenceProtocol {
             @Schema(implementation=Long.class,type="integer",format="uint64") BigInteger startedUptimeMs,
             @Schema(implementation=Long.class,type="integer",format="uint64") BigInteger firstPossibleSequence,int formatVersion) {}
     @Schema(additionalProperties=Schema.AdditionalPropertiesValue.FALSE, requiredProperties={"organizationId","boot","challenge","proof","acceptance","challengeBytes","acceptanceBytes"})
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     public record Request(String organizationId,Boot boot,NodeTimeProtocol.Challenge challenge,String proof,
-            NodeTimeProtocol.Acceptance acceptance,String challengeBytes,String acceptanceBytes) {}
+            NodeTimeProtocol.Acceptance acceptance,String challengeBytes,String acceptanceBytes,
+            @Schema(description="Exact firmware metadata JSON, retained as collector-reported audit data; never an uncertainty/trust authority",maxLength=1024) String nodeMetadata) {
+        public Request(String organizationId,Boot boot,NodeTimeProtocol.Challenge challenge,String proof,
+                NodeTimeProtocol.Acceptance acceptance,String challengeBytes,String acceptanceBytes) {
+            this(organizationId,boot,challenge,proof,acceptance,challengeBytes,acceptanceBytes,null);
+        }
+    }
     @Schema(additionalProperties=Schema.AdditionalPropertiesValue.FALSE,requiredProperties={"organizationId","boot"})
     public record BootRequest(String organizationId,Boot boot) {}
     public static BootRequest parseBoot(byte[] body) {
@@ -45,7 +52,8 @@ public final class TimeEvidenceProtocol {
     static long u32(JsonNode n,String f) { return integer(n,f,BigInteger.valueOf(0xffff_ffffL)).longValueExact(); }
     public static Request parse(byte[] body) {
         var n=NodeTimeProtocol.json(body);
-        NodeTimeProtocol.fields(n,"organizationId","boot","challenge","proof","acceptance","challengeBytes","acceptanceBytes");
+        if(n.has("nodeMetadata")) NodeTimeProtocol.fields(n,"organizationId","boot","challenge","proof","acceptance","challengeBytes","acceptanceBytes","nodeMetadata");
+        else NodeTimeProtocol.fields(n,"organizationId","boot","challenge","proof","acceptance","challengeBytes","acceptanceBytes");
         String org=NodeTimeProtocol.text(n,"organizationId"); NodeTimeProtocol.uuid(org);
         var b=n.path("boot");
         NodeTimeProtocol.fields(b,"nodeId","incarnation","bootCounter","resetReason","startedUptimeMs","firstPossibleSequence","formatVersion");
@@ -61,7 +69,8 @@ public final class TimeEvidenceProtocol {
             NodeTimeProtocol.text(a,"proofDigest"),NodeTimeProtocol.text(a,"challengeNonceDigest"),integer(a,"acceptedUptimeMs",U64_MAX),
             NodeTimeProtocol.text(a,"anchorId"),NodeTimeProtocol.text(a,"signature"),integer(a,"version",BigInteger.valueOf(65535)).intValueExact());
         var r=new Request(org,boot,c,NodeTimeProtocol.text(n,"proof"),accept,
-                NodeTimeProtocol.text(n,"challengeBytes"),NodeTimeProtocol.text(n,"acceptanceBytes"));
+                NodeTimeProtocol.text(n,"challengeBytes"),NodeTimeProtocol.text(n,"acceptanceBytes"),
+                n.has("nodeMetadata")?NodeTimeProtocol.text(n,"nodeMetadata"):null);
         validate(r); return r;
     }
     public static String signedBytes(byte[] message,String signature) {
@@ -79,6 +88,18 @@ public final class TimeEvidenceProtocol {
                 || r.proof()==null || r.proof().length()>2048 || a==null)
             throw new IllegalArgumentException("Invalid evidence");
         NodeTimeProtocol.uuid(b.nodeId()); NodeTimeProtocol.uuid(b.incarnation());
+        if(r.nodeMetadata()!=null) {
+            if(r.nodeMetadata().length()>1024) throw new IllegalArgumentException("Metadata too large");
+            var m=NodeTimeProtocol.json(r.nodeMetadata().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            NodeTimeProtocol.fields(m,"anchorId","formatVersion","verifiedSecurityTime","proofIdOrDigest","uptimeMs","utcMs","source","uncertaintyMinusMs","uncertaintyPlusMs","driftPpmBound");
+            if(!NodeTimeProtocol.text(m,"anchorId").equals(a.anchorId()) || integer(m,"formatVersion",BigInteger.ONE).intValueExact()!=1
+                    || !m.path("verifiedSecurityTime").isBoolean() || !m.path("verifiedSecurityTime").asBoolean()
+                    || integer(m,"source",BigInteger.valueOf(2)).intValueExact()!=0
+                    || !integer(m,"uptimeMs",U64_MAX).equals(a.acceptedUptimeMs())) throw new IllegalArgumentException("Metadata binding");
+            NodeTimeProtocol.uuid(NodeTimeProtocol.text(m,"proofIdOrDigest"));
+            integer(m,"utcMs",BigInteger.valueOf(Long.MAX_VALUE));
+            integer(m,"uncertaintyMinusMs",U64_MAX); integer(m,"uncertaintyPlusMs",U64_MAX); u32(m,"driftPpmBound");
+        }
         byte[] accepted=NodeTimeProtocol.acceptanceBytes(c,r.proof(),a);
         // ADR 0017 provisional maximum 30 seconds; narrowing is allowed in #130.
         if(a.acceptedUptimeMs().subtract(c.challengeUptimeMs()).compareTo(BigInteger.valueOf(30_000))>0

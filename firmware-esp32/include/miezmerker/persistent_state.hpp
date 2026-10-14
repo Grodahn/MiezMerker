@@ -52,6 +52,8 @@ public:
     PutResult append_boot(const BootEpochV1&) override;
     PutResult append_anchor(const TimeAnchorV1&) override;
     PutResult append_verified(const VerifiedAnchor&) override;
+    EvidenceReceiptResult acknowledge(bool anchor, const NodeId&, const IncarnationId&,
+                                      std::uint32_t, const NodeId&) override;
     std::vector<BootEpochV1> boots() const override { return boots_; }
     std::vector<TimeAnchorV1> anchors() const override { return anchors_; }
     bool clear_for_factory_reset() override;

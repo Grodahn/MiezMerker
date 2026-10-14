@@ -25,6 +25,7 @@ import type { BackendSyncState } from './backend-upload';
 import { resolveCredential, CredentialError } from './authorization';
 import { PublicProbeTransport, type PublicNodeInfo } from './public-probe';
 import { bindNodeOperation } from './node-operation';
+import { bootstrapNodeTime } from './registration-time';
 
 export type NodeSyncState =
   | 'idle'
@@ -87,6 +88,8 @@ export interface SyncCallbacks {
 function toNodeState(phase: string): NodeSyncState {
   if (phase === 'complete') return 'complete';
   if (phase === 'failed') return 'failed';
+  if (phase === 'evidence' || phase === 'evidence-stored') return 'persisting';
+  if (phase === 'time-bootstrap' || phase === 'time-accepted') return 'connecting';
   if (phase === 'persisting') return 'persisting';
   if (phase === 'acknowledging' || phase === 'compacting') return 'acknowledging';
   if (phase === 'connecting' || phase === 'public-info' || phase === 'challenge' ||
@@ -196,6 +199,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       }),
       (owner) => emit({ owner }),
       hello,
+      operation.assertActive,
     );
 
     if (engineResult.unclaimed) {
@@ -247,7 +251,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       pendingUploads: stats.pending + stats.failed,
       uploadedCount: stats.uploaded,
       fertig: true,
-      nodeMessage: `Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).` +
+      nodeMessage: `${engineResult.timeMessage ? engineResult.timeMessage + ' ' : ''}${engineResult.evidenceStored ? `${engineResult.evidenceStored} Zeit-/Bootbelege dauerhaft lokal gespeichert; Backend-Upload ausstehend. ` : ''}Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).` +
         (engineResult.maintenanceWarning ? ` ${engineResult.maintenanceWarning}` : ''),
     });
 
@@ -274,6 +278,10 @@ async function deviceKeysForUser(userId: string): Promise<WebCryptoDeviceKeys> {
 function phaseMessage(phase: string, received: number): string {
   switch (phase) {
     case 'connecting': case 'public-info': return 'Verbinde mit Node …';
+    case 'time-bootstrap': return 'Prüfe sichere Node-Zeit / signierten Zeit-Bootstrap …';
+    case 'time-accepted': return 'Signierte UTC-Zeit vom Node akzeptiert. Autorisierung wird vorbereitet …';
+    case 'evidence': return 'Empfange Zeit-/Bootbelege …';
+    case 'evidence-stored': return 'Zeit-/Bootbelege dauerhaft lokal gespeichert. Backend-Upload steht separat aus.';
     case 'challenge': case 'authorizing': return 'Autorisiere …';
     case 'authorized': return 'Autorisiert. Starte Sync …';
     case 'syncing': return received > 0 ? `Empfange … (${received})` : 'Empfange Beobachtungen …';
@@ -297,6 +305,8 @@ interface EngineOutcome {
   publicKeyX?: string;
   publicKeyY?: string;
   maintenanceWarning?: string;
+  timeMessage?: string;
+  evidenceStored?: number;
 }
 
 // Discovers the node id via a public-only probe, resolves the backend-pinned
@@ -312,6 +322,7 @@ export async function runEngineWithDiscovery(
   onProgress: (phase: string, received: number) => void,
   onOwner: (owner: OwnerInfo | null) => void,
   discoveredHello?: PublicNodeInfo,
+  assertActive: () => void = () => {},
 ): Promise<EngineOutcome> {
   const probe = new PublicProbeTransport(transport);
   const hello = discoveredHello ?? await probe.readPublicHello();
@@ -360,7 +371,9 @@ export async function runEngineWithDiscovery(
   });
   // One maximum-size record fits a GATT attribute and the documented 185-byte
   // transport. Do not assume the board clamps oversized requested pages.
-  const engine = new SyncEngine(transport, observations, deviceKeys, pinned, { maxBatchRecords: 1 });
+  const engine = new SyncEngine(transport, observations, deviceKeys, pinned, { maxBatchRecords: 1, assertActive,
+    bootstrapTime: (link, node, incarnation) => bootstrapNodeTime(link, node, organizationId, assertActive, 'CLAIMED', incarnation),
+  });
   const timerHost: { setInterval: typeof setInterval; clearInterval: typeof clearInterval } =
     (typeof window !== 'undefined' ? window : globalThis) as never;
   const progressTimer = timerHost.setInterval(() => {
@@ -380,7 +393,7 @@ export async function runEngineWithDiscovery(
       return { ok: true, message: 'Fertig.', owner, unclaimed: false, foreign: false,
         nodeId: hello.nodeId, incarnation: hello.incarnation,
         received: result.recordsReceived, watermark: result.watermark.toString(),
-        maintenanceWarning: result.maintenanceWarning,
+        maintenanceWarning: result.maintenanceWarning, timeMessage: result.timeMessage, evidenceStored: result.evidenceStored,
         publicKeyX: pinned.publicKeyX, publicKeyY: pinned.publicKeyY };
     }
     const errorText = result.error ?? 'Sync fehlgeschlagen.';
@@ -393,7 +406,8 @@ export async function runEngineWithDiscovery(
       return { ok: false, message: errorText, owner, unclaimed: false, foreign: true,
         nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
     }
-    return { ok: false, message: humanSyncError(errorText), owner, unclaimed: false, foreign: false,
+    return { ok: false, message: `${result.timeMessage ? result.timeMessage + ' ' : ''}${humanSyncError(errorText)}` +
+        (result.evidenceStored ? ` ${result.evidenceStored} Zeit-/Bootbelege bleiben dauerhaft lokal gespeichert; Backend-Upload separat ausstehend.` : ''), owner, unclaimed: false, foreign: false,
       nodeId: hello.nodeId, incarnation: hello.incarnation, received: result.recordsReceived, watermark: result.watermark.toString() };
   } catch (e) {
     if (e instanceof SyncFailedError && (e.kind === 'unclaimed')) {
@@ -414,6 +428,7 @@ export function humanSyncError(error: string): string {
   const kind = error.split(':')[0];
   const detail = error.includes(':') ? error.slice(error.indexOf(':') + 1).trim() : error;
   switch (kind) {
+    case 'trusted-time': return `${detail} Synchronisierung unvollständig; bitte online erneut versuchen.`;
     case 'incompatible': return `Protokoll inkompatibel. ${detail}`;
     case 'unauthorized': return `Autorisierung abgelehnt. ${detail}`;
     case 'storage': return detail;

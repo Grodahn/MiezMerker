@@ -1,6 +1,6 @@
 // @vitest-environment node
 import 'fake-indexeddb/auto';
-import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   contiguousWatermark, SyncDatabase, SyncEngine, SyncStore,
 } from './sync-engine';
@@ -15,6 +15,7 @@ import type { NodeTransport } from '../platform/node-transport';
 import type { AppDeviceKeys } from '../platform/device-keys';
 import { toBase64Url } from '../platform/device-keys';
 import type { TrustedNodeIdentity } from '../platform/node-identity';
+import { TimeBootstrapUnavailableError } from './registration-time';
 
 const NODE_ID = '44444444-4444-4444-8444-444444444444';
 const INCARNATION = '55555555-5555-4555-9555-555555555555';
@@ -53,7 +54,7 @@ class MockNodeTransport implements NodeTransport {
 // Helper: build a mock node that serves 3 records then completes.
 function makeMockNode(records: BleRecord[], opts: {
   failAuth?: boolean; failAck?: boolean; fakeNode?: boolean; initialAck?: bigint;
-  loseAckOnce?: boolean; failCompact?: boolean;
+  loseAckOnce?: boolean; failCompact?: boolean; timeEvidence?: boolean; timeUsable?: boolean;
 } = {}) {
   let acked = opts.initialAck ?? 0n;
   let lostAck = false;
@@ -66,9 +67,21 @@ function makeMockNode(records: BleRecord[], opts: {
     switch (f.opcode) {
       case Opcode.HelloRequest:
         return encodeFrame({ version: 1, opcode: Opcode.HelloPublic, payload: encodeHelloPublic({
-          serverVer: 1, caps: 0x1f, nodeId: NODE_ID, incarnation: INCARNATION,
+          serverVer: 1, caps: opts.timeEvidence ? 0x3f : 0x1f, nodeId: NODE_ID, incarnation: INCARNATION,
           firmwareVersion: 'test-1.0.0', claimState: 1, clockStatus: 2,
         })});
+      case Opcode.SecurityTimeStatusRequest:
+        return encodeFrame({ version: 1, opcode: Opcode.SecurityTimeStatusResponse, payload: new Uint8Array([opts.timeUsable ? 1 : 0]) });
+      case Opcode.TimeEvidenceRequest: {
+        const p = f.payload, v = new DataView(p.buffer, p.byteOffset, p.byteLength);
+        const json = p[0] === 0 && v.getUint32(1, true) === 0 ? JSON.stringify({ boot: {
+          formatVersion: 1, nodeId: NODE_ID, incarnation: INCARNATION, bootCounter: 7,
+          resetReason: 0, startedUptimeMs: 0, firstPossibleSequence: 1,
+        } }) : '';
+        const bytes = new TextEncoder().encode(json), response = new Uint8Array(9 + bytes.length);
+        response.set(p); new DataView(response.buffer).setUint16(7, bytes.length, true); response.set(bytes, 9);
+        return encodeFrame({ version: 1, opcode: Opcode.TimeEvidenceResponse, payload: response });
+      }
       case Opcode.OwnerRequest:
         return encodeFrame({ version: 1, opcode: Opcode.OwnerResponse, payload: encodeOwnerResponse({
           nodeId: NODE_ID, claimState: 1,
@@ -336,5 +349,69 @@ describe('SyncEngine', () => {
     expect(result.ok).toBe(kind === 'compact');
     if (kind === 'compact') expect(result.maintenanceWarning).toContain('Speicherbereinigung');
     expect(transport.connected).toBe(false);
+  });
+});
+
+
+describe('ADR 0017 normal synchronization', () => {
+  const org = '22222222-2222-4222-8222-222222222222';
+  beforeEach(() => Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } }));
+  test.each([false, true])('backend outage uses only previously valid firmware time (%s)', async usable => {
+    const node = makeMockNode([], { timeEvidence: true, timeUsable: usable }), db = new SyncDatabase(`outage-${crypto.randomUUID()}`);
+    const store = Object.assign(new SyncStore(db), { putTimeEvidence: vi.fn(async () => {}) });
+    const result = await new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, identity, {
+      maxRetries: 0, bootstrapTime: async () => { throw new TimeBootstrapUnavailableError('HTTP unavailable'); },
+    }).sync('credential', () => 1790899200, org);
+    expect(result.ok).toBe(usable); expect(node.opcodes.includes(Opcode.AuthRequest)).toBe(usable);
+    expect(result.timeMessage).not.toContain('akzeptiert'); db.close(); await db.delete();
+  });
+  test.each([false, true])('fresh/invalidated or renewable time (%s) bootstraps before PoP and persists evidence before raw ACK', async usable => {
+    const node = makeMockNode([makeRecord(1, 'UNKNOWN')], { timeEvidence: true, timeUsable: usable, loseAckOnce: true });
+    const db = new SyncDatabase(`time-sync-${crypto.randomUUID()}`), store = new SyncStore(db);
+    const saved: string[] = [];
+    const persistence = Object.assign(store, { putTimeEvidence: async (row: { id: string }) => { saved.push(row.id); } });
+    const bootstrapTime = vi.fn(async () => {
+      expect(node.opcodes.at(-1)).toBe(Opcode.SecurityTimeStatusRequest); return 0;
+    });
+    const transport = new MockNodeTransport(async bytes => {
+      if (decodeFrame(bytes)?.opcode === Opcode.AckRequest) expect(saved.length).toBeGreaterThan(0);
+      return node.handler(bytes);
+    });
+    const result = await new SyncEngine(transport, persistence, mockKeys, identity,
+      { bootstrapTime, retryDelayMs: 0, maxRetries: 1 }).sync('credential', () => 1790899200, org);
+    expect(result.ok).toBe(true); expect(result.evidenceStored).toBe(1); expect(result.timeMessage).toContain('akzeptiert');
+    expect(bootstrapTime).toHaveBeenCalledTimes(usable ? 1 : 2); expect(node.getAcked()).toBe(1n);
+    expect(node.opcodes.indexOf(Opcode.TimeEvidenceRequest)).toBeLessThan(node.opcodes.indexOf(Opcode.AckRequest));
+    db.close(); await db.delete();
+  });
+  test('missing backend offline fails closed without PoP, raw reads, ACK or compaction', async () => {
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });
+    const node = makeMockNode([], { timeEvidence: true }), db = new SyncDatabase(`offline-${crypto.randomUUID()}`);
+    const result = await new SyncEngine(new MockNodeTransport(node.handler), new SyncStore(db), mockKeys, identity,
+      { maxRetries: 0 }).sync('credential', () => 1790899200, org);
+    expect(result.ok).toBe(false); expect(result.error).toContain('trusted-time');
+    expect(node.opcodes).not.toContain(Opcode.AuthRequest); expect(node.opcodes).not.toContain(Opcode.AckRequest);
+    db.close(); await db.delete();
+  });
+  test('offline existing trusted time keeps authorization and independent evidence transfer', async () => {
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });
+    const node = makeMockNode([], { timeEvidence: true, timeUsable: true }), db = new SyncDatabase(`hold-${crypto.randomUUID()}`);
+    const store = Object.assign(new SyncStore(db), { putTimeEvidence: vi.fn(async () => {}) });
+    const result = await new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, identity,
+      { maxRetries: 0 }).sync('credential', () => 1790899200, org);
+    expect(result.ok).toBe(true); expect(result.timeMessage).toContain('vorhandene'.replace('v', 'V'));
+    expect(store.putTimeEvidence).toHaveBeenCalledOnce(); db.close(); await db.delete();
+  });
+  test.each(['storage', 'disconnect'])('interrupted evidence %s blocks raw ACK and preserves retryability', async reason => {
+    const node = makeMockNode([makeRecord(1, 'chip')], { timeEvidence: true }), db = new SyncDatabase(`fail-${crypto.randomUUID()}`);
+    const store = Object.assign(new SyncStore(db), { putTimeEvidence: async () => { if (reason === 'storage') throw new Error('quota'); } });
+    const transport = new MockNodeTransport(async bytes => {
+      if (reason === 'disconnect' && decodeFrame(bytes)?.opcode === Opcode.TimeEvidenceRequest) throw new Error('BLE lost');
+      return node.handler(bytes);
+    });
+    const result = await new SyncEngine(transport, store, mockKeys, identity, { bootstrapTime: async () => 0, maxRetries: 0 })
+      .sync('credential', () => 1790899200, org);
+    expect(result.ok).toBe(false); expect(node.opcodes).not.toContain(Opcode.AckRequest); expect(node.opcodes).not.toContain(Opcode.CompactRequest);
+    db.close(); await db.delete();
   });
 });

@@ -6,7 +6,7 @@ import { decodeFrame, encodeFrame, Opcode } from './ble-codec';
 const { post, auth } = vi.hoisted(() => ({ post: vi.fn(), auth: vi.fn() }));
 vi.mock('../api/client', () => ({ api: { POST: post } }));
 vi.mock('../platform/auth', () => ({ getAuthState: auth }));
-import { bootstrapRegistrationTime } from './registration-time';
+import { bootstrapNodeTime, bootstrapRegistrationTime } from './registration-time';
 
 const NODE = vector.challenge.nodeId;
 function uuid(value: string) { return new Uint8Array(value.replaceAll('-', '').match(/../g)!.map(b => parseInt(b, 16))); }
@@ -86,4 +86,16 @@ test('organization switch after HTTP prevents proof delivery', async () => {
   const ble = transport();
   await expect(bootstrapRegistrationTime(ble, NODE, 'org', () => { if (!active) throw new Error('cancelled'); })).rejects.toThrow('cancelled');
   expect(ble.write).toHaveBeenCalledTimes(1);
+});
+
+
+test('ACTIVE MEMBER normal sync reuses the signed bootstrap with CLAIMED backend authorization', async () => {
+  auth.mockReturnValue({ user: { memberships: [{ organizationId: 'org', status: 'ACTIVE', role: 'MEMBER' }] }, csrfToken: 'csrf' });
+  const ble = transport(); await bootstrapNodeTime(ble, NODE, 'org', () => {}, 'CLAIMED', vector.challenge.incarnation);
+  const request = post.mock.calls[0][1]; expect(request.body.registrationState).toBe('CLAIMED');
+  expect(JSON.parse(request.bodySerializer(request.body)).challenge).toEqual(vector.challenge);
+});
+test('normal sync rejects an incarnation change before backend issuance', async () => {
+  await expect(bootstrapNodeTime(transport(), NODE, 'org', () => {}, 'CLAIMED', 'wrong-incarnation')).rejects.toThrow();
+  expect(post).not.toHaveBeenCalled();
 });

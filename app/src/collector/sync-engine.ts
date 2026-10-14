@@ -20,11 +20,18 @@ import type { NodeTransport } from '../platform/node-transport';
 import type { AppDeviceKeys } from '../platform/device-keys';
 import { beginNodeAuthentication, type TrustedNodeIdentity } from '../platform/node-identity';
 import { NodeOperationCancelledError } from './node-operation';
+import { CAP_TIME_EVIDENCE } from './ble-codec';
+import { acknowledgeUploadedEvidence, receiveTimeEvidence, type StoredTimeEvidence } from './time-evidence';
+import { TimeBootstrapUnavailableError } from './registration-time';
 
 export type SyncPhase =
   | 'idle'
   | 'connecting'
   | 'public-info'
+  | 'time-bootstrap'
+  | 'time-accepted'
+  | 'evidence'
+  | 'evidence-stored'
   | 'challenge'
   | 'authorizing'
   | 'authorized'
@@ -41,6 +48,8 @@ export interface SyncResult {
   recordsReceived: number;
   watermark: bigint;
   maintenanceWarning?: string;
+  timeMessage?: string;
+  evidenceStored?: number;
 }
 
 interface StoredObservation {
@@ -76,6 +85,8 @@ export class SyncDatabase extends Dexie {
 }
 
 export interface SyncEngineOptions {
+  bootstrapTime?: (transport: NodeTransport, nodeId: string, incarnation: string) => Promise<number>;
+  assertActive?: () => void;
   maxBatchRecords?: number;
   maxRetries?: number;
   retryDelayMs?: number;
@@ -166,7 +177,8 @@ export type SyncFailureKind =
   | 'connection'
   | 'protocol'
   | 'incomplete'
-  | 'cancelled';
+  | 'cancelled'
+  | 'trusted-time';
 
 export class SyncFailedError extends Error {
   constructor(
@@ -184,6 +196,9 @@ export class SyncFailedError extends Error {
 // and CollectorObservationStore (production) implement it; the second
 // organizationId argument is optional so legacy stores stay compatible.
 export interface SyncPersistence {
+  putTimeEvidence?(row: StoredTimeEvidence): Promise<void>;
+  uploadedTimeEvidence?(organizationId: string, nodeId: string, incarnation: string): Promise<StoredTimeEvidence[]>;
+  confirmNodeEvidenceReceipt?(id: string): Promise<void>;
   putObservations(records: BleRecord[], organizationId?: string | null): Promise<void>;
   sequences(nodeId: string, incarnation: string, organizationId?: string | null): Promise<bigint[]>;
   session?(nodeId: string): Promise<{ nodeId: string; incarnation: string; watermark: string; phase: string; updatedAt: number } | undefined | null>;
@@ -193,6 +208,10 @@ export interface SyncPersistence {
 // Full sync engine: connect → auth → batch → persist → ack → compact.
 // Retries after disconnect with fresh challenge; lost ACKs are idempotent.
 export class SyncEngine {
+  private timeMessage = '';
+  private evidenceStored = 0;
+  private evidenceIds = new Set<string>();
+  private bootstrappedThisVisit = false;
   private phase: SyncPhase = 'idle';
   private session: SyncSession | null = null;
   private owner: OwnerInfo | null = null;
@@ -209,11 +228,16 @@ export class SyncEngine {
     private options: SyncEngineOptions = {},
   ) {}
 
+  get currentTimeMessage(): string { return this.timeMessage; }
   get currentPhase(): SyncPhase { return this.phase; }
   get currentOwner(): OwnerInfo | null { return this.owner; }
   get currentReceived(): number { return this.received; }
 
   async sync(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
+    this.timeMessage = '';
+    this.evidenceStored = 0;
+    this.evidenceIds.clear();
+    this.bootstrappedThisVisit = false;
     this.received = 0;
     this.receivedEvents.clear();
     this.confirmedWatermark = 0n;
@@ -233,7 +257,7 @@ export class SyncEngine {
         // errors (incl. lost ACK, mid-batch abort, reboot) retry with a fresh
         // challenge as usual.
         if (lastKind === 'unclaimed' || lastKind === 'foreign' || lastKind === 'incompatible' ||
-            lastKind === 'unauthorized' || lastKind === 'storage' || lastKind === 'incomplete' || lastKind === 'cancelled') {
+            lastKind === 'trusted-time' || lastKind === 'unauthorized' || lastKind === 'storage' || lastKind === 'incomplete' || lastKind === 'cancelled') {
           break;
         }
         if (attempt < maxRetries) {
@@ -242,7 +266,7 @@ export class SyncEngine {
       }
     }
     const error = lastKind ? `${lastKind}: ${lastError}` : lastError;
-    return { ok: false, error, recordsReceived: this.received, watermark: this.confirmedWatermark };
+    return { ok: false, error, recordsReceived: this.received, watermark: this.confirmedWatermark, timeMessage: this.timeMessage, evidenceStored: this.evidenceStored };
   }
 
   private async syncOnce(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
@@ -303,6 +327,51 @@ export class SyncEngine {
         throw new SyncFailedError('foreign', 'Node gehört einer anderen Organisation.', this.owner);
       }
 
+      if (hello.caps & CAP_TIME_EVIDENCE) {
+        this.phase = 'time-bootstrap';
+        this.options.assertActive?.();
+        const status = decodeFrame(await this.sendFrame(encodeFrame({ version: 1,
+          opcode: Opcode.SecurityTimeStatusRequest, payload: new Uint8Array() })));
+        if (status?.opcode !== Opcode.SecurityTimeStatusResponse || status.payload.length !== 1 || status.payload[0] > 1) {
+          throw new SyncFailedError('protocol', 'Ungültiger Sicherheitszeit-Status.', this.owner);
+        }
+        const online = typeof navigator === 'undefined' || navigator.onLine;
+        if (status.payload[0] === 1 && (!online || this.bootstrappedThisVisit)) {
+          this.timeMessage = online
+            ? 'Bereits akzeptierte sichere Node-Zeit beim Wiederholungsversuch erneut geprüft.'
+            : 'Vorhandene sichere Node-Zeit verwendet; neuer Zeitbeleg offline nicht verfügbar.';
+        } else {
+          if (!online || !this.options.bootstrapTime) {
+            this.timeMessage = 'Sicherer Zeit-Bootstrap nicht verfügbar. Bitte online erneut auslesen; Daten bleiben auf dem Node.';
+            throw new SyncFailedError('trusted-time', this.timeMessage, this.owner);
+          }
+          let wait = 0;
+          let accepted = false;
+          try { wait = await this.options.bootstrapTime(this.transport, hello.nodeId, hello.incarnation); accepted = true; }
+          catch (error) {
+            if (error instanceof NodeOperationCancelledError) throw error;
+            if (status.payload[0] === 1 && error instanceof TimeBootstrapUnavailableError) {
+              this.timeMessage = 'Neuer Zeitbeleg nicht verfügbar; vorhandene sichere Node-Zeit wird durch die Firmware erneut geprüft.';
+            } else {
+              this.timeMessage = 'Zeit-Bootstrap nicht verfügbar oder abgelehnt. Bitte erneut versuchen; Daten bleiben auf dem Node.';
+              // BLE loss retries with a new challenge; proof rejection stays terminal.
+              if (error instanceof TimeBootstrapUnavailableError || (error instanceof Error && error.name === 'ClaimError')) {
+                throw new SyncFailedError('trusted-time', error.message, this.owner, error);
+              }
+              throw error;
+            }
+          }
+          this.options.assertActive?.();
+          if (accepted) {
+            this.bootstrappedThisVisit = true;
+            this.phase = 'time-accepted';
+            this.timeMessage = 'Signierte UTC-Zeit vom Node akzeptiert.';
+          }
+          await new Promise(resolve => setTimeout(resolve, wait));
+          this.options.assertActive?.(); // Scheduling cannot grant trust; firmware still checks iat/exp.
+        }
+      }
+
       // Challenge + auth.
       this.phase = 'challenge';
       const chResp = await this.sendFrame(encodeFrame({
@@ -353,6 +422,28 @@ export class SyncEngine {
         throw new SyncFailedError('unauthorized', 'Node-Authentizität konnte nicht bestätigt werden (Fake-Node möglich).', this.owner);
       }
       this.phase = 'authorized';
+
+      if (hello.caps & CAP_TIME_EVIDENCE) {
+        if (!organizationId || !this.store.putTimeEvidence) throw new SyncFailedError('storage', 'Dauerhafter Zeitbelegspeicher fehlt.', this.owner);
+        this.phase = 'evidence';
+        if (this.store.uploadedTimeEvidence && this.store.confirmNodeEvidenceReceipt) {
+          const uploaded = await this.store.uploadedTimeEvidence(organizationId, hello.nodeId, hello.incarnation);
+          this.options.assertActive?.();
+          await acknowledgeUploadedEvidence(this.transport, uploaded, async id => {
+            this.options.assertActive?.();
+            await this.store.confirmNodeEvidenceReceipt!(id);
+          });
+        }
+        await receiveTimeEvidence(this.transport, hello.nodeId, hello.incarnation, organizationId, async row => {
+          this.options.assertActive?.();
+          try { await this.store.putTimeEvidence!(row); }
+          catch (error) { throw new SyncFailedError('storage', 'Zeitbelege konnten nicht dauerhaft gespeichert werden. Bitte erneut versuchen.', this.owner, error); }
+          this.evidenceIds.add(row.id);
+          this.evidenceStored = this.evidenceIds.size;
+          this.options.assertActive?.();
+        });
+        this.phase = 'evidence-stored';
+      }
 
       // Load or create session.
       const { nodeId, incarnation } = hello;
@@ -489,7 +580,7 @@ export class SyncEngine {
       }
 
       this.phase = 'complete';
-      return { ok: true, recordsReceived: this.received, watermark, maintenanceWarning };
+      return { ok: true, recordsReceived: this.received, watermark, maintenanceWarning, timeMessage: this.timeMessage, evidenceStored: this.evidenceStored };
     } finally {
       await this.transport.disconnect();
     }

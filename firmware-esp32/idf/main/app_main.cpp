@@ -129,6 +129,7 @@ extern "C" void app_main() {
     ble_gatt::OwnerMetadata owner{identity.identity().organization_id, "", identity.identity().organization_name, identity.identity().public_contact};
     ble_gatt::GattRouter router(sync, owner); router.set_node_identity(&identity);
     router.set_time_bootstrap(&time_bootstrap);
+    router.set_time_evidence(&evidence);
     ble_gatt::GattEndpoint endpoint(router, sync);
     auto mutex = xSemaphoreCreateRecursiveMutex(); require(mutex != nullptr, "state mutex");
     NimblePeripheral peripheral(router, endpoint, clock, mutex);

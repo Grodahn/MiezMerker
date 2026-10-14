@@ -11,6 +11,7 @@
 // no ACK is sent for those observations.
 
 import type { BleRecord } from './ble-codec';
+import { persistEvidence, type StoredTimeEvidence } from './time-evidence';
 import {
   type CollectorDatabase, type NodeMeta, type ObservationUploadState, type StoredObservation,
 } from '../platform/offline-store';
@@ -67,6 +68,17 @@ export interface DurableObservationStore {
 
 export class CollectorObservationStore implements DurableObservationStore {
   constructor(private readonly db: CollectorDatabase) {}
+
+  putTimeEvidence(row: StoredTimeEvidence): Promise<void> { return persistEvidence(this.db, row); }
+  async pendingTimeEvidence(organizationId: string): Promise<StoredTimeEvidence[]> {
+    return (await this.db.timeEvidence.where('organizationId').equals(organizationId).toArray()).filter(r => !r.uploaded);
+  }
+  async confirmTimeEvidence(id: string): Promise<void> { await this.db.timeEvidence.update(id, { uploaded: true }); }
+  async uploadedTimeEvidence(organizationId: string, nodeId: string, incarnation: string): Promise<StoredTimeEvidence[]> {
+    return (await this.db.timeEvidence.where('[organizationId+nodeId]').equals([organizationId, nodeId]).toArray())
+      .filter(r => r.incarnation === incarnation && r.uploaded && !r.nodeAcknowledged);
+  }
+  async confirmNodeEvidenceReceipt(id: string): Promise<void> { await this.db.timeEvidence.update(id, { nodeAcknowledged: true }); }
 
   async open(): Promise<void> {
     await this.db.open();
