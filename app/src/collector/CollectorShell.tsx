@@ -61,6 +61,8 @@ export function CollectorShell(props: {
   const [batchContexts, setBatchContexts] = useState<Map<string, BatchNodeContext>>(new Map());
   const [contextsLoading, setContextsLoading] = useState(false);
   const [devices, setDevices] = useState<Array<{ id: string; name: string; device: unknown }>>([]);
+  // Browser device objects are session-only permissions, never trusted node IDs.
+  const sessionSelectedDevices = useRef<typeof devices>([]);
   const [devicesSupport, setDevicesSupport] = useState<'supported' | 'unsupported'>(() => getDevicesSupport());
   const [devicesError, setDevicesError] = useState('');
   const [freigebenBusy, setFreigebenBusy] = useState(false);
@@ -191,6 +193,11 @@ export function CollectorShell(props: {
     if (bluetoothCapability() !== 'supported') {
       setDevices([]);
       return [];
+    }
+    if (support === 'unsupported') {
+      const selected = sessionSelectedDevices.current;
+      if (mounted.current && !signal?.aborted) setDevices(selected);
+      return selected;
     }
     try {
       const found = await previouslyAuthorizedDevices(signal);
@@ -525,8 +532,9 @@ export function CollectorShell(props: {
       if (!stillActive()) return;
       const id = browserDeviceId(device, `node-${Date.now()}`);
       const name = browserDeviceLabel(device, 'Freigegebener Node');
+      sessionSelectedDevices.current = [...sessionSelectedDevices.current.filter(entry => entry.id !== id), { id, name, device }];
       setDevices(previous => {
-        if (previous.some(entry => entry.id === id)) return previous;
+        if (previous.some(entry => entry.id === id)) return previous.map(entry => entry.id === id ? { id, name, device } : entry);
         return [...previous, { id, name, device }];
       });
       if (batchController.current) {
@@ -616,7 +624,8 @@ export function CollectorShell(props: {
   ).length;
   const storageBlocked = storage === 'Lokaler Speicher nicht verfügbar';
   const authorizationBlocked = !navigator.onLine && credential.startsWith('Kein gültiges Offline-Credential');
-  const canStart = !batchRunning && !claimBusy && !freigebenBusy && !registrationCandidate && !setupNodeId && !storageBlocked && !authorizationBlocked && capability === 'supported' && Boolean(auth.user && auth.activeOrganizationId);
+  const needsManualSelection = devicesSupport === 'unsupported' && devices.length === 0;
+  const canStart = !needsManualSelection && !batchRunning && !claimBusy && !freigebenBusy && !registrationCandidate && !setupNodeId && !storageBlocked && !authorizationBlocked && capability === 'supported' && Boolean(auth.user && auth.activeOrganizationId);
 
   return <section className="sync-screen" aria-label="Vor-Ort-Sync"><h1>Vor-Ort-Sync</h1>
     {storageBlocked && <Status kind="error" title="Auslesen nicht möglich" message="Der lokale Speicher ist nicht verfügbar. Bitte die App neu öffnen und den Browserspeicher prüfen."/>}
@@ -630,7 +639,7 @@ export function CollectorShell(props: {
         <Graphic src={assets.illustrations.sync} alt="" className="app-icon"/>
         <span>{batchRunning ? 'Näpfe werden ausgelesen …' : 'Näpfe auslesen'}</span>
       </button>
-      <p id="sync-help">Bereits freigegebene Näpfe auslesen</p>
+      <p id="sync-help">{needsManualSelection ? 'Zuerst „Weiteren Napf hinzufügen“ wählen.' : 'Bereits freigegebene Näpfe auslesen'}</p>
       <button ref={addButton} className="sync-secondary" type="button" disabled={freigebenBusy || claimBusy || Boolean(registrationCandidate || setupNodeId) || storageBlocked || authorizationBlocked || capability !== 'supported' || !auth.user || !auth.activeOrganizationId} onClick={releaseAdditionalBowl}>
         {freigebenBusy ? 'Freigabe läuft …' : 'Weiteren Napf hinzufügen'}
       </button>

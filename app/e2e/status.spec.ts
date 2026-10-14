@@ -54,6 +54,8 @@ test('a browser without getDevices offers explicit recovery', async ({ page }) =
   } }));
   await page.goto('/sync');
   await expect(page.getByText('Automatisches Wiederfinden nicht verfügbar')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Näpfe auslesen' })).toBeDisabled();
+  await expect(page.getByText('Zuerst „Weiteren Napf hinzufügen“ wählen.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Weiteren Napf hinzufügen' })).toBeEnabled();
 });
 

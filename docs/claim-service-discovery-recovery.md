@@ -35,6 +35,23 @@ node ID, incarnation, CLAIMED state, and organization before updating the local
 claim state. Final cleanup disconnects; later protected synchronization still
 starts a fresh session with the persisted owner context.
 
+## Browsers without saved-device listing
+
+The user subsequently reported missing `getDevices()` on Fairphone 3+ / Chrome
+155.0.8059.79. Without saved-device listing, retain explicitly selected browser
+device objects for this mounted PWA session so normal sync and failed-node retry
+can reuse them. These objects are not trusted node identity and are not persisted.
+When listing is available, refresh it normally, including permission revocation.
+Before any manual selection in an unsupported browser, disable the empty batch
+button and explain the explicit selection action. Do not open a chooser on mount
+or automatically during batch sync.
+
+An absent chooser entry and firmware keepalives alone do not establish GATT
+connection state. The ESP32 configuration allows one connection and advertising
+resumes in the disconnect handler. Confirm `advertising` after restarting the
+node with all other PWA/browser sessions closed; note any unexpected connection
+before starting the sole browser session.
+
 ## Verification
 
 Automated coverage includes recovery on the first service timeout, bounded

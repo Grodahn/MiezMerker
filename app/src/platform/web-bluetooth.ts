@@ -158,7 +158,7 @@ export function getDevicesFallbackMessage(support: GetDevicesSupport): string {
   if (support === 'unsupported') {
     return 'Dieser Browser kann freigegebene Näpfe nicht automatisch wiederfinden. ' +
       'Bitte „Weiteren Napf hinzufügen“ nutzen. Der ausgewählte Napf wird direkt ausgelesen; ' +
-      'für weitere Versuche muss er erneut ausgewählt werden.';
+      'in dieser Sitzung bleibt er für weitere Versuche verfügbar. Nach erneutem Öffnen der PWA bitte wieder auswählen.';
   }
   return 'Über „Weiteren Napf hinzufügen“ einen Napf einmalig für diesen Browser freigeben.';
 }
