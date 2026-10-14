@@ -6,7 +6,10 @@ const NODE = '44444444-4444-4444-8444-444444444444';
 const ORG = '22222222-2222-4222-8222-222222222222';
 const SITE = '66666666-6666-4666-8666-666666666666';
 
-for (const width of [320, 430]) test(`guided registration at ${width}px preserves focus, confirmation and setup`, async ({ page }) => {
+for (const { width, stallFirstDiscovery } of [
+  { width: 320, stallFirstDiscovery: false }, { width: 430, stallFirstDiscovery: false },
+  { width: 390, stallFirstDiscovery: true },
+]) test(`guided registration at ${width}px preserves focus, confirmation and setup${stallFirstDiscovery ? ' after service timeout' : ''}`, async ({ page }) => {
   await page.setViewportSize({ width, height: 844 });
   const key = await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
   const publicKey = new Uint8Array(await webcrypto.subtle.exportKey('raw', key.publicKey));
@@ -42,9 +45,10 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
     }
     return send([]);
   });
-  await page.addInitScript(({ hello, claimedHello, owner, claimedOwner, proof, receiptAck }) => {
+  await page.addInitScript(({ hello, claimedHello, owner, claimedOwner, proof, receiptAck, stallFirstDiscovery }) => {
     let claimed = false, permitted = false;
     let disconnecting = false;
+    let serviceDiscoveries = 0;
     const connectionEvents = new EventTarget();
     const events = { chooser: 0, activation: false, connects: 0 };
     Object.assign(window, { registrationEvents: events });
@@ -63,7 +67,11 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
           disconnecting = false; connectionEvents.dispatchEvent(new Event('gattserverdisconnected'));
         }, 50);
       },
-      async getPrimaryService() { return { async getCharacteristic(uuid: string) { return {
+      async getPrimaryService() {
+        if (++serviceDiscoveries === 1 && stallFirstDiscovery) await new Promise(() => {});
+        return { async getCharacteristic(uuid: string) {
+          if (claimed) throw new DOMException('Post-claim characteristic rediscovery failed', 'NetworkError');
+          return {
         async writeValueWithResponse() { if (uuid.endsWith('5b0b')) claimed = true; },
         async readValue() {
           const bytes = uuid.endsWith('5b01') ? (claimed ? claimedHello : hello)
@@ -77,14 +85,14 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
       getDevices: async () => permitted ? [device] : [],
       requestDevice: async () => { events.chooser++; events.activation = navigator.userActivation.isActive; permitted = true; return device; },
     } });
-  }, { hello: hello(false), claimedHello: hello(true), owner: owner(false), claimedOwner: owner(true), proof, receiptAck });
+  }, { hello: hello(false), claimedHello: hello(true), owner: owner(false), claimedOwner: owner(true), proof, receiptAck, stallFirstDiscovery });
   await page.goto('/sync');
   const add = page.getByRole('button', { name: 'Weiteren Napf hinzufügen' });
   await expect(add).toBeEnabled();
   expect(await page.evaluate(() => (window as unknown as { registrationEvents: { chooser: number } }).registrationEvents.chooser)).toBe(0);
   await add.click();
   const dialog = page.getByRole('dialog', { name: 'Napf registrieren' });
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: stallFirstDiscovery ? 15_000 : 5_000 });
   await expect(dialog.getByRole('button', { name: 'Nein', exact: true })).toBeFocused();
   expect(claims).toBe(0); expect(deployments).toBe(0);
   await page.keyboard.press('Escape');
@@ -99,8 +107,10 @@ for (const width of [320, 430]) test(`guided registration at ${width}px preserve
   await dialog.getByRole('button', { name: 'Einrichtung abschließen' }).click();
   await expect(dialog.getByText(/kann beim nächsten Auslesen mitmachen/)).toBeVisible();
   expect(claims).toBe(1); expect(deployments).toBe(1); expect(displayName).toBe('Der Grüne');
-  // Both discovery/preflight attempts retain their connection; no immediate reconnect.
-  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { connects: number } }).registrationEvents.connects)).toBe(4);
+  // Two preflight visits plus provisioning, including post-claim owner reads.
+  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { connects: number } }).registrationEvents.connects)).toBe(3 + Number(stallFirstDiscovery));
+  // Two explicit Add clicks open the chooser; the automatic retry adds none.
+  expect(await page.evaluate(() => (window as unknown as { registrationEvents: { chooser: number } }).registrationEvents.chooser)).toBe(2);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('miezmerker-last-setup-node'))).toBeNull();
   expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

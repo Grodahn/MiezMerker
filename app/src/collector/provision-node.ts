@@ -79,9 +79,12 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
       response = await roundTrip(Opcode.ClaimReceiptRequest, encodeClaimReceipt(savedReceipt));
     }
     if (response.length !== 1 || response[0] !== 0) throw new ClaimError('backend', 'Node hat Receipt nicht bestätigt. Bitte erneut versuchen.');
-    await transport.disconnect();
-    const after = await new PublicProbeTransport(transport).readPublicHello();
-    if (after.nodeId !== nodeId || after.claimState !== 1 || after.owner?.organizationId !== organizationId) {
+    // Firmware refreshes public Hello/Owner from the committed identity before
+    // acknowledging the receipt. Verify those reads on this connection instead
+    // of making Android rediscover every characteristic immediately after claim.
+    // Final cleanup disconnects; the next protected sync uses a fresh authorizer.
+    const after = await new PublicProbeTransport(transport).readPublicHello({ alreadyConnected: true, keepConnected: true });
+    if (after.nodeId !== nodeId || after.incarnation !== hello.incarnation || after.claimState !== 1 || after.owner?.organizationId !== organizationId) {
       throw new ClaimError('backend', 'Node-Provisionierung noch nicht bestätigt. Receipt bleibt lokal gespeichert.');
     }
     await db.nodeMeta.update(nodeId, { claimState: 1 });

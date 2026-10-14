@@ -35,7 +35,7 @@ afterEach(async () => { await new CollectorDatabase().delete(); });
 class ClaimTransport {
   claimed = false; trustedTime = true; dropReceipt = false; bootstrapAvailable = true; rejectReceiptOnce = false;
   rejectReconnect = false; connections = 0;
-  last = new Uint8Array(); operations: Opcode[] = [];
+  last: Uint8Array = new Uint8Array(); operations: Opcode[] = [];
   async connect() {
     if (++this.connections > 1 && this.rejectReconnect) throw new Error('Previous GATT connection is closing');
   }
@@ -86,17 +86,37 @@ test('claims from node-signed advertisement, persists receipt before delivery, v
   const db = new CollectorDatabase(); expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
 });
 
-test('public identity discovery and receipt delivery use one connection before post-claim confirmation', async () => {
+test('receipt delivery and matching post-claim Hello/Owner use one connection even when reconnect would fail', async () => {
   const transport = new ClaimTransport(); transport.rejectReconnect = true;
-  // Post-claim verification legitimately reconnects after explicit teardown.
+  const disconnect = vi.spyOn(transport, 'disconnect');
+  await provisionNode(transport, NODE, 'org-a');
+  expect(transport.claimed).toBe(true);
+  expect(transport.connections).toBe(1);
+  expect(disconnect).toHaveBeenCalledTimes(1);
+  expect(transport.operations.slice(-2)).toEqual([Opcode.HelloRequest, Opcode.OwnerRequest]);
+});
+
+test.each(['owner', 'incarnation', 'claimState'] as const)('post-receipt mismatched %s is not marked confirmed', async mismatch => {
+  const transport = new ClaimTransport();
   const write = transport.write.bind(transport);
   transport.write = async bytes => {
     await write(bytes);
-    if (transport.claimed) transport.rejectReconnect = false;
+    const opcode = decodeFrame(bytes)!.opcode;
+    if (!transport.claimed) return;
+    if (mismatch === 'owner' && opcode === Opcode.OwnerRequest) {
+      transport.last = encodeFrame({ version: 1, opcode: Opcode.OwnerResponse, payload: encodeOwnerResponse({
+        nodeId: NODE, claimState: 1, organizationId: 'other-org', organizationName: '', organizationSlug: '', publicContact: '' }) });
+    } else if (mismatch !== 'owner' && opcode === Opcode.HelloRequest) {
+      transport.last = encodeFrame({ version: 1, opcode: Opcode.HelloPublic, payload: encodeHelloPublic({
+        serverVer: 1, caps: 31, nodeId: NODE, incarnation: mismatch === 'incarnation' ? NODE : INC,
+        firmwareVersion: 'test', claimState: mismatch === 'claimState' ? 0 : 1, clockStatus: 2 }) });
+    }
   };
-  await provisionNode(transport, NODE, 'org-a');
-  expect(transport.claimed).toBe(true);
-  expect(transport.connections).toBe(2);
+  await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow();
+  const db = new CollectorDatabase();
+  expect((await db.nodeMeta.get(NODE))?.claimState).toBe(0);
+  expect((await db.nodeMeta.get(NODE))?.claimReceipt).toBe('signed-receipt');
+  db.close();
 });
 test('interrupted receipt delivery resumes without another backend reservation', async () => {
   const transport = new ClaimTransport(); transport.dropReceipt = true;

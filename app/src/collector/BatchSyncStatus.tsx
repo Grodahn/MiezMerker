@@ -20,6 +20,11 @@ import { Graphic } from '../ui/Graphic';
 import { Status } from '../ui/Status';
 import { time } from '../management/common';
 
+const serviceDiscoveryRecovery = 'PWA schließen, Bluetooth am Smartphone aus- und wieder einschalten und den Napf neu starten. Danach erneut versuchen. Registrierung und Auslesen benötigen zuerst die erfolgreiche Dienstsuche.';
+function serviceDiscoveryTimedOut(result: BatchNodeResult): boolean {
+  return result.kind === 'unreachable' && /Service-Suche zeitüberschritten|Dienstsuche.*zeitüberschritten/i.test(result.message);
+}
+
 function bowlTitle(context: BatchNodeContext | undefined, result: BatchNodeResult): string {
   const name = context?.displayName?.trim();
   if (name) return `Napf ${name}`;
@@ -57,9 +62,12 @@ export function BatchSummary({ results }: { results: BatchNodeResult[] }) {
     cancelled: 'Bestätigte Übernahmen bleiben gespeichert. Offene Näpfe können erneut versucht werden.',
     skipped: 'Noch nicht ausgelesen. Offene Näpfe können erneut versucht werden.',
   };
+  const unreachable = results.filter(r => r.kind === 'unreachable');
+  const serviceDiscoveryOnly = unreachable.length > 0 && unreachable.every(serviceDiscoveryTimedOut);
+  if (serviceDiscoveryOnly) recovery.unreachable = serviceDiscoveryRecovery;
   const failures = <ul>{Object.entries(recovery).map(([kind, help]) => {
     const count = results.filter(r => r.kind === kind).length;
-    return count > 0 ? <li key={kind}><strong>{kindStatus(kind as BatchNodeResult['kind']).title}</strong> ({count}): {help}</li> : null;
+    return count > 0 ? <li key={kind}><strong>{kind === 'unreachable' && serviceDiscoveryOnly ? 'Bluetooth-Dienstsuche fehlgeschlagen' : kindStatus(kind as BatchNodeResult['kind']).title}</strong> ({count}): {help}</li> : null;
   })}</ul>;
   if (succeeded === total) {
     return <Status kind="success" title={message} scope="Vor-Ort-Sync"
@@ -86,6 +94,8 @@ export function BatchNodeCard({ result, context, contextLoading, isAdmin, claimB
   onClaim?: (result: BatchNodeResult) => void;
 }) {
   const status = kindStatus(result.kind);
+  const serviceDiscoveryFailure = serviceDiscoveryTimedOut(result);
+  if (serviceDiscoveryFailure) status.title = 'Bluetooth-Dienstsuche fehlgeschlagen';
   if (result.kind === 'success') {
     const title = bowlTitle(context, result);
     const detail = result.nodeId ? ` (${result.nodeId})` : '';
@@ -138,7 +148,7 @@ export function BatchNodeCard({ result, context, contextLoading, isAdmin, claimB
   return <Status kind="error" title={status.title} scope="Vor-Ort-Sync" message={result.message || 'Vorgang nicht abgeschlossen.'}>
     <p>Browser-Gerät: „{result.browserLabel}“ (unverifizierter Hinweis){result.nodeId ? <> · Node: <code>{result.nodeId}</code></> : null}</p>
     {result.kind === 'unauthorized' && <p>Bitte mit Internet im Konto anmelden und Offline-Berechtigung erneuern, dann erneut versuchen.</p>}
-    {result.kind === 'unreachable' && <p>Bitte Napf einschalten, Smartphone näher heranhalten und Bluetooth prüfen. Bereits gespeicherte Records werden idempotent wiederholt.</p>}
+    {result.kind === 'unreachable' && <p>{serviceDiscoveryFailure ? serviceDiscoveryRecovery : 'Bitte Napf einschalten, Smartphone näher heranhalten und Bluetooth prüfen. Bereits gespeicherte Records werden idempotent wiederholt.'}</p>}
   </Status>;
 }
 

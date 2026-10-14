@@ -416,10 +416,31 @@ test('Bluetooth and getDevices fallbacks do not open an unsolicited permission p
   browser.capability = 'supported'; browser.devices = 'unsupported';
   render(<CollectorShell/>);
   expect(screen.getByText('Automatisches Wiederfinden nicht verfügbar').closest('details')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Näpfe auslesen' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByText('Zuerst „Weiteren Napf hinzufügen“ wählen.')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Weiteren Napf hinzufügen' }).hasAttribute('disabled')).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: 'Näpfe auslesen' }));
   await screen.findAllByText('kein getDevices');
   expect(runBatch).not.toHaveBeenCalled(); expect(requestDevice).not.toHaveBeenCalled();
+});
+
+test('without getDevices a manually selected device remains available for normal sync and retry in this session', async () => {
+  browser.devices = 'unsupported';
+  const device = { id: 'manual' };
+  requestDevice.mockResolvedValue(device);
+  runBatch.mockResolvedValue([{ ...successResult('manual', 'node-manual'), kind: 'unreachable', message: 'Timeout' }]);
+  render(<CollectorShell/>);
+  fireEvent.click(screen.getByRole('button', { name: 'Weiteren Napf hinzufügen' }));
+  await screen.findByRole('button', { name: 'Offene Näpfe erneut versuchen (1)' });
+  const start = screen.getByRole('button', { name: 'Näpfe auslesen' });
+  expect(start.hasAttribute('disabled')).toBe(false);
+  fireEvent.click(start);
+  await vi.waitFor(() => expect(runBatch).toHaveBeenCalledTimes(2));
+  expect(runBatch.mock.calls[1][0][0].device).toBe(device);
+  fireEvent.click(await screen.findByRole('button', { name: 'Offene Näpfe erneut versuchen (1)' }));
+  await vi.waitFor(() => expect(runBatch).toHaveBeenCalledTimes(3));
+  expect(runBatch.mock.calls[2][0][0].device).toBe(device);
+  expect(requestDevice).toHaveBeenCalledTimes(1);
 });
 
 test('calm progress keeps technical BLE details inside the disclosure and preserves cancellation', async () => {
