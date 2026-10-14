@@ -91,7 +91,7 @@ public class AuthController {
                 user.setLastLoginAt(Instant.now());
                 users.save(user);
             });
-            return sessionFor(principal.getId());
+            return sessionFor(principal.getId(), httpResponse);
         } catch (AuthenticationException e) {
             // Generic response: no account enumeration, no reason disclosure.
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid credentials");
@@ -109,13 +109,14 @@ public class AuthController {
     @GetMapping(value = "/session", produces = "application/json")
     @Operation(operationId = "getSession", summary = "Current session with user and memberships")
     @Transactional(readOnly = true)
-    public SessionView session() {
+    public SessionView session(HttpServletResponse response) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof AppUserDetails principal)
                 || !auth.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not authenticated");
         }
-        return sessionFor(principal.getId());
+        response.setHeader("Cache-Control", "no-store");
+        return sessionFor(principal.getId(), response);
     }
 
     @Schema(name = "CsrfView")
@@ -135,10 +136,14 @@ public class AuthController {
         return new CsrfView(token.getToken(), token.getHeaderName(), token.getParameterName());
     }
 
-    private SessionView sessionFor(UUID userId) {
+    private SessionView sessionFor(UUID userId, HttpServletResponse response) {
         var user = users.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
         if (user.getStatus() != UserStatus.ACTIVE) {
+            // Disclose revocation only to a previously authenticated principal.
+            response.setHeader("Cache-Control", "no-store");
+            response.setHeader("X-MM-Auth-Status", "ACCOUNT_DISABLED");
+            response.setHeader("X-MM-User-Id", userId.toString());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "account disabled");
         }
         List<MembershipView> views = memberships.findByUserIdWithRefs(userId).stream()

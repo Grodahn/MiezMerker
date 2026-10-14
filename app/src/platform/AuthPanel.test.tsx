@@ -26,6 +26,9 @@ test('user can log in, choose an organization and log out', async () => {
   fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'supersecret-password' } });
   fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
   expect(await screen.findByText('Angemeldet als admin@example.org')).toBeTruthy();
+  // Authentication is displayed immediately; its durable credential cleanup
+  // must finish before the account form allows another authentication action.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Abmelden' }).hasAttribute('disabled')).toBe(false));
   expect(screen.getByRole('option', { name: 'Org A (Orgaadmin)' })).toBeTruthy();
   expect(getAuthState().user?.memberships[0].role).toBe('ADMIN');
   expect(screen.queryByRole('option', { name: /Pending/ })).toBeNull();

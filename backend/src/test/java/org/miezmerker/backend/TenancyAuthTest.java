@@ -324,13 +324,19 @@ class TenancyAuthTest {
         login("admin-a@example.org", "supersecret-password-a", 200);
         f.adminA().setStatus(UserStatus.DISABLED);
         users.save(f.adminA());
-        assertEquals(401, get("/api/v1/auth/session").statusCode());
+        var revoked = get("/api/v1/auth/session");
+        assertEquals(401, revoked.statusCode());
+        assertEquals("ACCOUNT_DISABLED", revoked.headers().firstValue("X-MM-Auth-Status").orElseThrow());
+        assertEquals(f.adminA().getId().toString(), revoked.headers().firstValue("X-MM-User-Id").orElseThrow());
         assertEquals(403, get("/api/v1/organizations").statusCode());
         assertEquals(403, get("/api/v1/organizations/" + f.orgA().getId()).statusCode());
         assertEquals(403, post("/api/v1/organizations",
                 "{\"slug\":\"bypass\",\"displayName\":\"Bypass\"}").statusCode());
         assertEquals(2, organizations.count());
         login("admin-a@example.org", "supersecret-password-a", 401);
+        f.adminA().setStatus(UserStatus.ACTIVE);
+        users.save(f.adminA());
+        assertEquals(200, get("/api/v1/auth/session").statusCode());
     }
 
     @Test
@@ -341,7 +347,9 @@ class TenancyAuthTest {
         assertEquals(200, probe.statusCode(), probe.body());
         assertEquals(12 * 60 * 60, Integer.parseInt(probe.body()));
         Thread.sleep(1200);
-        assertEquals(401, get("/api/v1/auth/session").statusCode());
+        var expired = get("/api/v1/auth/session");
+        assertEquals(401, expired.statusCode());
+        assertTrue(expired.headers().firstValue("X-MM-Auth-Status").isEmpty());
         assertEquals(401, get("/api/v1/organizations").statusCode());
     }
 

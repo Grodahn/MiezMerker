@@ -34,6 +34,17 @@ export class CollectorDatabase extends Dexie {
       nodeMeta: 'nodeId',
     });
     this.version(3).stores({ timeEvidence: 'id, organizationId, [organizationId+nodeId]' });
+    this.version(4).stores({}).upgrade(async transaction => {
+      // Unknown legacy records remain quarantined, never adopted by the next
+      // account signing in. The original snapshot supplies migration provenance.
+      let owners: Record<string, string> = {};
+      try { owners = JSON.parse(localStorage.getItem('miezmerker-legacy-offline-owners') ?? '{}'); } catch { /* No proven owner. */ }
+      for (const table of ['observations', 'timeEvidence']) {
+        await transaction.table(table).toCollection().modify(row => {
+          if (!row.ownerUserId && owners[row.organizationId]) row.ownerUserId = owners[row.organizationId];
+        });
+      }
+    });
   }
 }
 
@@ -44,6 +55,8 @@ export class CollectorDatabase extends Dexie {
 export type ObservationUploadState = 'pending' | 'uploading' | 'uploaded' | 'failed';
 
 export interface StoredObservation {
+  // Local provenance only; never sent as backend/BLE authority.
+  ownerUserId?: string;
   nodeId: string;
   incarnation: string;
   sequence: string;

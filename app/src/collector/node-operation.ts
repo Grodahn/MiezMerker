@@ -1,5 +1,6 @@
 import { getAuthState, subscribeAuth } from '../platform/auth';
 import type { NodeTransport } from '../platform/node-transport';
+import { authorizationPermits } from '../platform/authorization-status';
 
 export class NodeOperationCancelledError extends Error {
   constructor() {
@@ -24,7 +25,7 @@ export function bindNodeOperation(
     const state = getAuthState();
     const membership = state.user?.memberships.find(m => m.organizationId === organizationId && m.status === 'ACTIVE');
     return state.user?.userId === userId && state.activeOrganizationId === organizationId &&
-      Boolean(membership) && (!requiredRole || membership?.role === requiredRole);
+      authorizationPermits(userId, organizationId) && Boolean(membership) && (!requiredRole || membership?.role === requiredRole);
   };
   const cancel = () => {
     if (cancelled) return;
@@ -32,7 +33,10 @@ export function bindNodeOperation(
     cancellationCleanup = transport.disconnect().catch(() => {});
   };
   const assertActive = () => {
-    if (cancelled || signal?.aborted || !matches()) throw new NodeOperationCancelledError();
+    if (cancelled || signal?.aborted || !matches()) {
+      cancel();
+      throw new NodeOperationCancelledError();
+    }
   };
   const unsubscribe = subscribeAuth(() => { if (!matches()) cancel(); });
   signal?.addEventListener('abort', cancel, { once: true });

@@ -3,6 +3,7 @@ import type { CollectorDatabase } from '../platform/offline-store';
 import { decodeFrame, encodeFrame, Opcode } from './ble-codec';
 
 export interface StoredTimeEvidence {
+  ownerUserId?: string;
   id: string;
   organizationId: string;
   nodeId: string;
@@ -74,10 +75,12 @@ export function evidenceRow(payload: string, kind: 0 | 1, nodeId: string, incarn
     bootCounter: boot, kind, payload, uploaded: false };
 }
 
-export async function persistEvidence(db: CollectorDatabase, row: StoredTimeEvidence): Promise<void> {
+export async function persistEvidence(db: CollectorDatabase, row: StoredTimeEvidence, assertActive?: () => void): Promise<void> {
   await db.transaction('rw', db.timeEvidence, async () => {
     const old = await db.timeEvidence.get(row.id);
+    assertActive?.();
     if (old) {
+      if (row.ownerUserId && old.ownerUserId !== row.ownerUserId) throw new Error('Time evidence belongs to another offline account');
       if (old.organizationId !== row.organizationId || old.payload !== row.payload || old.kind !== row.kind) throw new Error('Conflicting time evidence identity');
       return; // Never reset a confirmed upload on retransmission.
     }

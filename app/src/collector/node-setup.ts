@@ -15,6 +15,7 @@
 import { api } from '../api/client';
 import { fetchCsrfToken, getAuthState, markSessionExpired, subscribeAuth } from '../platform/auth';
 import type { components } from '../api/generated';
+import { authorizationPermits } from '../platform/authorization-status';
 
 export type SetupFailureKind =
   | 'forbidden-role'
@@ -49,7 +50,9 @@ export interface NodeSetupState {
 }
 
 function activeMembership(organizationId: string) {
-  return getAuthState().user?.memberships.find(
+  const user = getAuthState().user;
+  if (user && !authorizationPermits(user.userId, organizationId)) return undefined;
+  return user?.memberships.find(
     m => m.organizationId === organizationId && m.status === 'ACTIVE');
 }
 

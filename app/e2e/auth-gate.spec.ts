@@ -12,13 +12,16 @@ async function expectCollectorReady(page: Page) {
 }
 
 async function backend(page: Page) {
-  const state = { expired: false, sessionHold: Promise.resolve(), logoutHold: Promise.resolve() };
+  const state = { expired: false, disabled: false, sessionRequests: 0, sessionHold: Promise.resolve(), logoutHold: Promise.resolve() };
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const send = (data: unknown, status = 200) => route.fulfill({ status,
       contentType: 'application/json', headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify(data) });
     if (path === '/api/v1/auth/session') {
+      state.sessionRequests++;
       await state.sessionHold;
+      if (state.disabled) return route.fulfill({ status: 401, contentType: 'application/json', body: '{}',
+        headers: { 'Cache-Control': 'no-store', 'X-MM-Auth-Status': 'ACCOUNT_DISABLED', 'X-MM-User-Id': user.userId } });
       return send(state.expired ? {} : user, state.expired ? 401 : 200);
     }
     if (path === '/api/v1/auth/csrf') return send({ token: 'csrf' });
@@ -49,6 +52,55 @@ test('reconnect verifies the session before showing management', async ({ page, 
   await expect(page.getByRole('navigation')).not.toBeVisible();
   await expect(page.getByRole('heading', { name: 'Private site' })).toHaveCount(0);
   release();
+  await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
+});
+
+test('confirmed account revocation closes both tabs and remains locked after offline reload', async ({ page, context }) => {
+  const state = await backend(page);
+  await page.goto('/sync');
+  await expectCollectorReady(page);
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('miezmerker-offline-identity');
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(['identities', 'credentials'], 'readwrite');
+      tx.objectStore('identities').put({ userId: 'gate-user', deviceId: 'gate-device', keys });
+      tx.objectStore('credentials').put({ userId: 'gate-user', organizationId: 'gate-org', deviceId: 'gate-device',
+        credential: 'cached', expiresAt: Date.now() + 300_000 });
+      tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  const second = await context.newPage();
+  const secondState = await backend(second);
+  await second.goto('/sync');
+  await expectCollectorReady(second);
+  let release!: () => void;
+  secondState.sessionHold = new Promise(resolve => { release = resolve; });
+  const before = secondState.sessionRequests;
+  await second.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect.poll(() => secondState.sessionRequests).toBeGreaterThan(before);
+  state.disabled = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const message = 'Dein Zugang wurde vom Betreiber deaktiviert.';
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+  await expect(second.getByText(message, { exact: true })).toBeVisible();
+  release(); // Old ACTIVE response must not undo the other tab's revocation.
+  await expect(second.getByRole('button', { name: 'Anmelden' })).toBeVisible();
+  for (const tab of [page, second]) {
+    await expect(tab.locator('.sync-screen')).toHaveCount(0);
+    await expect(tab.getByRole('navigation')).toHaveCount(0);
+  }
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+  await expect(page.locator('.sync-screen')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
 });
 

@@ -241,7 +241,7 @@ export function CollectorShell(props: {
     uploadBusy.current = true;
     setUploadView(v => ({ ...v, backendState: 'uploading', backendMessage: 'Backend-Upload läuft …' }));
     const db = new CollectorDatabase();
-    const store = new CollectorObservationStore(db);
+    const store = new CollectorObservationStore(db, state.user?.userId);
     void (async () => {
       try {
         await store.open();

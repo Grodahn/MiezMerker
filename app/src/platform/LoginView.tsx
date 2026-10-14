@@ -2,7 +2,7 @@
 // same organization restore logic in auth.ts). Rendered without navigation or
 // protected contents until authorization is established.
 import { useId, useState, type FormEvent } from 'react';
-import { login } from './auth';
+import { getAuthState, login } from './auth';
 import { assets } from '../assets';
 import { Graphic } from '../ui/Graphic';
 import { Status } from '../ui/Status';
@@ -42,6 +42,7 @@ export function LoginView({ online }: { online: boolean }) {
       <h1>Anmelden</h1>
       <p className="login-intro">Keiner wird vergessen.</p>
       {!online && <Status {...statusMessages.offline}/>}
+      {getAuthState().revocationMessage && <Status kind="error" title="Zugang deaktiviert" message={getAuthState().revocationMessage}/>}
       <form aria-label="Anmelden" onSubmit={event => void submit(event)}>
         <label>E-Mail<input type="email" name="email" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={email}
           aria-describedby={error ? feedbackId : undefined} readOnly={busy}

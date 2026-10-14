@@ -339,6 +339,32 @@ class OfflineCredentialTest {
     }
 
     @Test
+    void existingSessionCannotIssueAfterMembershipOrganizationOrAccountRevocation() throws Exception {
+        Seed s = seed();
+        login("member-a@example.org", "supersecret-password-m");
+        DeviceKeys dev = newDevice();
+        String deviceId = registerDevice(dev.x(), dev.y());
+        issueCredential(deviceId, s.orgA().getId());
+        String path = "/api/v1/devices/" + deviceId + "/credentials";
+        String body = "{\"organizationId\":\"" + s.orgA().getId() + "\"}";
+        var membership = memberships.findByOrganizationIdAndUserId(s.orgA().getId(), s.memberA().getId()).orElseThrow();
+        membership.disable();
+        memberships.save(membership);
+        assertEquals(403, post(path, body).statusCode());
+        membership.activate();
+        memberships.save(membership);
+        s.orgA().setStatus(org.miezmerker.backend.domain.OrganizationStatus.DISABLED);
+        organizations.save(s.orgA());
+        assertEquals(403, post(path, body).statusCode());
+        s.orgA().setStatus(org.miezmerker.backend.domain.OrganizationStatus.ACTIVE);
+        organizations.save(s.orgA());
+        s.memberA().setStatus(org.miezmerker.backend.domain.UserStatus.DISABLED);
+        users.save(s.memberA());
+        assertEquals(403, post(path, body).statusCode());
+        assertEquals(403, post("/api/v1/devices", "{\"publicKeyX\":\"" + dev.x() + "\",\"publicKeyY\":\"" + dev.y() + "\"}").statusCode());
+    }
+
+    @Test
     void offCurveDeviceRegistrationIsRejected() throws Exception {
         seed();
         login("member-a@example.org", "supersecret-password-m");

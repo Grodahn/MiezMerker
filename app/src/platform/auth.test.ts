@@ -65,7 +65,7 @@ describe('auth session (#16)', () => {
     get.mockResolvedValue({ data: { userId: 'u-status', email: 'status@example.org', memberships: [] } });
     await fetchSession();
     complete({ data: { userId: 'u-status', email: 'status@example.org', memberships: [
-      { organizationId: 'revoked', status: 'ACTIVE' },
+      { organizationId: 'revoked', status: 'ACTIVE', role: 'MEMBER' },
     ] } });
     await pending;
     expect(activeOrganizationIds()).toEqual([]);
@@ -93,8 +93,8 @@ describe('auth session (#16)', () => {
       userId: 'foreign-user', organizationId: 'shared-org',
     }));
     get.mockResolvedValue({ data: { userId: 'current-user', email: 'current@example.org', memberships: [
-      { organizationId: 'shared-org', status: 'ACTIVE' },
-      { organizationId: 'second-org', status: 'ACTIVE' },
+      { organizationId: 'shared-org', status: 'ACTIVE', role: 'MEMBER' },
+      { organizationId: 'second-org', status: 'ACTIVE', role: 'MEMBER' },
     ] } });
     await fetchSession();
     expect(getAuthState().activeOrganizationId).toBeNull();
@@ -103,8 +103,8 @@ describe('auth session (#16)', () => {
 
   test('organization selection survives page navigation and remains bound to active membership', async () => {
     const memberships = [
-      { membershipId: 'm1', organizationId: 'o1', status: 'ACTIVE' },
-      { membershipId: 'm2', organizationId: 'o2', status: 'ACTIVE' },
+      { membershipId: 'm1', organizationId: 'o1', status: 'ACTIVE', role: 'MEMBER' },
+      { membershipId: 'm2', organizationId: 'o2', status: 'ACTIVE', role: 'MEMBER' },
     ];
     get.mockResolvedValue({ data: { userId: 'navigation-user', email: 'nav@example.org', memberships } });
     await fetchSession();
