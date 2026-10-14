@@ -17,12 +17,44 @@ jobs:
         variant: [production, dev]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Persistent compiler cache (#144): the pinned IDF container already
+      # ships ccache and export.sh enables it (IDF_CCACHE_ENABLE=1), but the
+      # default CCACHE_DIR is ephemeral, so every CI run recompiles cold.
+      # Persist only ccache outputs under a workspace-relative directory
+      # (visible on the host for actions/cache and inside the container via
+      # GITHUB_WORKSPACE). Never persist whole build-ci-* directories: fresh
+      # checkouts re-run CMake configuration from scratch.
+      # Safety: keys are per-variant (production/dev never share objects);
+      # the key hashes the workflow file (pinned container digest), target
+      # configuration inputs and a schema version, so container/toolchain or
+      # config changes miss instead of reusing incompatible objects. ccache
+      # additionally hashes compiler flags per object. Restore keys stay
+      # within the same variant prefix. Bound: 1 GiB per variant.
+      - name: Restore ccache compiler cache
+        # Optional: a restore failure must never break the build; the job
+        # below always performs a correct full build on a cache miss.
+        continue-on-error: true
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .ccache-esp32c3-${{ matrix.variant }}
+          key: esp32c3-ccache-v1-${{ matrix.variant }}-${{ hashFiles('.github/workflows/esp32.yml', 'firmware-esp32/idf/sdkconfig.defaults', 'firmware-esp32/idf/sdkconfig.dev', 'firmware-esp32/idf/CMakeLists.txt', 'firmware-esp32/idf/dependencies.lock', 'firmware-esp32/idf/partitions.csv') }}
+          restore-keys: |
+            esp32c3-ccache-v1-${{ matrix.variant }}-
       - name: Build and check image/partition sizes (no hardware)
         shell: bash
         env:
           VARIANT: ${{ matrix.variant }}
+          IDF_CCACHE_ENABLE: 1
+          CCACHE_DIR: ${{ github.workspace }}/.ccache-esp32c3-${{ matrix.variant }}
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_MAXSIZE: 1G
         run: |
           . /opt/esp/idf/export.sh > /dev/null
+          echo "ccache version: $(ccache --version 2>&1 | head -n 1 || true)"
+          mkdir -p "$CCACHE_DIR"
+          ccache --max-size=1G > /dev/null || true
+          ccache --zero-stats || true
+          ccache --show-stats || true
           python -m unittest discover -s firmware-esp32/tools -p 'test_*.py'
           defaults=sdkconfig.defaults
           development=OFF
@@ -51,6 +83,19 @@ jobs:
               assert result.returncode != 0 and 'Development inputs forbidden in release' in result.stdout
               print('PASS release profile rejects development sdkconfig')
           PY
+          echo "--- ccache statistics ($VARIANT) ---"
+          ccache --show-stats || true
+          echo "cache directory size:"
+          du -sh "$CCACHE_DIR" || true
+      - name: Show ccache statistics on failure
+        if: failure()
+        shell: bash
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache-esp32c3-${{ matrix.variant }}
+        run: |
+          . /opt/esp/idf/export.sh > /dev/null
+          ccache --show-stats || true
+          du -sh "$CCACHE_DIR" || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: esp32c3-${{ matrix.variant }}
