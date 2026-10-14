@@ -13,9 +13,14 @@ export function temporalTime(value?: string | null, timeZone?: string): string {
   if (!Number.isSafeInteger(number) || number <= 0 || Number.isNaN(date.getTime())) return 'Keine darstellbare Zeitgrenze';
   return new Intl.DateTimeFormat('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, timeZoneName: 'short', timeZone }).format(date);
 }
+export function phoneTime(value: string | null | undefined, timeZone?: string): string {
+  const n = Number(value), date = new Date(n);
+  if (!value || !Number.isSafeInteger(n) || n <= 0 || Number.isNaN(date.getTime())) return 'Keine belegte Zeitgrenze';
+  return new Intl.DateTimeFormat('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone }).format(date);
+}
 const qualityLabels: Record<string, string> = {
   VERIFIED: 'Bestätigte Zeit mit Unsicherheit', RECONSTRUCTED: 'Rekonstruiert mit Unsicherheit',
-  BOUNDED: 'Nur zeitlich eingegrenzt', ESTIMATED: 'Schätzung – nicht bestätigt',
+  BOUNDED: 'Nur zeitlich eingegrenzt', ESTIMATED: 'Ungefähre Besuchszeit',
   UNKNOWN: 'Zeitpunkt unbekannt', CONFLICT: 'Zeitbelege widersprechen sich – Zeitpunkt unbekannt',
 };
 export function TemporalItems({ items, sites }: { items: Item[]; sites: Site[] }) {
@@ -23,9 +28,12 @@ export function TemporalItems({ items, sites }: { items: Item[]; sites: Site[] }
     <Card className="visit-card temporal-card">
       <h3>{row.kind === 'VISIT' ? 'Besuch mit Zeitfenster' : 'Einzelne RFID-Beobachtung'}</h3>
       <p>{qualityLabels[row.quality ?? 'UNKNOWN'] ?? qualityLabels.UNKNOWN}</p>
+      {row.quality === 'ESTIMATED' && row.earliestUtcMs != null && row.latestUtcMs != null && <p>{row.earliestUtcMs === row.latestUtcMs
+        ? `ca. ${phoneTime(row.earliestUtcMs)} Uhr`
+        : `Geschätzter Zeitraum: zwischen ${phoneTime(row.earliestUtcMs)} und ${phoneTime(row.latestUtcMs)}`}</p>}
       <dl className="visit-card__list">
-        <div><dt>Frühestens</dt><dd>{temporalTime(row.earliestUtcMs)}</dd></div>
-        <div><dt>Spätestens</dt><dd>{temporalTime(row.latestUtcMs)}</dd></div>
+        <div><dt>Frühestens</dt><dd>{row.quality === 'ESTIMATED' ? phoneTime(row.earliestUtcMs) : temporalTime(row.earliestUtcMs)}</dd></div>
+        <div><dt>Spätestens</dt><dd>{row.quality === 'ESTIMATED' ? phoneTime(row.latestUtcMs) : temporalTime(row.latestUtcMs)}</dd></div>
         <div><dt>Futterstelle (historisch)</dt><dd>{row.feedingSiteId ? siteName(sites, row.feedingSiteId) : 'Futterstelle nicht bestätigt'}</dd></div>
         <div><dt>RFID-Beobachtungen</dt><dd>{row.observationCount}</dd></div>
       </dl>

@@ -6,17 +6,25 @@ import static org.miezmerker.backend.service.TemporalMath.*;
 
 /** Stateless, reproducible projection; never accesses or modifies raw persistence. */
 public final class TemporalProjectionEngine {
-    public static final String VERSION="boot-interval-v1";
+    public static final String VERSION="boot-interval-v2";
     public enum Quality { VERIFIED, RECONSTRUCTED, BOUNDED, ESTIMATED, UNKNOWN, CONFLICT }
-    public record Evidence(UUID anchorId,long boot,BigInteger uptime,long lower,long upper,long ppm,long samplingMs,String policy) {
+    public record Evidence(UUID anchorId,long boot,BigInteger uptime,long lower,long upper,long ppm,long samplingMs,String policy,boolean phoneEstimate) {
+        public Evidence(UUID anchorId,long boot,BigInteger uptime,long lower,long upper,long ppm,long samplingMs,String policy) {
+            this(anchorId,boot,uptime,lower,upper,ppm,samplingMs,policy,false);
+        }
         public Evidence(UUID anchorId,long boot,BigInteger uptime,long lower,long upper,long ppm,String policy) {
             this(anchorId,boot,uptime,lower,upper,ppm,0,policy);
+        }
+        public static Evidence phone(UUID id,long boot,BigInteger uptime,long utc) {
+            return new Evidence(id,boot,uptime,utc,utc,0,0,"PHONE_ESTIMATE",true);
         }
     }
     public record BootRange(long boot,long firstSequence,long lastSequence,BigInteger firstUptime,BigInteger lastUptime) {}
     public record Result(Quality quality,Long earliestUtcMs,Long latestUtcMs,List<UUID> anchorIds,String reason) {}
     private record Timeline(BigInteger first,BigInteger last,Interval firstBounds,Interval lastBounds) {}
+    private record PhoneOffsets(BigInteger lower,BigInteger upper) {}
     private final Map<Long,List<Evidence>> byBoot=new TreeMap<>();
+    private final Map<Long,PhoneOffsets> phoneOffsets=new HashMap<>();
     private final NavigableMap<Long,Timeline> timelines=new TreeMap<>();
     private final Map<Long,Long> lowerFirst=new HashMap<>(),upperLast=new HashMap<>();
     private final List<UUID> anchorIds;
@@ -26,12 +34,40 @@ public final class TemporalProjectionEngine {
 
     public TemporalProjectionEngine(List<Evidence> evidence,List<BootRange> boots,boolean invalidChronology) {
         for(var a:evidence) byBoot.computeIfAbsent(a.boot(),k->new ArrayList<>()).add(a);
-        if(byBoot.values().stream().anyMatch(a->a.size()>64)) throw new IllegalStateException("Boot anchor capacity exceeded");
-        anchorIds=evidence.stream().map(Evidence::anchorId).sorted().toList();
+        // Phone time is the business authority where available. Signed evidence
+        // keeps its original projection rules for boots without phone estimates.
+        byBoot.replaceAll((boot,items)->items.stream().anyMatch(Evidence::phoneEstimate)
+            ?items.stream().filter(Evidence::phoneEstimate).toList():items);
+        if(byBoot.values().stream().anyMatch(a->a.size()>64 && !a.getFirst().phoneEstimate())) throw new IllegalStateException("Boot anchor capacity exceeded");
+        var activeEvidence=byBoot.values().stream().flatMap(Collection::stream).toList();
+        anchorIds=activeEvidence.stream().map(Evidence::anchorId).sorted().toList();
         // Persisted policies must attest this Node oscillator over its lifetime/all modes.
-        ppm=evidence.stream().mapToLong(Evidence::ppm).max().orElse(0);
-        relativeSampling=BigInteger.valueOf(evidence.stream().mapToLong(Evidence::samplingMs).max().orElse(0)).multiply(BigInteger.TWO);
+        ppm=activeEvidence.stream().mapToLong(Evidence::ppm).max().orElse(0);
+        relativeSampling=BigInteger.valueOf(activeEvidence.stream().mapToLong(Evidence::samplingMs).max().orElse(0)).multiply(BigInteger.TWO);
         boolean bad=invalidChronology;
+        for(var items:byBoot.values()) {
+            var ordered=items.stream().filter(Evidence::phoneEstimate).sorted(Comparator.comparing(Evidence::uptime)).toList();
+            if(!ordered.isEmpty()) {
+                BigInteger lower=null,upper=null;
+                for(var a:ordered) {
+                    var offset=BigInteger.valueOf(a.lower()).subtract(a.uptime());
+                    lower=lower==null?offset:lower.min(offset); upper=upper==null?offset:upper.max(offset);
+                }
+                phoneOffsets.put(ordered.getFirst().boot(),new PhoneOffsets(lower,upper));
+            }
+            BigInteger currentUptime=null;
+            Long precedingMaxUtc=null,currentMaxUtc=null;
+            for(var a:ordered) {
+                if(!a.uptime().equals(currentUptime)) {
+                    precedingMaxUtc=max(precedingMaxUtc,currentMaxUtc);
+                    currentUptime=a.uptime(); currentMaxUtc=null;
+                }
+                // All anchors at an earlier uptime matter. A tied uptime's
+                // arbitrary UUID/input ordering must not hide a contradiction.
+                if(precedingMaxUtc!=null && a.lower()<precedingMaxUtc) bad=true;
+                currentMaxUtc=max(currentMaxUtc,a.lower());
+            }
+        }
         try {
             var rawRanges=new TreeMap<Long,BootRange>();
             for(var b:boots) rawRanges.put(b.boot(),b);
@@ -90,9 +126,15 @@ public final class TemporalProjectionEngine {
         return upper?delta.add(error):delta.subtract(error);
     }
     private Interval interval(long boot,BigInteger uptime) {
+        var phone=phoneOffsets.get(boot);
+        // Constant-time envelope of all phone offsets, even after years of syncs.
+        // No favored anchor, drift budget, tolerance or precision threshold.
+        if(phone!=null) return new Interval(phone.lower().add(uptime).longValueExact(),phone.upper().add(uptime).longValueExact());
         var result=new Interval(null,null);
-        for(var a:byBoot.getOrDefault(boot,List.of()))
-            result=result.intersect(propagate(a.lower(),a.upper(),a.uptime(),uptime,a.ppm()));
+        for(var a:byBoot.getOrDefault(boot,List.of())) {
+            var projected=propagate(a.lower(),a.upper(),a.uptime(),uptime,a.ppm());
+            result=result.intersect(projected);
+        }
         return result;
     }
     public Result project(long boot,BigInteger uptime) {
@@ -117,10 +159,11 @@ public final class TemporalProjectionEngine {
             }
             var bounds=own.intersect(new Interval(lower,upper));
             if(bounds.conflict()) return new Result(Quality.CONFLICT,null,null,anchorIds,"EMPTY_INTERVAL");
-            Quality quality=own.earliest()!=null?Quality.RECONSTRUCTED
+            boolean phone=byBoot.getOrDefault(boot,List.of()).stream().anyMatch(Evidence::phoneEstimate);
+            Quality quality=own.earliest()!=null?(phone?Quality.ESTIMATED:Quality.RECONSTRUCTED)
                 :bounds.earliest()!=null && bounds.latest()!=null?Quality.BOUNDED:Quality.UNKNOWN;
             return new Result(quality,bounds.earliest(),bounds.latest(),anchorIds,
-                quality==Quality.UNKNOWN?"MISSING_ABSOLUTE_BOUND":quality==Quality.BOUNDED?"BOOT_ORDER_AND_MINIMUM_ELAPSED":"VERIFIED_ACCEPTANCE_AND_DRIFT");
+                phone?"PHONE_ESTIMATE_SPAN":quality==Quality.UNKNOWN?"MISSING_ABSOLUTE_BOUND":quality==Quality.BOUNDED?"BOOT_ORDER_AND_MINIMUM_ELAPSED":"VERIFIED_ACCEPTANCE_AND_DRIFT");
         } catch(ArithmeticException | IllegalArgumentException e) {
             return new Result(Quality.CONFLICT,null,null,anchorIds,"UNREPRESENTABLE_INTERVAL");
         }

@@ -116,6 +116,12 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         return error_frame(SyncError::UnknownVersion, "unsupported version");
     }
     switch (frame->opcode) {
+        case Opcode::ClockSnapshotRequest: {
+            if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad clock snapshot request");
+            const auto snapshot = server_->clock_snapshot(now_s);
+            if (!snapshot) return error_frame(SyncError::Unauthorized, "clock snapshot requires authorization");
+            return encode_frame({1, Opcode::ClockSnapshotResponse, *snapshot});
+        }
         case Opcode::SecurityTimeStatusRequest: {
             if (!frame->payload.empty() || !time_bootstrap_)
                 return error_frame(SyncError::ClockUnavailable, "security time unavailable");
@@ -243,6 +249,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
                 return error_frame(SyncError::UnknownVersion, "unsupported version");
             }
             HelloPublic hello = server_->public_hello();
+            hello.caps |= kCapClockSnapshot;
             if (time_bootstrap_ && evidence_) hello.caps |= kCapTimeEvidence;
             return encode_frame(Frame{kProtocolVersion, Opcode::HelloPublic,
                                       encode_hello_public(hello)});

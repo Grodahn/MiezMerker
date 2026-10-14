@@ -15,6 +15,7 @@ export interface PublicNodeInfo {
   incarnation: string;
   claimState: number;
   serverVer: number;
+  caps?: number;
   owner: OwnerInfo | null;
 }
 
@@ -46,7 +47,7 @@ export class PublicProbeTransport {
       keepConnected = options.keepConnected === true || (options.keepUnclaimedConnected === true && hello.claimState === 0);
       return {
         nodeId: hello.nodeId, incarnation: hello.incarnation,
-        claimState: hello.claimState, serverVer: hello.serverVer, owner,
+        claimState: hello.claimState, serverVer: hello.serverVer, caps: hello.caps, owner,
       };
     } finally {
       if (!keepConnected) await this.transport.disconnect();

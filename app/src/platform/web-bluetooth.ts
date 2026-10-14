@@ -182,6 +182,7 @@ export function characteristicForRequest(opcode: Opcode): string {
     case Opcode.StatusRequest: return BLE_CHAR_UUIDS.status;
     case Opcode.BatchRequest:
     case Opcode.TimeEvidenceRequest:
+    case Opcode.ClockSnapshotRequest:
     case Opcode.TimeEvidenceReceiptRequest: return BLE_CHAR_UUIDS.batch;
     case Opcode.AckRequest:
     case Opcode.CompactRequest: return BLE_CHAR_UUIDS.ack;

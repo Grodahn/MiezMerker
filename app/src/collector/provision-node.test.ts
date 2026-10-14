@@ -6,10 +6,12 @@ import { fromBase64Url } from '../platform/device-keys';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 const { post, auth, listeners } = vi.hoisted(() => ({ post: vi.fn(), auth: vi.fn(), listeners: new Set<() => void>() }));
 vi.mock('../api/client', () => ({ api: { POST: post } }));
+vi.mock('./collector-sync', () => ({ runFieldSync: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getAuthState: auth,
   subscribeAuth: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); } }));
 import { CollectorDatabase } from '../platform/offline-store';
 import { provisionNode } from './provision-node';
+import { runFieldSync } from './collector-sync';
 import { decodeFrame, encodeFrame, encodeHelloPublic, encodeOwnerResponse, encodeClaimAdvertisement, decodeClaimAdvertisement, Opcode } from './ble-codec';
 
 const NODE = '44444444-4444-4444-8444-444444444444';
@@ -35,6 +37,7 @@ afterEach(async () => { await new CollectorDatabase().delete(); });
 class ClaimTransport {
   claimed = false; trustedTime = true; dropReceipt = false; bootstrapAvailable = true; rejectReceiptOnce = false;
   rejectReconnect = false; connections = 0;
+  phoneTime = false;
   last: Uint8Array = new Uint8Array(); operations: Opcode[] = [];
   async connect() {
     if (++this.connections > 1 && this.rejectReconnect) throw new Error('Previous GATT connection is closing');
@@ -45,7 +48,7 @@ class ClaimTransport {
     let opcode: Opcode; let payload: Uint8Array;
     switch (request.opcode) {
       case Opcode.HelloRequest:
-        opcode = Opcode.HelloPublic; payload = encodeHelloPublic({ serverVer: 1, caps: 31, nodeId: NODE,
+        opcode = Opcode.HelloPublic; payload = encodeHelloPublic({ serverVer: 1, caps: 31 | (this.phoneTime ? 64 : 0), nodeId: NODE,
           incarnation: INC, firmwareVersion: 'test', claimState: this.claimed ? 1 : 0, clockStatus: 2 }); break;
       case Opcode.OwnerRequest:
         opcode = Opcode.OwnerResponse; payload = encodeOwnerResponse({ nodeId: NODE, claimState: this.claimed ? 1 : 0,
@@ -78,6 +81,22 @@ class ClaimTransport {
     this.last = new Uint8Array(encodeFrame({ version: 1, opcode, payload }));
   }
 }
+
+test('initial phone anchor reuses ordinary authenticated field sync only after confirmed claim', async () => {
+  const transport=new ClaimTransport(); transport.phoneTime=true;
+  vi.mocked(runFieldSync).mockImplementationOnce(async callbacks => {
+    expect(transport.claimed).toBe(true); expect(transport.operations.at(-1)).toBe(Opcode.OwnerRequest);
+    expect(await callbacks.createTransport()).toBeDefined();
+    return { nodeState: 'complete' } as never;
+  });
+  await provisionNode(transport,NODE,'org-a'); expect(runFieldSync).toHaveBeenCalled();
+});
+test('claim stays committed if initial authenticated time capture needs a retry', async () => {
+  const transport=new ClaimTransport(); transport.phoneTime=true;
+  vi.mocked(runFieldSync).mockResolvedValueOnce({ nodeState: 'failed', nodeMessage: 'credential unavailable' } as never);
+  await expect(provisionNode(transport,NODE,'org-a')).resolves.toEqual({ timeAnchorPending: true, message: 'Napf registriert; erste Zeitaufnahme noch ausstehend. Bitte erneut auslesen. credential unavailable' });
+  const db=new CollectorDatabase(); expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
+});
 
 test('claims from node-signed advertisement, persists receipt before delivery, verifies ownership', async () => {
   const transport = new ClaimTransport(); await provisionNode(transport, NODE, 'org-a');

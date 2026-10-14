@@ -32,6 +32,7 @@ inline constexpr std::uint16_t kCapTimeCorrect = 0x0004;
 inline constexpr std::uint16_t kCapNodeProof = 0x0008;
 inline constexpr std::uint16_t kCapCompact = 0x0010;
 inline constexpr std::uint16_t kCapTimeEvidence = 0x0020;
+inline constexpr std::uint16_t kCapClockSnapshot = 0x0040;
 inline constexpr std::uint16_t kCapAllV1 =
     kCapBatch | kCapAck | kCapTimeCorrect | kCapNodeProof | kCapCompact;
 
@@ -70,6 +71,8 @@ enum class Opcode : std::uint8_t {
     TimeEvidenceResponse = 0x20,
     TimeEvidenceReceiptRequest = 0x21,
     TimeEvidenceReceiptResponse = 0x22,
+    ClockSnapshotRequest = 0x23,
+    ClockSnapshotResponse = 0x24,
     Error = 0xFF,
 };
 

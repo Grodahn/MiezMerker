@@ -6,11 +6,12 @@ import { getAuthState } from '../platform/auth';
 import { bindNodeOperation } from './node-operation';
 import { PublicProbeTransport } from './public-probe';
 import { bootstrapRegistrationTime } from './registration-time';
-import { decodeFrame, decodeClaimAdvertisement, encodeFrame, encodeClaimReceipt, Opcode, PROTOCOL_VERSION } from './ble-codec';
+import { runFieldSync } from './collector-sync';
+import { decodeFrame, decodeClaimAdvertisement, encodeFrame, encodeClaimReceipt, Opcode, PROTOCOL_VERSION, CAP_CLOCK_SNAPSHOT } from './ble-codec';
 
 // Reservation and receipt persist before delivery. A retry after disconnect can
 // redeliver the same backend-issued receipt without recreating or losing it.
-export async function provisionNode(transport: NodeTransport, nodeId: string, organizationId: string, signal?: AbortSignal): Promise<void> {
+export async function provisionNode(transport: NodeTransport, nodeId: string, organizationId: string, signal?: AbortSignal): Promise<void | { timeAnchorPending: true; message: string }> {
   assertAdminMayClaim(organizationId);
   const operation = bindNodeOperation(transport, getAuthState().user!.userId, organizationId, signal, 'ADMIN');
   transport = operation.transport;
@@ -88,5 +89,12 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
       throw new ClaimError('backend', 'Node-Provisionierung noch nicht bestätigt. Receipt bleibt lokal gespeichert.');
     }
     await db.nodeMeta.update(nodeId, { claimState: 1 });
+    if ((after.caps ?? 0) & CAP_CLOCK_SNAPSHOT) {
+      // Claim completion grants no session. Reuse the ordinary credential/PoP/
+      // pinned-Node-auth sync flow for the initial phone anchor.
+      const result = await runFieldSync({ createTransport: () => transport, signal, onUpdate: () => {} });
+      operation.assertActive();
+      if (result.nodeState !== 'complete') return { timeAnchorPending: true, message: `Napf registriert; erste Zeitaufnahme noch ausstehend. Bitte erneut auslesen. ${result.nodeMessage}` };
+    }
   } finally { await operation.close(); db.close(); }
 }

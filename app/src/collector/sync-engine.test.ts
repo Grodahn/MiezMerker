@@ -55,10 +55,12 @@ class MockNodeTransport implements NodeTransport {
 function makeMockNode(records: BleRecord[], opts: {
   failAuth?: boolean; failAck?: boolean; fakeNode?: boolean; initialAck?: bigint;
   loseAckOnce?: boolean; failCompact?: boolean; timeEvidence?: boolean; timeUsable?: boolean;
+  phoneTime?: boolean; snapshotReboot?: boolean; snapshotInterrupted?: boolean;
 } = {}) {
   let acked = opts.initialAck ?? 0n;
   let lostAck = false;
   let batchCalls = 0;
+  let snapshots = 0;
   const opcodes: Opcode[] = [];
   const handler = async (frame: Uint8Array): Promise<Uint8Array> => {
     const f = decodeFrame(frame);
@@ -67,9 +69,18 @@ function makeMockNode(records: BleRecord[], opts: {
     switch (f.opcode) {
       case Opcode.HelloRequest:
         return encodeFrame({ version: 1, opcode: Opcode.HelloPublic, payload: encodeHelloPublic({
-          serverVer: 1, caps: opts.timeEvidence ? 0x3f : 0x1f, nodeId: NODE_ID, incarnation: INCARNATION,
+          serverVer: 1, caps: (opts.timeEvidence ? 0x3f : 0x1f) | (opts.phoneTime ? 0x40 : 0), nodeId: NODE_ID, incarnation: INCARNATION,
           firmwareVersion: 'test-1.0.0', claimState: 1, clockStatus: 2,
         })});
+      case Opcode.ClockSnapshotRequest: {
+        snapshots++;
+        if (opts.snapshotInterrupted && snapshots === 2) throw new Error('snapshot disconnected');
+        const p = new Uint8Array(45); p[0] = 1;
+        p.set(NODE_ID.replaceAll('-', '').match(/../g)!.map(h => parseInt(h, 16)), 1);
+        p.set(INCARNATION.replaceAll('-', '').match(/../g)!.map(h => parseInt(h, 16)), 17);
+        const v = new DataView(p.buffer); v.setUint32(33, opts.snapshotReboot && snapshots === 2 ? 8 : 7, true); v.setBigUint64(37, BigInt(1000 + snapshots), true);
+        return encodeFrame({ version: 1, opcode: Opcode.ClockSnapshotResponse, payload: p });
+      }
       case Opcode.SecurityTimeStatusRequest:
         return encodeFrame({ version: 1, opcode: Opcode.SecurityTimeStatusResponse, payload: new Uint8Array([opts.timeUsable ? 1 : 0]) });
       case Opcode.TimeEvidenceRequest: {
@@ -200,6 +211,30 @@ describe('SyncEngine', () => {
     // Session watermark persisted.
     const session = await store.session(NODE_ID);
     expect(session?.watermark).toBe('3');
+  });
+  test('every authenticated sync persists a fresh phone anchor before raw ACK, including reconnect after lost ACK', async () => {
+    const org='22222222-2222-4222-8222-222222222222';
+    const node=makeMockNode([makeRecord(1, 'chip')], { phoneTime: true, loseAckOnce: true });
+    const rows: import('./time-evidence').StoredTimeEvidence[]=[];
+    const persistence=Object.assign(store, { putTimeEvidence: async (row: import('./time-evidence').StoredTimeEvidence) => { rows.push(row); } });
+    const transport=new MockNodeTransport(async request => {
+      if (decodeFrame(request)?.opcode === Opcode.AckRequest) expect(rows.length).toBeGreaterThan(0);
+      return node.handler(request);
+    });
+    const result=await new SyncEngine(transport,persistence,mockKeys,identity,{ maxRetries: 1,retryDelayMs: 0 }).sync('credential',()=>1790899200,org);
+    expect(result.ok).toBe(true); expect(rows).toHaveLength(2); expect(new Set(rows.map(r=>r.id)).size).toBe(2);
+    expect(rows.every(r=>r.organizationId===org && r.bootCounter==='7' && r.kind===2)).toBe(true);
+    expect(node.opcodes.indexOf(Opcode.NodeProofRequest)).toBeLessThan(node.opcodes.indexOf(Opcode.ClockSnapshotRequest));
+    expect(node.getAcked()).toBe(1n); expect(await store.sequences(NODE_ID,INCARNATION)).toEqual([1n]);
+  });
+  test.each(['reboot','interruption','storage','auth'])('phone snapshot %s failure cannot ACK or compact raw data', async failure => {
+    const org='22222222-2222-4222-8222-222222222222';
+    const node=makeMockNode([makeRecord(1,'chip')], { phoneTime: true, snapshotReboot: failure==='reboot',snapshotInterrupted: failure==='interruption',failAuth: failure==='auth' });
+    const save=vi.fn(async () => { if (failure==='storage') throw new Error('quota'); });
+    const result=await new SyncEngine(new MockNodeTransport(node.handler),Object.assign(store,{ putTimeEvidence: save }),mockKeys,identity,{ maxRetries: 0 }).sync('credential',()=>1790899200,org);
+    expect(result.ok).toBe(false); expect(node.opcodes).not.toContain(Opcode.AckRequest); expect(node.opcodes).not.toContain(Opcode.CompactRequest);
+    if (failure!=='storage') expect(save).not.toHaveBeenCalled();
+    if (failure==='auth') expect(node.opcodes).not.toContain(Opcode.ClockSnapshotRequest);
   });
 
   test('failed reconnect preserves the last authenticated watermark and a new visit resets it', async () => {

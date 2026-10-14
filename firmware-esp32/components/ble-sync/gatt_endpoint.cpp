@@ -12,7 +12,7 @@ bool matches(Characteristic c, Opcode op) {
     switch (c) {
         case Characteristic::Auth: return op == Opcode::AuthRequest;
         case Characteristic::NodeProof: return op == Opcode::NodeProofRequest;
-        case Characteristic::Batch: return op == Opcode::BatchRequest || op == Opcode::TimeEvidenceRequest || op == Opcode::TimeEvidenceReceiptRequest;
+        case Characteristic::Batch: return op == Opcode::BatchRequest || op == Opcode::TimeEvidenceRequest || op == Opcode::TimeEvidenceReceiptRequest || op == Opcode::ClockSnapshotRequest;
         case Characteristic::Ack: return op == Opcode::AckRequest || op == Opcode::CompactRequest;
         case Characteristic::Time: return op == Opcode::TimeRequest;
         case Characteristic::ClaimReceipt: return op == Opcode::ClaimReceiptRequest

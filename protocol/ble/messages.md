@@ -53,6 +53,8 @@ Opcodes (v1):
 | `0x20` | TimeEvidenceResponse | S→C | echoes 7 request bytes, `total u16 LE`, 1–480 exact UTF-8 bytes; `total=0` with no bytes ends this kind |
 | `0x21` | TimeEvidenceReceiptRequest | C→S | Batch characteristic, authorized: `kind u8, node 16 B, incarnation 16 B, boot u32 LE, anchor 16 B` (zero anchor for boot) |
 | `0x22` | TimeEvidenceReceiptResponse | S→C | echoes 53 request bytes, `retained u8` (0=durably removed/already absent, 1=current/referenced boot retained) |
+| `0x23` | ClockSnapshotRequest | C→S | empty; protected Batch characteristic, authorized CLAIMED Node only |
+| `0x24` | ClockSnapshotResponse | S→C | `format u8 (=1), node 16 B, incarnation 16 B, boot u32 LE, uptime u64 LE` (45 B); read-only |
 
 | `0xFF` | Error | S→C | `code u8, msg str` |
 
@@ -61,6 +63,15 @@ legacy required capability mask `0x001F` is unchanged. Existing `0x19`/`0x1B`
 registration time operations are reused for normal CLAIMED sync. Proof success
 grants time only; credential/PoP and pinned NodeProof still gate evidence/raw
 access. `0x0F` TimeCorrect remains authorized.
+
+Capability `0x0040` advertises `ClockSnapshotV1` (#169), independently of signed
+time/evidence capability `0x0020`. Two reads in the authenticated session must
+match the Hello identity and the same nonzero boot, with nondecreasing uptime.
+The PWA samples phone UTC immediately after the first response, retains BLE
+duration only as diagnostics, and rejects interruption/reboot before persistence.
+The Node accepts no phone UTC and changes no wall/security clock. This small
+versioned snapshot can be reused by #171 without creating a second phone-time
+protocol. Its protected characteristic and per-operation authorization are unchanged.
 
 Evidence requests/responses use version 1 envelopes; each body is at most 8192
 bytes, delivered in 480-byte UTF-8 fragments. Kind-specific indexes are bounded

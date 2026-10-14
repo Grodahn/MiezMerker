@@ -1110,6 +1110,59 @@
         },
         "type": "object"
       },
+      "PhoneRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "anchorId": {
+            "type": "string"
+          },
+          "bootCounter": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "incarnation": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "transportDurationMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "uptimeMs": {
+            "format": "uint64",
+            "type": "integer"
+          },
+          "utcMs": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "anchorId",
+          "bootCounter",
+          "formatVersion",
+          "incarnation",
+          "nodeId",
+          "organizationId",
+          "source",
+          "transportDurationMs",
+          "uptimeMs",
+          "utcMs"
+        ],
+        "type": "object"
+      },
       "PolicyView": {
         "properties": {
           "audience": {
@@ -2402,6 +2455,37 @@
         "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + signed node identity)",
         "tags": [
           "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/phone-time-evidence": {
+      "post": {
+        "operationId": "ingestPhoneTimeEvidence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Receipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner-reported observation-time estimate; never security-trusted UTC",
+        "tags": [
+          "time-evidence-controller"
         ]
       }
     },

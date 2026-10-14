@@ -20,7 +20,8 @@ import type { NodeTransport } from '../platform/node-transport';
 import type { AppDeviceKeys } from '../platform/device-keys';
 import { beginNodeAuthentication, type TrustedNodeIdentity } from '../platform/node-identity';
 import { NodeOperationCancelledError } from './node-operation';
-import { CAP_TIME_EVIDENCE } from './ble-codec';
+import { CAP_TIME_EVIDENCE, CAP_CLOCK_SNAPSHOT } from './ble-codec';
+import { collectPhoneTime } from './phone-time';
 import { acknowledgeUploadedEvidence, receiveTimeEvidence, type StoredTimeEvidence } from './time-evidence';
 import { TimeBootstrapUnavailableError } from './registration-time';
 
@@ -422,6 +423,18 @@ export class SyncEngine {
         throw new SyncFailedError('unauthorized', 'Node-Authentizität konnte nicht bestätigt werden (Fake-Node möglich).', this.owner);
       }
       this.phase = 'authorized';
+
+      if (hello.caps & CAP_CLOCK_SNAPSHOT) {
+        if (!organizationId || !this.store.putTimeEvidence) throw new SyncFailedError('storage', 'Dauerhafter Zeitbelegspeicher fehlt.', this.owner);
+        this.phase = 'evidence';
+        const row = await collectPhoneTime(this.transport, hello.nodeId, hello.incarnation, organizationId, this.options.assertActive);
+        this.options.assertActive?.();
+        try { await this.store.putTimeEvidence(row); }
+        catch (error) { throw new SyncFailedError('storage', 'Handyzeit konnte nicht dauerhaft gespeichert werden. Bitte erneut auslesen.', this.owner, error); }
+        this.evidenceIds.add(row.id);
+        this.evidenceStored = this.evidenceIds.size;
+        this.options.assertActive?.();
+      }
 
       if (hello.caps & CAP_TIME_EVIDENCE) {
         if (!organizationId || !this.store.putTimeEvidence) throw new SyncFailedError('storage', 'Dauerhafter Zeitbelegspeicher fehlt.', this.owner);

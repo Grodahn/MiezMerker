@@ -105,7 +105,7 @@ BootEpochV1 also stores its durable identity, reset reason, first/last node sequ
 
 **Trust states are deliberately distinct:**
 - BACKEND_SIGNED: token and Node acceptance independently validated; can support security UTC within a bounded confidence interval.
-- PHONE_ESTIMATE: untrusted convenience estimate, **never** permits credential/claim authorization. Defer ingestion into MVP if it cannot be safely bounded.
+- PHONE_ESTIMATE: pragmatic smartphone visit-time estimate, **never** permits credential/claim authorization. See the #169 amendment below; no accuracy or drift budget is required for observation estimates.
 - RTC_HOLDOVER: an already initialized clock continued through a demonstrably continuous interval with conservative drift. Merely reading the ESP RTC after power-on is not evidence of safe continuity.
 - UNKNOWN: no useful reliable UTC. Zero / 1970 placeholders are not timestamps.
 
@@ -176,11 +176,61 @@ When a lower or upper bound is unavailable, the projection remains half-open or 
 | VERIFIED | Originally recorded from verified security-time provenance; display approximate UTC + interval |
 | RECONSTRUCTED | Back-calculated from signed anchor in the same boot; display "Rekonstruiert: ca. ..." and bounds |
 | BOUNDED | Only a justified interval crossing boots; display "Zwischen ... und ..." |
-| ESTIMATED | Untrusted phone/RTC estimate; display "Schätzung – nicht bestätigt"; cannot drive secure auth |
+| ESTIMATED | Smartphone visit estimate; display "ca. ... Uhr" or an explicit estimated interval; cannot drive secure auth |
 | UNKNOWN | No defensible absolute time; display "Zeitpunkt unbekannt" |
 | CONFLICT | Contradictory evidence; do not select a favored timestamp |
 
 These DTO qualities are independent of the existing immutable on-wire capture enum. No legacy observation may acquire exact dates merely because data is missing.
+
+### Observation-time amendment (#169, 2026-10-14)
+
+Cat visits are approximate operational data. Internal ESP32 drift has no
+practical relevance for this purpose: **no target accuracy, drift threshold,
+minimum precision, correction window or cryptographic timestamp certification**
+is required. All signed security-clock rules in section 5 remain unchanged.
+
+After ordinary credential/PoP and pinned Node authentication, each sync reads
+the versioned, read-only `ClockSnapshotV1` over the protected Batch characteristic.
+Its Node ID, incarnation, boot counter and unsigned 64-bit uptime are sampled
+together. The PWA samples `Date.now()` immediately after the first response and
+records that request's elapsed BLE duration as a diagnostic, without an accuracy
+SLA. A second snapshot must retain the same identity/boot and nondecreasing uptime;
+interruption or reboot produces no anchor. No UTC is transmitted to the Node.
+
+The PWA durably saves a UUID-keyed `PHONE_ESTIMATE` in the existing time-evidence
+outbox **before raw ACK**. The owner-authorized, CSRF-protected
+`/api/v1/nodes/phone-time-evidence` ingest validates the complete schema, identity
+and exact retry payload. Estimates live in an additive immutable evidence table;
+the stricter signed-anchor table, signatures, trust budgets and ingest are untouched.
+Phone anchors are never Node-owned evidence and never receive a Node evidence
+receipt. They survive raw ACK/COMPACT and upload independently when online.
+
+Within a boot, `T_visit = T_phone - (U_sync - U_visit)`. Phone anchors are the
+business time authority for that boot; otherwise the existing signed projection
+still applies. Multiple phone offsets produce the enclosing span of **all**
+estimates, preserving relative ordering and exposing disagreement without selecting
+an anchor or introducing a tolerance. Reversed chronological phone timestamps,
+impossible cross-boot ordering or integer overflow produce `CONFLICT` with no
+favored point. A single consistent estimate is `ESTIMATED` even when its stored
+bounds coincide: that equality is not a certified precision claim.
+
+Unanchored boots retain existing chronological bounds and within-boot elapsed
+constraints. Never subtract uptime across boots or invent powered-off duration.
+One missing boundary stays open; neither boundary yields `UNKNOWN`. RFID rows
+are retained in every case. The existing read-time projection rebuilds after
+late evidence upload without rewriting originals. Historical FeedingSite
+attribution still requires the entire possible interval in exactly one deployment;
+sharing and tenant isolation retain their existing gates. Projection/visit
+versions advance to `boot-interval-v2` / `visit-interval-v2`.
+
+After confirmed claim receipt commitment, snapshot-capable Nodes use the same
+ordinary authenticated sync flow for the initial anchor. Claim completion itself
+does not grant a protected session. If that follow-up fails, registration remains
+committed and the UI requests another read. Older firmware retains its existing
+flow and gains phone anchors only after a firmware update. No security-clock
+bootstrap or claim authorization is changed. Offline sync after a reboot still
+needs the existing signed security-clock bootstrap; changing that policy belongs
+to #171. Credential invalidation belongs to #170; physical E2E acceptance to #134.
 
 ## 5. Trusted UTC bootstrap: wire handshake and threat model (#129/#130/#131)
 

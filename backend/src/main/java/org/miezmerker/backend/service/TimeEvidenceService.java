@@ -22,9 +22,30 @@ public class TimeEvidenceService {
     private final TimeAnchorRepository anchors;
     private final NodeTimeProofVerifier verifier;
     private final TimeUncertaintyPolicy policy;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
     public TimeEvidenceService(TenantService tenants,NodeRepository nodes,BootEpochRepository boots,
-            TimeAnchorRepository anchors,NodeTimeProofVerifier verifier,TimeUncertaintyPolicy policy) {
+            TimeAnchorRepository anchors,NodeTimeProofVerifier verifier,TimeUncertaintyPolicy policy,org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.tenants=tenants; this.nodes=nodes; this.boots=boots; this.anchors=anchors; this.verifier=verifier; this.policy=policy;
+        this.jdbc=jdbc;
+    }
+    @Transactional
+    public Receipt ingestPhone(UUID user,TimeEvidenceProtocol.PhoneRequest r) {
+        try { TimeEvidenceProtocol.validatePhone(r); }
+        catch(IllegalArgumentException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid phone estimate"); }
+        UUID org=UUID.fromString(r.organizationId()),nodeId=UUID.fromString(r.nodeId()),id=UUID.fromString(r.anchorId()),inc=UUID.fromString(r.incarnation());
+        tenants.requireActive(user,org); nodes.lockClaims();
+        var node=nodes.findByIdLocked(nodeId).orElseThrow(TimeEvidenceService::denied);
+        if(node.getState()!=NodeState.CLAIMED || node.getOrganization()==null || !org.equals(node.getOrganization().getId())) throw denied();
+        // Owner-reported estimates carry no proof, trust budget or security UTC.
+        var old=jdbc.query("SELECT organization_id,node_id,incarnation,boot_counter,uptime_ms,utc_ms,transport_duration_ms FROM phone_time_anchors WHERE anchor_id=?",
+            (rs,n)->new TimeEvidenceProtocol.PhoneRequest(rs.getString(1),id.toString(),rs.getString(2),rs.getString(3),rs.getLong(4),rs.getBigDecimal(5).toBigIntegerExact(),rs.getLong(6),rs.getLong(7),"PHONE_ESTIMATE",1),id);
+        if(!old.isEmpty()) {
+            if(!old.getFirst().equals(r)) throw conflict();
+            return new Receipt(id,"DUPLICATE_IDENTICAL",1,"PHONE_ESTIMATE",false);
+        }
+        jdbc.update("INSERT INTO phone_time_anchors(anchor_id,organization_id,node_id,incarnation,boot_counter,uptime_ms,utc_ms,transport_duration_ms,source,format_version) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            id,org,nodeId,inc,r.bootCounter(),new java.math.BigDecimal(r.uptimeMs()),r.utcMs(),r.transportDurationMs(),"PHONE_ESTIMATE",1);
+        return new Receipt(id,"CREATED",1,"PHONE_ESTIMATE",false);
     }
     @Transactional
     public BootReceipt ingestBoot(UUID user,TimeEvidenceProtocol.BootRequest request) {
