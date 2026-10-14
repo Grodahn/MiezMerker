@@ -30,6 +30,14 @@ jobs:
       # config changes miss instead of reusing incompatible objects. ccache
       # additionally hashes compiler flags per object. Restore keys stay
       # within the same variant prefix. Bound: 1 GiB per variant.
+      # Correctness note: ccache hashes the compiler and the file given via
+      # the IDF-injected `-specs=<build>/specs/picolibc.specs` flag by
+      # size+mtime by default, but ESP-IDF regenerates that specs file on
+      # every fresh configure (fresh CI checkout) with identical content and
+      # a new mtime, so mtime-based checks would never hit across runs.
+      # CCACHE_COMPILERCHECK=content hashes file contents instead, which is
+      # exact for both the compiler and the specs file and stays correct on
+      # toolchain upgrades (different content misses and rebuilds).
       - name: Restore ccache compiler cache
         # Optional: a restore failure must never break the build; the job
         # below always performs a correct full build on a cache miss.
@@ -48,6 +56,7 @@ jobs:
           CCACHE_DIR: ${{ github.workspace }}/.ccache-esp32c3-${{ matrix.variant }}
           CCACHE_BASEDIR: ${{ github.workspace }}
           CCACHE_MAXSIZE: 1G
+          CCACHE_COMPILERCHECK: content
         run: |
           . /opt/esp/idf/export.sh > /dev/null
           echo "ccache version: $(ccache --version 2>&1 | head -n 1 || true)"
