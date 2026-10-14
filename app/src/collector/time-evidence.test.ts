@@ -91,6 +91,28 @@ test('repeated upload, lost HTTP response and mismatched receipt retain evidence
   await store.putTimeEvidence(row); expect(await store.pendingTimeEvidence(ORG)).toHaveLength(0);
   expect(await db.timeEvidence.count()).toBe(1);
 });
+test('pre-claim continuity rejection is explained, preserves exact evidence after reopen, and does not block other evidence', async () => {
+  const row = evidenceRow(anchorPayload(), 1, NODE, INC, ORG); await store.putTimeEvidence(row);
+  const bootRow = evidenceRow(JSON.stringify({ boot }), 0, NODE, INC, ORG); await store.putTimeEvidence(bootRow);
+  post.mockImplementation(async endpoint => endpoint.endsWith('/time-evidence')
+    ? { error: {}, response: { status: 403, headers: new Headers({ 'X-MM-Time-Evidence': 'PRE_CLAIM_CONTINUITY_UNVERIFIED' }) } }
+    : { data: { nodeId: NODE, incarnation: INC, bootCounter: boot.bootCounter, version: 1, status: 'CREATED' } });
+  const result = await new BackendUploader(store, { maxRetries: 0 }).upload(ORG);
+  expect(result.state).toBe('failed'); expect(result.message).toContain('Zeitbeleg vor Registrierung noch nicht prüfbar.');
+  expect(result.message).not.toContain('HTTP 403'); expect(result.message).toContain('unbestätigt');
+  expect(post).toHaveBeenCalledTimes(2);
+  db.close(); await db.open();
+  expect(await store.pendingTimeEvidence(ORG)).toEqual([row]);
+  expect((await store.uploadedTimeEvidence(ORG, NODE, INC)).map(r => r.id)).toEqual([bootRow.id]);
+});
+
+test('a generic 403 keeps the permission diagnostic and never confirms evidence', async () => {
+  const row = evidenceRow(anchorPayload(), 1, NODE, INC, ORG); await store.putTimeEvidence(row);
+  post.mockResolvedValue({ error: {}, response: { status: 403, headers: new Headers() } });
+  const result = await new BackendUploader(store, { maxRetries: 0 }).upload(ORG);
+  expect(result.message).toContain('HTTP 403'); expect(await store.pendingTimeEvidence(ORG)).toEqual([row]);
+});
+
 test.each(['offline', 'logout', 'org-switch'])('%s preserves pending signed evidence', async reason => {
   const row = evidenceRow(anchorPayload(), 1, NODE, INC, ORG); await store.putTimeEvidence(row);
   if (reason === 'offline') Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });

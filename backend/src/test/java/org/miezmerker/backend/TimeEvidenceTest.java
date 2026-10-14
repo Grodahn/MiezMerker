@@ -353,6 +353,29 @@ class TimeEvidenceTest {
         else builder.GET();
         return client.send(builder.build(),HttpResponse.BodyHandlers.ofString());
     }
+    @Test void preClaimContinuityHintRequiresOwnerAndVerifiedEvidenceAndNeverAcceptsOldAnchor() throws Exception {
+        jdbc.update("UPDATE nodes SET claimed_at=? WHERE node_id=?",java.sql.Timestamp.from(Instant.ofEpochMilli(UTC+1)),node.getNodeId());
+        var r=request(42,1000,1300,UTC); String json=mapper.writeValueAsString(r);
+        assertEquals(200,http("POST","/api/v1/auth/login","{\"email\":\"a@example.org\",\"password\":\"test-password\"}",true).statusCode());
+        var missingCsrf=http("POST","/api/v1/nodes/time-evidence",json,false);
+        assertEquals(403,missingCsrf.statusCode()); assertTrue(missingCsrf.headers().firstValue("X-MM-Time-Evidence").isEmpty());
+        var denied=http("POST","/api/v1/nodes/time-evidence",json,true);
+        assertEquals(403,denied.statusCode()); assertEquals("PRE_CLAIM_CONTINUITY_UNVERIFIED",denied.headers().firstValue("X-MM-Time-Evidence").orElseThrow());
+        assertEquals(0,anchors.count()); assertEquals(0,boots.count());
+        var forged=new TimeEvidenceProtocol.Request(r.organizationId(),r.boot(),r.challenge(),r.proof()+"x",r.acceptance(),r.challengeBytes(),r.acceptanceBytes());
+        var badSignature=http("POST","/api/v1/nodes/time-evidence",mapper.writeValueAsString(forged),true);
+        assertEquals(400,badSignature.statusCode()); assertTrue(badSignature.headers().firstValue("X-MM-Time-Evidence").isEmpty());
+        var a=r.acceptance();
+        var invalidAcceptance=new NodeTimeProtocol.Acceptance(a.nodeId(),a.incarnation(),a.bootCounter(),a.proofDigest(),a.challengeNonceDigest(),a.acceptedUptimeMs(),a.anchorId(),EcKeyUtils.b64u(new byte[64]),1);
+        var invalidSignature=new TimeEvidenceProtocol.Request(r.organizationId(),r.boot(),r.challenge(),r.proof(),invalidAcceptance,r.challengeBytes(),TimeEvidenceProtocol.signedBytes(NodeTimeProtocol.acceptanceBytes(r.challenge(),r.proof(),invalidAcceptance),invalidAcceptance.signature()));
+        var badCryptographicSignature=http("POST","/api/v1/nodes/time-evidence",mapper.writeValueAsString(invalidSignature),true);
+        assertEquals(403,badCryptographicSignature.statusCode()); assertTrue(badCryptographicSignature.headers().firstValue("X-MM-Time-Evidence").isEmpty());
+        var fresh=http("POST","/api/v1/nodes/time-evidence",mapper.writeValueAsString(request(42,1400,1700,UTC+2)),true);
+        assertEquals(200,fresh.statusCode(),fresh.body()); assertEquals(1,anchors.count());
+        assertEquals(200,http("POST","/api/v1/auth/login","{\"email\":\"b@example.org\",\"password\":\"test-password\"}",true).statusCode());
+        var foreign=http("POST","/api/v1/nodes/time-evidence",json,true);
+        assertEquals(403,foreign.statusCode()); assertTrue(foreign.headers().firstValue("X-MM-Time-Evidence").isEmpty());
+    }
     @Test void httpStrictSchemaCsrfSizeAuthPaginationAndOpenApi() throws Exception {
         var r=request(42,1000,1300,UTC); String json=mapper.writeValueAsString(r);
         assertEquals(401,http("POST","/api/v1/nodes/time-evidence",json,true).statusCode());

@@ -142,10 +142,16 @@ export class BackendUploader {
               signal: AbortSignal.any([controller.signal, ...(this.options.signal ? [this.options.signal] : []), AbortSignal.timeout(10_000)]),
             });
             if (controller.signal.aborted || !active()) throw new Error('Zeitbeleg-Upload abgebrochen.');
-            const status = (response as Response | undefined)?.status;
+            const httpResponse = response as Response | undefined;
+            const status = httpResponse?.status;
             this.options.assertActive?.();
             if (error || !data) {
               if (status === 401) markSessionExpired();
+              if (status === 403 && row.kind === 1 && httpResponse?.headers?.get('X-MM-Time-Evidence') === 'PRE_CLAIM_CONTINUITY_UNVERIFIED') {
+                failed++;
+                message = 'Zeitbeleg vor Registrierung noch nicht prüfbar. Der Server kann die Zeit vor der Orga-Zuordnung dieses Napfs noch nicht sicher bestätigen. Beleg bleibt dauerhaft gespeichert und unbestätigt. Erneutes Anmelden löst diesen Fall nicht.';
+                break;
+              }
               if (status && status >= 400 && status < 500 && status !== 429) {
                 failed++; message = `Zeitbeleg-Upload abgelehnt (HTTP ${status}); Belege bleiben dauerhaft gespeichert.`; break;
               }

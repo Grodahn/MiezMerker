@@ -9,6 +9,7 @@ import org.miezmerker.backend.security.TenantService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -62,7 +63,8 @@ public class TimeEvidenceService {
         }
         // #18 stores no incarnation/monotonic claim receipt chain. Pre-claim UTC cannot
         // independently prove continuity: reject until that chain is available.
-        if(node.getClaimedAt()==null || utc<node.getClaimedAt().toEpochMilli()) throw denied();
+        if(node.getClaimedAt()==null) throw denied();
+        if(utc<node.getClaimedAt().toEpochMilli()) throw preClaimContinuityDenied();
         var existing=anchors.findByAnchorIdAndOrganizationIdAndNodeIdAndIncarnationAndBootCounter(UUID.fromString(r.acceptance().anchorId()),org,nodeId,UUID.fromString(r.boot().incarnation()),r.boot().bootCounter()).orElse(null);
         if(existing!=null) {
             if(!Objects.equals(existing.getNodeMetadata(),r.nodeMetadata()) || !existing.getProof().equals(r.proof()) || !existing.getChallengeBytes().equals(r.challengeBytes())
@@ -94,6 +96,17 @@ public class TimeEvidenceService {
         return new Receipt(a.getAnchorId(),status,1,a.getTrustStatus(),a.getDriftPpm()!=null);
     }
     static ResponseStatusException denied() { return new ResponseStatusException(HttpStatus.FORBIDDEN,"Time evidence denied"); }
+    private static ResponseStatusException preClaimContinuityDenied() {
+        // Expose the reason only after owner authorization and signed proof /
+        // acceptance verification. Never reveal this hint to foreign callers.
+        return new ResponseStatusException(HttpStatus.FORBIDDEN,"Time evidence continuity before claim unverified") {
+            @Override public HttpHeaders getHeaders() {
+                var headers=new HttpHeaders();
+                headers.set("X-MM-Time-Evidence","PRE_CLAIM_CONTINUITY_UNVERIFIED");
+                return headers;
+            }
+        };
+    }
     static ResponseStatusException conflict() { return new ResponseStatusException(HttpStatus.CONFLICT,"Time evidence conflict"); }
 }
 

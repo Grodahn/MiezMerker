@@ -34,6 +34,9 @@ export const syncHelp = [
 // Display adapter for the existing error strings. Never infers a successful
 // operation or changes transport/auth state. Unknown domain errors retain detail.
 export function errorStatus(message: string): StatusMessage {
+  if (message.startsWith('Zeitbeleg vor Registrierung noch nicht prüfbar.')) {
+    return { kind: 'info', title: 'Historischer Zeitbeleg noch offen', message };
+  }
   if (/HTTP 401|Sitzung abgelaufen|Session.*(expired|abgelaufen)|zuerst anmelden/i.test(message)) {
     return { kind: 'error', title: 'Bitte erneut anmelden', message: /Claim/i.test(message)
       ? `${friendlyError(message)} Bitte im Konto erneut anmelden.`
