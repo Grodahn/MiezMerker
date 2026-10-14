@@ -252,6 +252,8 @@ test('pending RFID records, boot/time evidence and sync metadata survive revocat
       bootCounter: '1', kind: 0, payload: 'unchanged-boot-bytes', uploaded: false });
     await store.putTimeEvidence({ id: 'time', organizationId: 'a', nodeId: 'node', incarnation: 'incarnation',
       bootCounter: '1', kind: 1, payload: 'unchanged-signed-bytes', uploaded: false });
+    await store.putTimeEvidence({ id: 'phone', organizationId: 'a', nodeId: 'node', incarnation: 'incarnation',
+      bootCounter: '1', kind: 2, payload: 'unchanged-phone-bytes', uploaded: false });
     await store.saveSession({ nodeId: 'node', incarnation: 'incarnation', watermark: '1', phase: 'acked', updatedAt: 25 });
     await collector.uploads.put({ id: 'raw', organizationId: 'a', appDeviceId: 'device', nodeId: 'node',
       protocolVersion: 1, payload: new Uint8Array([1, 2, 3]), createdAt: 25 });
@@ -259,7 +261,7 @@ test('pending RFID records, boot/time evidence and sync metadata survive revocat
     expect(await store.pendingUploads('a')).toEqual([]);
     expect(await store.pendingTimeEvidence('a')).toEqual([]);
     expect(await collector.observations.count()).toBe(1);
-    expect(await collector.timeEvidence.count()).toBe(2);
+    expect(await collector.timeEvidence.count()).toBe(3);
     expect(await collector.syncSessions.get('node')).toMatchObject({ watermark: '1' });
     expect(Array.from((await collector.uploads.get('raw'))!.payload)).toEqual([1, 2, 3]);
     // A different account with membership in A cannot adopt the old outbox.
@@ -282,7 +284,9 @@ test('pending RFID records, boot/time evidence and sync metadata survive revocat
     // Original user plus confirmed current authorization can recover the queue.
     post.mockResolvedValue({ data: user }); await auth.login(user.email, 'password');
     expect(await store.pendingUploads('a')).toHaveLength(1);
-    expect((await store.pendingTimeEvidence('a')).map(r => r.payload)).toEqual(['unchanged-boot-bytes', 'unchanged-signed-bytes']);
+    expect((await store.pendingTimeEvidence('a')).map(r => r.payload)).toEqual(['unchanged-boot-bytes', 'unchanged-phone-bytes', 'unchanged-signed-bytes']);
+    await store.confirmTimeEvidence('boot'); await store.confirmTimeEvidence('phone');
+    expect((await store.uploadedTimeEvidence('a', 'node', 'incarnation')).map(r => r.id)).toEqual(['boot']);
   } finally { await collector.delete(); }
 });
 

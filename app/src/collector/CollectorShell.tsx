@@ -563,9 +563,9 @@ export function CollectorShell(props: {
     const startedContext = contextKey();
     const stillActive = () => mounted.current && batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
     const transport = new WebBluetoothTransport(entry.device as never);
-    void provisionNode(transport, nodeId, organizationId, operation.signal).then(() => {
+    void provisionNode(transport, nodeId, organizationId, operation.signal).then(outcome => {
       if (!stillActive()) return;
-      setClaimMessage('Napf registriert!');
+      setClaimMessage(outcome?.message ?? 'Napf registriert!');
       setBatchResults(previous => previous.filter(result => result.browserId !== entry.id));
       setFreigebenMessage('');
       setSetupNodeId(nodeId);

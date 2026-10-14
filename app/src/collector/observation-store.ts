@@ -107,7 +107,7 @@ export class CollectorObservationStore implements DurableObservationStore {
   async confirmTimeEvidence(id: string): Promise<void> { await this.updateEvidence(id, { uploaded: true }); }
   async uploadedTimeEvidence(organizationId: string, nodeId: string, incarnation: string): Promise<StoredTimeEvidence[]> {
     return (await this.db.timeEvidence.where('[organizationId+nodeId]').equals([organizationId, nodeId]).toArray())
-      .filter(r => this.visible(r) && r.incarnation === incarnation && r.uploaded && !r.nodeAcknowledged);
+      .filter(r => r.kind !== 2 && this.visible(r) && r.incarnation === incarnation && r.uploaded && !r.nodeAcknowledged);
   }
   async confirmNodeEvidenceReceipt(id: string): Promise<void> { await this.updateEvidence(id, { nodeAcknowledged: true }); }
 

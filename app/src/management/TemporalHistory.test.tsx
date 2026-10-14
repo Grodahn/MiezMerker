@@ -1,6 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { TemporalHistory, TemporalItems, temporalTime } from './TemporalHistory';
+import { TemporalHistory, TemporalItems, temporalTime, phoneTime } from './TemporalHistory';
 import { api } from '../api/client';
 vi.mock('../api/client', () => ({ api: { GET: vi.fn() } }));
 import type { components } from '../api/generated';
@@ -9,6 +9,18 @@ type Item = components['schemas']['TemporalVisitItem'];
 const item = (fields: Partial<Item>): Item => ({ id: 'read', kind: 'OBSERVATION', chipId: 'CHIP', quality: 'UNKNOWN',
   earliestUtcMs: null, latestUtcMs: null, feedingSiteId: null, observationCount: 1, ambiguousGap: false, observations: [], ...fields });
 describe('temporal presentation', () => {
+  test('phone-derived times show ca. at minute resolution and differing estimates as an explicit interval', () => {
+    render(<TemporalItems sites={[]} items={[
+      item({ id: 'phone', quality: 'ESTIMATED', earliestUtcMs: '1791748800123', latestUtcMs: '1791748800123' }),
+      item({ id: 'span', quality: 'ESTIMATED', earliestUtcMs: '1791748800000', latestUtcMs: '1791835200000' }),
+      item({ id: 'preceding', earliestUtcMs: '1791748800000' }),
+      item({ id: 'following', latestUtcMs: '1791835200000' }),
+    ]}/>);
+    expect(screen.getByText(/^ca\. .* Uhr$/)).toBeTruthy(); expect(screen.getByText(/Geschätzter Zeitraum: zwischen/)).toBeTruthy();
+    expect(phoneTime('1791748800123','UTC')).toContain('20:00'); expect(phoneTime('1791748800123','UTC')).not.toContain(',123');
+    expect(phoneTime('1791748800123','Europe/Berlin')).toContain('22:00');
+    expect(screen.getAllByText('Keine belegte Zeitgrenze')).toHaveLength(2);
+  });
   test('unknown and conflicting time do not fabricate dates or receipt times', () => {
     render(<TemporalItems sites={[]} items={[item({}), item({ id: 'conflict', quality: 'CONFLICT' })]}/>);
     expect(screen.getByText('Zeitpunkt unbekannt')).toBeTruthy();

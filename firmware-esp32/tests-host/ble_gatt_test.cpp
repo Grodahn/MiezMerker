@@ -156,7 +156,7 @@ void router_public_and_auth() {
     auto hf = decode_frame(hello);
     CHECK(hf && hf->opcode == Opcode::HelloPublic);
     auto hp = decode_hello_public(hf->payload);
-    CHECK(hp && hp->server_ver == 1 && hp->caps == 0x001F);
+    CHECK(hp && hp->server_ver == 1 && hp->caps == (0x001F | kCapClockSnapshot));
     CHECK(hp->node_id == core2->node_id());
     CHECK(hp->claim_state == miezmerker::ClaimState::CLAIMED);
 
@@ -585,7 +585,53 @@ void time_evidence_transport() {
 }
 }  // namespace
 
+void clock_snapshot_authorization_and_reboot() {
+    using namespace miezmerker::ble;
+    Fixture f; auto core=f.make_core(); CHECK(core->initialize());
+    claim_capture_fixture(*core,f.identity);
+    SyncServer server(*core,f.auth,f.rtc,f.signer,f.config);
+    miezmerker::ble_gatt::GattRouter router(server,f.owner);
+    const auto request=encode_frame({1,Opcode::ClockSnapshotRequest,{}});
+    CHECK(decode_frame(router.handle_frame(request,1790899300))->opcode==Opcode::Error);
+    std::array<std::uint8_t,32> challenge{}; std::array<std::uint8_t,64> proof{}; proof.fill(0xAA);
+    CHECK(server.begin_challenge(challenge)); CHECK(server.authorize("valid-credential",proof,1790899300));
+    f.clock.set_monotonic_ms(18446744073709551000ULL);
+    auto snapshot=decode_frame(router.handle_frame(request,1790899300));
+    CHECK(snapshot && snapshot->opcode==Opcode::ClockSnapshotResponse && snapshot->payload.size()==45);
+    CHECK(snapshot->payload[0]==1);
+    CHECK(std::equal(core->node_id().bytes.begin(),core->node_id().bytes.end(),snapshot->payload.begin()+1));
+    CHECK(std::equal(core->incarnation().bytes.begin(),core->incarnation().bytes.end(),snapshot->payload.begin()+17));
+    std::uint64_t uptime=0; for(unsigned i=0;i<8;++i) uptime|=std::uint64_t(snapshot->payload[37+i])<<(8*i);
+    CHECK(uptime==f.clock.monotonic_ms()); CHECK(f.rtc.applied==0);
+    CHECK(decode_frame(router.handle_frame(encode_frame({1,Opcode::ClockSnapshotRequest,{1}}),1790899300))->opcode==Opcode::Error);
+    CHECK(decode_frame(router.handle_frame(request,1917129600))->opcode==Opcode::Error); // Expired credential.
+    CHECK(decode_frame(router.handle_frame(request,0))->opcode==Opcode::Error); // Unknown security UTC.
+    auto old_boot=core->boot_counter(); router.disconnect(); f.clock.set_monotonic_ms(10);
+    auto reboot=f.make_core(); CHECK(reboot->initialize()); CHECK(reboot->boot_counter()==old_boot+1);
+    SyncServer next(*reboot,f.auth,f.rtc,f.signer,f.config);
+    miezmerker::ble_gatt::GattRouter next_router(next,f.owner);
+    CHECK(decode_frame(next_router.handle_frame(request,1790899300))->opcode==Opcode::Error);
+    CHECK(next.begin_challenge(challenge)); CHECK(next.authorize("valid-credential",proof,1790899300));
+    const auto after=decode_frame(next_router.handle_frame(request,1790899300));
+    CHECK(after && after->opcode==Opcode::ClockSnapshotResponse && after->payload[33]==old_boot+1);
+    CHECK(f.rtc.applied==0 && reboot->observation_count()==0);
+    struct DiscontinuousClock : miezmerker::Clock {
+        mutable bool valid{true}; bool invalidate_on_sample{false};
+        std::uint64_t monotonic_ms() const override { if(invalidate_on_sample) valid=false; return 100; }
+        bool monotonic_valid() const override { return valid; }
+        miezmerker::WallClockReading wall_clock() const override { return {}; }
+    } clock;
+    Fixture broken;
+    miezmerker::Core unsafe(clock,broken.storage,broken.observations,broken.identity,broken.random,miezmerker::CoreConfig{0});
+    CHECK(unsafe.initialize()); claim_capture_fixture(unsafe,broken.identity);
+    SyncServer unsafe_server(unsafe,broken.auth,broken.rtc,broken.signer,broken.config);
+    CHECK(unsafe_server.begin_challenge(challenge)); CHECK(unsafe_server.authorize("valid-credential",proof,1790899300));
+    clock.invalidate_on_sample=true;
+    CHECK(!unsafe_server.clock_snapshot(1790899300));
+}
+
 int main() {
+    clock_snapshot_authorization_and_reboot();
     time_evidence_transport();
     router_public_and_auth();
     router_foreign_no_leak();

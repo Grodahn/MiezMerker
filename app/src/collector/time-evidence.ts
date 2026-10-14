@@ -9,7 +9,7 @@ export interface StoredTimeEvidence {
   nodeId: string;
   incarnation: string;
   bootCounter: string;
-  kind: 0 | 1;
+  kind: 0 | 1 | 2; // Boot, signed acceptance, phone estimate.
   // Exact UTF-8 envelope, including unsigned integer spellings and signed bytes.
   payload: string;
   uploaded: boolean;
@@ -28,9 +28,10 @@ export function parseEvidenceJson(text: string): Record<string, any> {
 
 const integerFields = new Set(['formatVersion', 'version', 'bootCounter', 'resetReason', 'startedUptimeMs',
   'firstPossibleSequence', 'challengeUptimeMs', 'acceptedUptimeMs', 'uptimeMs', 'utcMs', 'source',
-  'uncertaintyMinusMs', 'uncertaintyPlusMs', 'driftPpmBound']);
+  'uncertaintyMinusMs', 'uncertaintyPlusMs', 'driftPpmBound', 'transportDurationMs']);
 export function evidenceRequestJson(row: StoredTimeEvidence): string {
   const { metadata, ...payload } = parseEvidenceJson(row.payload);
+  if (row.kind === 2) return serializeIntegers({ ...payload, organizationId: row.organizationId });
   if (row.kind === 1 && !payload.challenge) throw new Error('Historischer Zeitbeleg ohne signierte Challenge; auf Node und PWA erhalten.');
   const nodeMetadata = metadata ? serializeIntegers(metadata) : undefined;
   return serializeIntegers({ ...payload, organizationId: row.organizationId, ...(nodeMetadata ? { nodeMetadata } : {}) });
@@ -92,6 +93,7 @@ export async function acknowledgeUploadedEvidence(transport: NodeTransport, rows
   // Remove anchors before their old boot markers. A retained current boot is
   // retried on a later visit after the Node reboots; it is never prematurely removed.
   for (const row of [...rows].sort((a, b) => b.kind - a.kind)) {
+    if (row.kind === 2) throw new Error('Phone evidence has no Node receipt');
     if (!row.uploaded || row.nodeAcknowledged) throw new Error('Evidence receipt before backend confirmation');
     const p = new Uint8Array(53), view = new DataView(p.buffer); p[0] = row.kind;
     const uuid = (value: string) => new Uint8Array(value.replaceAll('-', '').match(/../g)!.map(b => parseInt(b, 16)));

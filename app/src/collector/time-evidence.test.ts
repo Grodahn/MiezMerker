@@ -10,6 +10,7 @@ import { BackendUploader } from './backend-upload';
 import { decodeFrame, encodeFrame, Opcode } from './ble-codec';
 import { evidenceReceiptWriteChunks, characteristicForRequest, BLE_CHAR_UUIDS } from '../platform/web-bluetooth';
 import { acknowledgeUploadedEvidence, evidenceRequestJson, evidenceRow, parseEvidenceJson, receiveTimeEvidence } from './time-evidence';
+import type { StoredTimeEvidence } from './time-evidence';
 
 const { post, auth, changed } = vi.hoisted(() => ({ post: vi.fn(), auth: vi.fn(), changed: { callback: () => {} } }));
 vi.mock('../api/client', () => ({ api: { POST: post } }));
@@ -49,6 +50,33 @@ beforeEach(async () => {
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } });
 });
 afterEach(async () => { db.close(); await db.delete(); });
+
+test('phone estimate offline reopen, delayed upload, interrupted retry and duplicate preserve exact evidence', async () => {
+  const anchorId = crypto.randomUUID();
+  const row: StoredTimeEvidence = { id: `${NODE}/${INC}/42/${anchorId}`, nodeId: NODE, incarnation: INC,
+    organizationId: ORG, bootCounter: '42', kind: 2, uploaded: false,
+    payload: JSON.stringify({ formatVersion: 1, source: 'PHONE_ESTIMATE', anchorId, nodeId: NODE, incarnation: INC,
+      bootCounter: 42, uptimeMs: '18446744073709551615', utcMs: 1791748800000, transportDurationMs: 123456 }) };
+  await store.putTimeEvidence(row); db.close(); await db.open();
+  expect(await store.pendingTimeEvidence(ORG)).toEqual([row]); expect(await store.pendingTimeEvidence('foreign')).toEqual([]);
+  const uploader = new BackendUploader(store, { maxRetries: 0 });
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });
+  await uploader.upload(ORG); expect(post).not.toHaveBeenCalled();
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } });
+  post.mockRejectedValueOnce(new Error('response interrupted')); await uploader.upload(ORG);
+  expect(await store.pendingTimeEvidence(ORG)).toEqual([row]);
+  post.mockResolvedValueOnce({ data: { anchorId, status: 'DUPLICATE_IDENTICAL', version: 1, trustStatus: 'PHONE_ESTIMATE' } });
+  expect((await uploader.upload(ORG)).state).toBe('complete');
+  expect(post.mock.calls[1][0]).toBe('/api/v1/nodes/phone-time-evidence');
+  expect(post.mock.calls[1][1].bodySerializer()).toContain('"uptimeMs":18446744073709551615');
+  await store.putTimeEvidence(row); expect(await store.pendingTimeEvidence(ORG)).toEqual([]);
+  expect(await store.uploadedTimeEvidence(ORG, NODE, INC)).toEqual([]); // No Node receipt for phone-owned evidence.
+  expect(await db.timeEvidence.count()).toBe(1);
+  const transport=peer([]);
+  await expect(acknowledgeUploadedEvidence(transport,[{ ...row,uploaded: true }],async () => {})).rejects.toThrow('no Node receipt');
+  expect(transport.write).not.toHaveBeenCalled();
+  await expect(store.putTimeEvidence({ ...row, organizationId: 'foreign' })).rejects.toThrow('Conflicting');
+});
 
 test('golden signed evidence matches existing backend request and excludes local metadata', () => {
   const row = evidenceRow(anchorPayload(), 1, NODE, INC, ORG), body = JSON.parse(evidenceRequestJson(row));

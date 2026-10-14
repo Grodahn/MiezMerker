@@ -96,6 +96,8 @@ public:
     // --- Protected (require can_sync) ---
     bool authorized(TrustedEpochSeconds now_s) const;
     std::optional<StatusResponse> status(TrustedEpochSeconds now_s) const;
+    // Read-only, authorized observation-time evidence; never sets any clock.
+    std::optional<std::vector<std::uint8_t>> clock_snapshot(TrustedEpochSeconds now_s) const;
     struct BatchResult {
         BatchResponse batch;
         SyncError error{SyncError::Ok};

@@ -205,6 +205,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/phone-time-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner-reported observation-time estimate; never security-trusted UTC */
+        post: operations["ingestPhoneTimeEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/time-bootstrap": {
         parameters: {
             query?: never;
@@ -1219,6 +1236,23 @@ export interface components {
             /** Format: int64 */
             nextAfterSequence?: number | null;
         };
+        PhoneRequest: {
+            anchorId: string;
+            /** Format: int64 */
+            bootCounter: number;
+            /** Format: int32 */
+            formatVersion: number;
+            incarnation: string;
+            nodeId: string;
+            organizationId: string;
+            source: string;
+            /** Format: int64 */
+            transportDurationMs: number;
+            /** Format: uint64 */
+            uptimeMs: number;
+            /** Format: int64 */
+            utcMs: number;
+        };
         PolicyView: {
             /** @enum {string} */
             audience?: "PRIVATE" | "ALL_DISCOVERABLE" | "ALLOWLIST";
@@ -1792,6 +1826,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClaimReceiptView"];
+                };
+            };
+        };
+    };
+    ingestPhoneTimeEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Receipt"];
                 };
             };
         };

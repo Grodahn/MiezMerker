@@ -54,6 +54,12 @@ expiration and BLE challenge-response semantics remain unchanged. No firmware
 change or physical protocol change is part of #170. #134's comprehensive final
 acceptance remains a separate issue.
 
+After #169 landed on main, the shared receipt filter was integrated by retaining
+both owner authorization and exclusion of phone-estimate evidence (`kind=2`)
+from Node receipts. Revocation preserves phone estimates alongside boot/signed
+evidence; authorized original owners can resume upload, while phone estimates
+still never receive a Node ACK. No #169 reconstruction/time policy was changed.
+
 A disconnected installation cannot learn revocation. A modified client can
 bypass cooperative UI logic, and already issued credentials remain signed and
 valid at the Node until their existing expiration/time policy rejects them.

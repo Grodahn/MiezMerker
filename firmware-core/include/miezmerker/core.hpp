@@ -123,6 +123,8 @@ public:
     const IncarnationId& incarnation() const { return identity_.incarnation; }
     Sequence next_sequence() const { return identity_.next_sequence; }
     std::uint32_t boot_counter() const { return identity_.boot_counter; }
+    std::uint64_t monotonic_ms() const { return clock_->monotonic_ms(); }
+    bool monotonic_valid() const { return clock_->monotonic_valid(); }
     ClaimState claim_state() const { return identity_.claim_state; }
     std::size_t observation_count() const;
     StoreStatus store_status() const;
