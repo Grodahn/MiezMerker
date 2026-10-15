@@ -49,14 +49,21 @@ component. A connection owns one `OfflineAuthSession`; `begin` replaces its chal
 and clears authorization, and every `authorize` attempt consumes the challenge.
 Protected operations must call `can_sync` with trusted UTC seconds, including during
 long connections. Missing time, `now >= exp`, future `iat`, or malformed intervals fail
-closed. Time supplied by the untrusted PWA must never be used as the authority for expiry.
+closed under the default SIGNED_BACKEND_TIME policy. Issue #171 adds the explicit
+FIELD_ALPHA_PHONE_CLOCK exception: one untrusted smartphone UTC sample per BLE
+connection is advanced by node monotonic uptime for the same strict iat/exp
+checks. This grants no authorization: issuer pin/signature, org/scope/device
+binding and P-256 PoP remain mandatory. Disconnect clears the sample; timer
+rollback/overflow invalidates it. No verified clock/evidence or NVS is modified.
+Both firmware and PWA must opt in; mismatched policies fail closed.
+See [the alpha contract and physical procedure](../issue171-field-alpha-phone-clock.md).
 GATT/board wiring belongs to #6/#4. Host tests compile this same component against Mbed TLS
 3.6.x and cJSON 1.7.x (see `firmware-esp32/tests/CMakeLists.txt`).
 
 ## Revocation boundary
 
 A DISABLED membership or revoked AppDevice blocks new credential issuance immediately.
-Already-issued offline credentials remain usable until `exp` — there is no immediate
+Under signed time, already-issued offline credentials remain usable until `exp` — there is no immediate
 offline revocation in the MVP. Credential TTL is configurable
 (`miezmerker.credential.ttl-hours`, default 168h/7d) and should be renewed online.
 Seven days permits a week of field work without internet while bounding stale access;
@@ -70,3 +77,15 @@ accept no expiry grace period. Clearing browser storage removes the installation
 `protocol/fixtures/offline-credential-v1.json` contains fixed keys, a fixed credential
 JWT, a fixed challenge + signature and a fixed claim advertisement. ECDSA signatures are
 single valid examples (random nonces); verification is deterministic.
+
+
+## Field-alpha revocation limitation (#171)
+
+A former credential holder with the matching private key can deliberately backdate
+the phone and bypass expiration, including protected reads, ACK and COMPACT. This
+can expose confidential data or delete pending observations. The seven-day TTL is
+not an enforceable real-time bound under this policy. Confirmed account/org
+revocation still fences the cooperative PWA and clears credentials (#170);
+a modified offline client cannot guarantee immediate revocation. Later hardening,
+secure-time re-enable and revocation mechanisms remain follow-up work (#134 and
+[the #171 decision](https://github.com/Grodahn/MiezMerker/issues/171)).

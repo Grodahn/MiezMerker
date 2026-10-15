@@ -1,5 +1,8 @@
 # Issue 131: signed time during normal synchronization
 
+Issue #171 adds an explicit field-alpha exception to signed-time authorization.
+See [the policy contract](issue171-field-alpha-phone-clock.md); the signed bootstrap below remains the secure default.
+
 The existing sequential collector is used. After public identity/owner discovery
 and credential resolution, capability `0x0020` enables the additive ADR 0017
 time/evidence extension. Old required v1 capability bits and observation bytes

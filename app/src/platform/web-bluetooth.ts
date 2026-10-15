@@ -191,6 +191,7 @@ export function characteristicForRequest(opcode: Opcode): string {
     case Opcode.ClaimReceiptRequest: return BLE_CHAR_UUIDS.claimReceipt;
     case Opcode.RegistrationTimeChallengeRequest:
     case Opcode.RegistrationTimeProofRequest:
+    case Opcode.AlphaPhoneClockRequest:
     case Opcode.SecurityTimeStatusRequest: return BLE_CHAR_UUIDS.claimReceipt;
     default: throw new BluetoothTransportError('protocol', `Unbekannte Protokoll-Operation (${opcode}).`);
   }

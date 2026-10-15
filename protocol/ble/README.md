@@ -1,5 +1,8 @@
 # BLE sync protocol v1 — NapfNode ↔ PWA collector
 
+Issue #171 adds an explicit field-alpha exception to signed-time authorization.
+See [the policy contract](../../docs/issue171-field-alpha-phone-clock.md); the signed bootstrap below remains the secure default.
+
 Implements [issue #6](https://github.com/Grodahn/MiezMerker/issues/6).
 Target hardware: **ESP32-C3** (NimBLE). No OS Bluetooth pairing required.
 

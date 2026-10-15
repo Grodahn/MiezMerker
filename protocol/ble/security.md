@@ -58,9 +58,8 @@ PWA                          Node
   client-chosen). Every attempt consumes it; retry requires a new read.
 - Copied credential without the AppDevice private key fails at proof verify.
 - Replay of an old challenge fails (nonce mismatch / already consumed).
-- Expiry uses trusted UTC seconds; `now <= 0` (unknown clock), `now >= exp`,
-  future `iat`, or `iat >= exp` fail closed. PWA-supplied time is never
-  authority. Long connections re-check `can_sync` on every protected op.
+- Expiry uses policy-selected UTC (signed bounds by default; explicit alpha uses untrusted session phone time); `now <= 0` (unknown clock), `now >= exp`,
+  future `iat`, or `iat >= exp` fail closed. Phone time is authority only in explicit FIELD_ALPHA_PHONE_CLOCK; deliberate backdating can bypass expiry including ACK/COMPACT. Long connections re-check `can_sync` on every protected op.
 - DISABLED membership / revoked device blocks **new** issuance immediately;
   already-issued credentials stay valid until `exp` (default 168 h/7 d,
   configurable `miezmerker.credential.ttl-hours`). No instant offline
@@ -99,7 +98,7 @@ the device key fail here.
 
 ## Foreign organization behavior
 
-- Credential org ≠ node org → `AuthResponse{ok=0, FORBIDDEN_FOREIGN}`,
+- Credential org ≠ node org → `AuthResponse{ok=0, INVALID_CREDENTIAL}` (firmware intentionally uses the generic denial);
   session stays unauthorized. All protected reads/writes continue to return
   `UNAUTHORIZED`/`FORBIDDEN_FOREIGN` with no data.
 - PWA displays `Dieser MiezMerker gehört Organisation X` + optional public
@@ -121,5 +120,7 @@ production and DEV. Ready UNCLAIMED nodes can register through an explicit
 ACTIVE organization ADMIN action. The legacy `claim-mode` signed suffix is
 domain separation only. The pre-auth registration-time exchange forwards ADR
 0017 challenges/proofs to the existing pinned verifier and persists acceptance;
-it grants neither ownership nor observation access. No arbitrary phone UTC is
-trusted. Same-owner/key ADMIN bootstrap is allowed after an interrupted reservation.
+it grants neither ownership nor observation access. Explicit alpha uses a separate untrusted session phone-clock candidate instead. Same-owner/key ADMIN bootstrap is allowed after an interrupted reservation.
+
+
+See [#171 policy, protocol and risks](../../docs/issue171-field-alpha-phone-clock.md).

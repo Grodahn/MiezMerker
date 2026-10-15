@@ -54,3 +54,30 @@ test('authorization error and context cancellation cannot produce an anchor', as
   });
   await expect(collectPhoneTime(switched, NODE, INC, 'org', () => { if (!active) throw new Error('Org switched'); })).rejects.toThrow('Org switched');
 });
+
+
+test('alpha clock policy requires explicit matching opt-in and uses its own bounded opcode', async () => {
+  const { usesAlphaPhoneClock, supplyAlphaPhoneClock } = await import('./phone-time');
+  try {
+    vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'SIGNED_BACKEND_TIME');
+    expect(usesAlphaPhoneClock(0)).toBe(false);
+    expect(() => usesAlphaPhoneClock(0x80)).toThrow('Policy');
+    await expect(supplyAlphaPhoneClock(peer())).rejects.toThrow('deaktiviert');
+    vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'FIELD_ALPHA_PHONE_CLOCK');
+    expect(usesAlphaPhoneClock(0x80)).toBe(true);
+    expect(() => usesAlphaPhoneClock(0)).toThrow('Policy');
+    const transport = { connect: vi.fn(), disconnect: vi.fn(), write: vi.fn(async (_bytes: Uint8Array) => {}), read: vi.fn(async () =>
+      encodeFrame({ version: 1, opcode: Opcode.AlphaPhoneClockResponse, payload: new Uint8Array([0]) })) };
+    const before = Date.now();
+    await supplyAlphaPhoneClock(transport);
+    const frame = decodeFrame(transport.write.mock.calls[0][0])!;
+    expect(frame.opcode).toBe(Opcode.AlphaPhoneClockRequest);
+    expect(frame.payload).toHaveLength(9); expect(frame.payload[0]).toBe(1);
+    expect(new DataView(frame.payload.buffer).getBigUint64(1, true)).toBeGreaterThanOrEqual(BigInt(before));
+    expect(characteristicForRequest(Opcode.AlphaPhoneClockRequest)).toBe(BLE_CHAR_UUIDS.claimReceipt);
+    await expect(supplyAlphaPhoneClock(transport, () => { throw new Error('revoked'); })).rejects.toThrow('revoked');
+    expect(transport.write).toHaveBeenCalledTimes(1);
+    transport.read.mockResolvedValue(encodeFrame({ version: 1, opcode: Opcode.Error, payload: new Uint8Array() }));
+    await expect(supplyAlphaPhoneClock(transport)).rejects.toThrow('abgelehnt');
+  } finally { vi.unstubAllEnvs(); }
+});

@@ -34,10 +34,17 @@ domain-separation marker, not proof of physical interaction. ECDSA identity bind
 and 5-minute freshness remain mandatory for the first backend reservation.
 
 The signing API returns a `ClaimAdvertisement` with a timestamp sampled from the
-node's trusted `ClaimClock`; the BLE caller cannot choose that timestamp. Otherwise
-a peer could stockpile future-dated signatures and defeat freshness checks.
-An unavailable clock (`0`) fails closed. The clock
-adapter must obtain current epoch time independently of untrusted peer input.
+node's policy-selected `ClaimClock`. SIGNED_BACKEND_TIME (default) requires
+independently verified UTC. Explicit FIELD_ALPHA_PHONE_CLOCK (#171) instead uses
+the session's untrusted phone sample plus monotonic elapsed time; no separate
+signed UTC handshake is needed. Unavailable time (`0`) still fails closed.
+The backend still compares the signed timestamp against its own five-minute
+window, verifies ACTIVE ADMIN, device key/ownership and the issuer-signed receipt.
+In alpha the signature no longer proves independently fresh node time: an attacker
+can stockpile future-dated claim advertisements and submit one in its window.
+The window limits submitted timestamps, not proof age or live device presence.
+This reduced freshness contract is accepted for workshop alpha; time alone cannot
+claim a node or replace an existing owner. See [#171 behavior and physical tests](../issue171-field-alpha-phone-clock.md).
 
 **Claim flow** (backend, transactional):
 1. Verify ACTIVE ADMIN membership for the target organization (server-side; client org id

@@ -5,6 +5,7 @@ import { assertAdminMayClaim, claimNode, ClaimError } from './claim-node';
 import { getAuthState } from '../platform/auth';
 import { bindNodeOperation } from './node-operation';
 import { PublicProbeTransport } from './public-probe';
+import { usesAlphaPhoneClock } from './phone-time';
 import { bootstrapRegistrationTime } from './registration-time';
 import { runFieldSync } from './collector-sync';
 import { decodeFrame, decodeClaimAdvertisement, encodeFrame, encodeClaimReceipt, Opcode, PROTOCOL_VERSION, CAP_CLOCK_SNAPSHOT } from './ble-codec';
@@ -34,10 +35,12 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     const receipt = (await db.nodeMeta.get(nodeId));
     let savedReceipt = receipt?.organizationId === organizationId ? receipt.claimReceipt : undefined;
     let issuanceWaitMs = 2100;
-    // Even cached receipt recovery needs fresh trusted time after a node reboot.
+    // Receipt recovery needs fresh policy-selected time after reboot.
+    const alphaClock = usesAlphaPhoneClock(hello.caps ?? 0);
+    if (alphaClock) issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive, hello.caps);
     await transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode: Opcode.ClaimAdvertisementRequest, payload: new Uint8Array() }));
     let frame = decodeFrame(await transport.read());
-    if (frame?.opcode === Opcode.Error) {
+    if (frame?.opcode === Opcode.Error && !alphaClock) {
       issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
       frame = decodeFrame(encodeFrame({ version: 1, opcode: Opcode.ClaimAdvertisementResponse,
         payload: await roundTrip(Opcode.ClaimAdvertisementRequest) }));
@@ -71,7 +74,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     catch (error) {
       // A bounded retry renews an expired receipt or an older, wider security
       // interval. Disconnect/abort errors propagate without another reservation.
-      if (!(error instanceof ClaimError)) throw error;
+      if (alphaClock || !(error instanceof ClaimError)) throw error;
       operation.assertActive();
       issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
       savedReceipt = await retrieveReceipt();

@@ -90,10 +90,14 @@ add_test(NAME node-time-bootstrap COMMAND node-time-bootstrap-test
 set_tests_properties(node-time-bootstrap PROPERTIES LABELS "auth;lifecycle;storage")
 
 add_executable(node-time-auth-test node_time_auth_test.cpp
+  ../components/ble-sync/ble_gatt.cpp
+  "${CORE_ROOT}/src/core.cpp" "${CORE_ROOT}/src/node_identity.cpp"
+  "${CORE_ROOT}/src/memory_stores.cpp" "${CORE_ROOT}/src/protocol_view.cpp"
+  "${CORE_ROOT}/src/ble_codec.cpp" "${CORE_ROOT}/src/ble_sync.cpp"
   ../components/offline-auth/offline_auth.cpp
   "${CORE_ROOT}/src/node_time_portable.cpp" "${CORE_ROOT}/src/types.cpp")
 target_include_directories(node-time-auth-test PRIVATE
-  ../components/offline-auth/include "${CORE_ROOT}/include")
+  ../components/ble-sync/include ../components/offline-auth/include "${CORE_ROOT}/include")
 target_link_libraries(node-time-auth-test PRIVATE test-crypto)
 if(MSVC)
   target_compile_options(node-time-auth-test PRIVATE /UNDEBUG /W4 /WX)

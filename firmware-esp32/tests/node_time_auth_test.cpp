@@ -14,6 +14,10 @@
 #include "cJSON.h"
 #include "mbedtls/base64.h"
 #include "miezmerker/node_time.hpp"
+#include "miezmerker/session_phone_clock.hpp"
+#include "miezmerker/ble_gatt.hpp"
+#include "miezmerker/memory_stores.hpp"
+#include "../../firmware-core/tests/claim_fixture.hpp"
 #include "miezmerker/offline_auth.hpp"
 
 using namespace miezmerker;
@@ -70,6 +74,124 @@ int main(int argc, char** argv) {
     assert(proof_bytes.size() == 64);
     std::array<unsigned char, 64> proof{};
     std::copy(proof_bytes.begin(), proof_bytes.end(), proof.begin());
+
+    // #171: real pinned credential/PoP/claim verification with an untrusted,
+    // per-connection clock, including the deliberately accepted backdating risk.
+    {
+        struct Timer : Clock {
+            std::uint64_t now{1000}; bool valid{true};
+            std::uint64_t monotonic_ms() const override { return now; }
+            bool monotonic_valid() const override { return valid; }
+            WallClockReading wall_clock() const override { return {}; }
+        } timer;
+        SessionPhoneClock phone(timer);
+        std::int64_t l=0, u=0;
+        OfflineAuthSession session(org, issuer);
+        std::array<unsigned char,32> challenge{};
+        assert(!phone.interval(l,u));
+        assert(phone.sample(1791748800000ULL));
+        assert(phone.interval(l,u));
+        assert(!session.can_sync_with_bounds(l,u)); // Sample alone grants nothing.
+        assert(session.begin(fill_nonce,challenge));
+        assert(session.authorize_with_bounds(credential,proof,l,u));
+        assert(!phone.sample(1790899200000ULL)); // No in-session rollback/extension.
+        timer.now += 2000;
+        assert(phone.interval(l,u) && l==1791748802000LL && u==l);
+        assert(session.can_sync_with_bounds(l,u));
+        ClaimReceiptInfo info;
+        assert(verify_claim_receipt_with_bounds(receipt,issuer,l,u,info)); // No UTC-proof handshake.
+        timer.now += 1917129600000ULL-1791748802000ULL;
+        assert(phone.interval(l,u) && l==1917129600000LL);
+        assert(!session.can_sync_with_bounds(l,u)); // Strict expiry on every operation.
+        phone.disconnect(); session.disconnect();
+        assert(!phone.interval(l,u));
+        assert(phone.sample(1917129600000ULL)); // Honest expired phone time denies.
+        assert(phone.interval(l,u)); assert(session.begin(fill_nonce,challenge));
+        assert(!session.authorize_with_bounds(credential,proof,l,u));
+        phone.disconnect(); session.disconnect();
+        assert(phone.sample(1791748800000ULL)); // Accepted field-alpha risk: deliberately backdated.
+        assert(phone.interval(l,u)); assert(session.begin(fill_nonce,challenge));
+        assert(session.authorize_with_bounds(credential,proof,l,u));
+        // Timer rollback latches denial even if it subsequently catches up.
+        --timer.now; assert(!phone.interval(l,u)); ++timer.now; assert(!phone.interval(l,u));
+        SessionPhoneClock reboot(timer); assert(!reboot.interval(l,u));
+        phone.disconnect(); session.disconnect();
+        assert(phone.sample(1791748800000ULL)); assert(phone.interval(l,u));
+        assert(session.begin(fill_nonce,challenge));
+        assert(!session.authorize_with_bounds("",proof,l,u));
+        assert(session.begin(fill_nonce,challenge));
+        assert(!session.authorize_with_bounds(credential+".",proof,l,u));
+        auto wrong=proof; wrong[0]^=1;
+        assert(session.begin(fill_nonce,challenge));
+        assert(!session.authorize_with_bounds(credential,wrong,l,u));
+        OfflineAuthSession foreign("foreign",issuer);
+        assert(foreign.begin(fill_nonce,challenge));
+        assert(!foreign.authorize_with_bounds(credential,proof,l,u));
+        // A fresh challenge defeats replay of the old fixture PoP.
+        auto other_nonce=[](std::span<unsigned char> out) { std::fill(out.begin(),out.end(),0x42); return true; };
+        assert(session.begin(other_nonce,challenge));
+        assert(!session.authorize_with_bounds(credential,proof,l,u));
+        phone.disconnect(); assert(!phone.sample(0));
+        assert(!phone.sample(0xffffffffffffffffULL));
+        assert(phone.sample(9223372036854775807ULL)); ++timer.now;
+        assert(!phone.interval(l,u));
+        phone.disconnect(); timer.valid=false; assert(!phone.sample(1791748800000ULL));
+    }
+
+    {
+        ManualClock timer;
+        struct Store : Storage { bool open() override { return true; } } storage;
+        InMemoryObservationStore observations(64);
+        InMemoryIdentityStore identity; FixedRandomSource random(0xC3);
+        Core first(timer,storage,observations,identity,random,CoreConfig{0});
+        assert(first.initialize()); claim_capture_fixture(first,identity);
+        const auto boot=first.boot_counter();
+        // Full core recreation models power loss with durable stores preserved.
+        Core reboot(timer,storage,observations,identity,random,CoreConfig{0});
+        assert(reboot.initialize() && reboot.boot_counter()==boot+1);
+        assert(reboot.record_chip_read("immutable-unknown") == RecordResult::RECORDED);
+        SessionPhoneClock phone(timer);
+        struct Auth : ble::SyncAuthorizer {
+            SessionPhoneClock& phone; OfflineAuthSession session;
+            Auth(SessionPhoneClock& p,const std::string& o,const std::array<unsigned char,65>& pin):phone(p),session(o,pin) {}
+            bool begin(std::array<std::uint8_t,32>& c) override { return session.begin(fill_nonce,c); }
+            bool authorize(const std::string& jwt,const std::array<std::uint8_t,64>& sig,std::int64_t) override {
+                std::int64_t l=0,u=0; return phone.interval(l,u) && session.authorize_with_bounds(jwt,sig,l,u);
+            }
+            bool can_sync(std::int64_t) const override {
+                std::int64_t l=0,u=0; return phone.interval(l,u) && session.can_sync_with_bounds(l,u);
+            }
+            void disconnect() override { session.disconnect(); }
+        } auth(phone,org,issuer);
+        struct Rtc : ble::RtcControl { bool set_corrected_epoch_ms(std::uint64_t) override { return false; } } rtc;
+        struct Signer : ble::NodeSigner {
+            bool sign_session(const std::array<std::uint8_t,32>&,std::array<std::uint8_t,64>&) override { return false; }
+        } signer;
+        ble::SyncServer server(reboot,auth,rtc,signer);
+        ble_gatt::OwnerMetadata owner; ble_gatt::GattRouter router(server,owner);
+        router.set_alpha_phone_clock(&phone);
+        auto exchange=[&](ble::Opcode op,const std::vector<std::uint8_t>& payload=std::vector<std::uint8_t>{}) {
+            const auto response=ble::decode_frame(router.handle_frame(ble::encode_frame({1,op,payload}),0));
+            assert(response); return *response;
+        };
+        std::vector<std::uint8_t> sample{1};
+        for(unsigned i=0;i<8;++i) sample.push_back(static_cast<std::uint8_t>(1791748800000ULL>>(8*i)));
+        assert(exchange(ble::Opcode::AlphaPhoneClockRequest,sample).opcode==ble::Opcode::AlphaPhoneClockResponse);
+        assert(exchange(ble::Opcode::StatusRequest).opcode==ble::Opcode::Error);
+        assert(exchange(ble::Opcode::ChallengeRequest).opcode==ble::Opcode::ChallengeResponse);
+        auto auth_frame=exchange(ble::Opcode::AuthRequest,ble::encode_auth_request({credential,proof}));
+        assert(ble::decode_auth_response(auth_frame.payload)->ok);
+        const auto batch=exchange(ble::Opcode::BatchRequest,ble::encode_batch_request({1,1}));
+        const auto decoded=ble::decode_batch_response(batch.payload);
+        assert(decoded && decoded->records.size()==1);
+        assert(decoded->records[0].chip_id.value=="immutable-unknown" && !decoded->records[0].observed_at_epoch_ms);
+        const auto ack=exchange(ble::Opcode::AckRequest,ble::encode_ack_request(1));
+        assert(ble::decode_ack_response(ack.payload)->error==ble::SyncError::Ok && reboot.ack_watermark()==1);
+        router.disconnect();
+        assert(exchange(ble::Opcode::StatusRequest).opcode==ble::Opcode::Error);
+        assert(exchange(ble::Opcode::CompactRequest).opcode==ble::Opcode::Error);
+        assert(reboot.observation_count()==1 && reboot.ack_watermark()==1);
+    }
 
     // Security-clock interval from the time bootstrap (TV5-style): S is the
     // backend issuance, E=1000ms, D=300ms, sampling=2ms. Credential iat

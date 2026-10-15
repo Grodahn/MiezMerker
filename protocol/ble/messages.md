@@ -134,7 +134,7 @@ Service UUID `6f4a2c1e-8b3d-4e5f-9a0c-1d2e3f4a5b6c`.
 | Batch | `…5b07` | write + notify/read (authorized) | `BatchRequest` → `BatchResponse` (notify pages) |
 | Ack | `…5b08` | write + read (authorized) | `AckRequest` → `AckResponse`; `CompactRequest` → `CompactResponse` multiplexed by opcode |
 | Time | `…5b09` | write + read (authorized) | `TimeCorrectRequest` → `TimeCorrectResponse` |
-| ClaimAdvertisement | `…5b0a` | read (UNCLAIMED + trusted UTC) | `ClaimAdvertisementResponse` or `Error` |
+| ClaimAdvertisement | `…5b0a` | read (UNCLAIMED + policy-selected time) | `ClaimAdvertisementResponse` or `Error` |
 | ClaimReceipt | `…5b0b` | write + read | `ClaimReceiptRequest` → `ClaimReceiptResponse` or `Error` |
 
 The two provisioning characteristics extend v1 without changing existing sync
@@ -144,7 +144,7 @@ claiming requires firmware exposing both. The board supplies the same persistent
 routes the new characteristic reads/writes to these opcodes. Never substitute a
 peer-supplied timestamp or public key for the manager's signed advertisement.
 Receipt verification uses the existing pinned issuer and `apply_claim`: initial
-claim requires physical mode, same-owner redelivery is idempotent, and a different
+claim requires direct ACTIVE ADMIN registration (#154), same-owner redelivery is idempotent, and a different
 owner is rejected. On reconnect, configure the authorizer from the newly persisted
 organization/issuer context. Do not retain an unclaimed-session authorizer after
 provisioning. Public Owner strings come from that same committed identity.
@@ -211,3 +211,32 @@ flags bit0 CLAIMED, bit1 CLAIM_MODE_ACTIVE
 ```
 
 No identity, org, pending, chip or time fields. See `README.md`.
+
+
+## FIELD_ALPHA_PHONE_CLOCK v1 (#171)
+
+Capability `0x0080` is advertised only with firmware
+`CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK=y`. PWA independently requires
+`VITE_MM_SECURITY_CLOCK_POLICY=FIELD_ALPHA_PHONE_CLOCK`; mismatches fail closed.
+Default builds reject the request. Existing TimeCorrect and signed-time opcodes
+retain their meanings.
+
+| Opcode | Payload | GATT characteristic |
+| --- | --- | --- |
+| AlphaPhoneClockRequest `0x25` | version `u8=1`, phone UTC `u64le` milliseconds, positive and <= INT64_MAX; exactly 9 bytes | ClaimReceipt `…5b0b`, public write/read |
+| AlphaPhoneClockResponse `0x26` | exactly `u8=0` for success, otherwise normal Error | ClaimReceipt `…5b0b` |
+
+The complete 13-byte request fits minimum ATT without fragmentation. Sequence:
+public Hello/Owner → policy match → one session phone candidate → existing fresh
+Challenge/Auth(JWT, PoP) → pinned Node proof → protected snapshot/evidence/read →
+durable PWA storage → ACK/COMPACT. Candidate acceptance never grants auth or claim.
+It is anchored internally to the current boot's timer; subsequent samples in the
+same connection are rejected. Every protected operation checks iat/exp against
+candidate + elapsed monotonic time. Disconnect, endpoint inactivity reset and
+reboot clear it; rollback, invalid timer and overflow latch denial. No NVS write,
+RTC correction or verified evidence is produced. Signed evidence and #169's
+post-auth PHONE_ESTIMATE keep their existing protected persistence/receipt paths.
+Workshop claiming uses the same candidate, retaining backend ADMIN, signature,
+ownership and signed receipt gates. Phone-chosen timestamps reduce claim
+freshness and permit credential expiration bypass; see [risks and physical
+acceptance](../../docs/issue171-field-alpha-phone-clock.md).

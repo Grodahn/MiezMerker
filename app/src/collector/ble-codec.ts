@@ -12,6 +12,7 @@ export const CAP_TIME_CORRECT = 0x0004;
 export const CAP_NODE_PROOF = 0x0008;
 export const CAP_COMPACT = 0x0010;
 export const CAP_CLOCK_SNAPSHOT = 0x0040;
+export const CAP_FIELD_ALPHA_PHONE_CLOCK = 0x0080;
 export const CAP_ALL_V1 = CAP_BATCH | CAP_ACK | CAP_TIME_CORRECT | CAP_NODE_PROOF | CAP_COMPACT;
 
 export enum Opcode {
@@ -51,6 +52,8 @@ export enum Opcode {
   TimeEvidenceReceiptResponse = 0x22,
   ClockSnapshotRequest = 0x23,
   ClockSnapshotResponse = 0x24,
+  AlphaPhoneClockRequest = 0x25,
+  AlphaPhoneClockResponse = 0x26,
   Error = 0xff,
 }
 

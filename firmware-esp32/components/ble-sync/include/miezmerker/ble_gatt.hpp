@@ -20,6 +20,7 @@
 #include "miezmerker/ble_sync.hpp"
 #include "miezmerker/node_identity.hpp"
 #include "miezmerker/node_time.hpp"
+#include "miezmerker/session_phone_clock.hpp"
 
 namespace miezmerker::ble_gatt {
 
@@ -59,6 +60,8 @@ public:
     void set_node_identity(NodeIdentityManager* identity) { identity_ = identity; }
     void set_time_bootstrap(node_time::NodeTimeBootstrapManager* manager) { time_bootstrap_ = manager; }
 
+    void set_alpha_phone_clock(SessionPhoneClock* clock) { alpha_clock_ = clock; }
+
     void set_time_evidence(TimeEvidenceStore* store) { evidence_ = store; }
 
     /// Handles a raw request frame, returns a raw response frame.
@@ -77,6 +80,7 @@ private:
     std::size_t auth_total_{0};
     NodeIdentityManager* identity_{nullptr};
     node_time::NodeTimeBootstrapManager* time_bootstrap_{nullptr};
+    SessionPhoneClock* alpha_clock_{nullptr};
     TimeEvidenceStore* evidence_{nullptr};
     std::vector<std::uint8_t> receipt_fragments_;
     std::size_t receipt_total_{0};
