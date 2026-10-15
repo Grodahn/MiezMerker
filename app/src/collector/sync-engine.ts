@@ -442,6 +442,8 @@ export class SyncEngine {
         }), true));
         if (response?.opcode !== Opcode.MetadataResponse || response.payload.length !== 1 || response.payload[0] !== 0) {
           this.metadataWarning = 'Napfname konnte nicht aktualisiert werden; beim nächsten Online-Sync erneut versuchen.';
+        } else {
+          this.metadataWarning = undefined;
         }
       }
 
@@ -611,7 +613,9 @@ export class SyncEngine {
           throw new Error('compaction failed');
         }
       } catch {
-        maintenanceWarning = 'Node-Speicherbereinigung ausstehend; beim nächsten Besuch erneut versuchen.';
+        maintenanceWarning = [maintenanceWarning,
+          'Node-Speicherbereinigung ausstehend; beim nächsten Besuch erneut versuchen.']
+          .filter(Boolean).join(' ');
       }
 
       this.phase = 'complete';

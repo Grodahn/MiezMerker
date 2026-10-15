@@ -234,6 +234,39 @@ describe('SyncEngine', () => {
     expect(node.getAcked()).toBe(1n);
   });
 
+  test('metadata and compaction warnings are both preserved', async () => {
+    const node = makeMockNode([makeRecord(1, 'chip')], {
+      metadata: true, metadataRejected: true, failCompact: true,
+    });
+    const engine = new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, { ...identity,
+      metadata: { organizationId: '22222222-2222-4222-8222-222222222222', bowlNumber: 4711, displayName: '' },
+    });
+    const result = await engine.sync('valid-credential', () => 1790899200, '22222222-2222-4222-8222-222222222222');
+    expect(result.ok).toBe(true);
+    expect(result.maintenanceWarning).toContain('Napfname');
+    expect(result.maintenanceWarning).toContain('Speicherbereinigung');
+    expect(node.getAcked()).toBe(1n);
+  });
+
+  test('successful metadata retry clears the earlier warning', async () => {
+    const node = makeMockNode([makeRecord(1, 'chip')], { metadata: true, loseAckOnce: true });
+    let metadataAttempts = 0;
+    const link = new MockNodeTransport(async frame => {
+      if (decodeFrame(frame)?.opcode === Opcode.MetadataRequest && ++metadataAttempts === 1) {
+        return encodeFrame({ version: 1, opcode: Opcode.Error, payload: new Uint8Array([0]) });
+      }
+      return node.handler(frame);
+    });
+    const engine = new SyncEngine(link, store, mockKeys, { ...identity,
+      metadata: { organizationId: '22222222-2222-4222-8222-222222222222', bowlNumber: 4711, displayName: '' },
+    }, { maxRetries: 1, retryDelayMs: 0 });
+    const result = await engine.sync('valid-credential', () => 1790899200, '22222222-2222-4222-8222-222222222222');
+    expect(result.ok).toBe(true);
+    expect(metadataAttempts).toBe(2);
+    expect(result.maintenanceWarning).toBeUndefined();
+    expect(node.getAcked()).toBe(1n);
+  });
+
   test('offline reboot alpha path persists before ACK, repeats after interruption, and never calls UTC backend', async () => {
     vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'FIELD_ALPHA_PHONE_CLOCK');
     const online = Object.getOwnPropertyDescriptor(globalThis, 'navigator');

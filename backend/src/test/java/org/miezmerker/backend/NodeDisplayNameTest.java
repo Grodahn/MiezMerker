@@ -175,6 +175,34 @@ class NodeDisplayNameTest {
     }
 
     @Test
+    void oversizedReceiptRollsBackClaimAndAllowsRetryAfterOwnerMetadataIsShortened() throws Exception {
+        Seed fixture = seed();
+        login("n50-admin-a@example.org", "supersecret-password-a");
+        var organization = fixture.orgA();
+        organization.setPublicContact("\u0001".repeat(500));
+        organizations.saveAndFlush(organization);
+        NodeKeys node = NodeKeys.fresh();
+        long timestamp = Instant.now().toEpochMilli();
+        String signature = NodeClaimVerifier.signClaim(node.kp().getPrivate(), node.nodeId(), node.x(), node.y(), timestamp);
+        String request = mapper.writeValueAsString(java.util.Map.of(
+                "nodeId", node.nodeId(), "organizationId", organization.getId(),
+                "publicKeyX", node.x(), "publicKeyY", node.y(),
+                "timestampMillis", timestamp, "claimSignature", signature));
+
+        var rejected = post("/api/v1/nodes/claim", request);
+        assertEquals(422, rejected.statusCode(), rejected.body());
+        assertTrue(nodes.findById(node.nodeId()).isEmpty(), "Undeliverable claim must not commit ownership");
+
+        organization.setPublicContact("");
+        organizations.saveAndFlush(organization);
+        var accepted = post("/api/v1/nodes/claim", request);
+        assertEquals(200, accepted.statusCode(), accepted.body());
+        String receipt = mapper.readTree(accepted.body()).get("receipt").asText();
+        assertTrue(receipt.length() <= 4096);
+        assertTrue(issuer.verify(receipt).getLongClaim("bowl_number") > 0);
+    }
+
+    @Test
     void migrationPreservesExistingNodesWithNullDisplayName() throws Exception {
         // Legacy organization/node/deployment/visit inserted before V10,
         // rather than into an already migrated DB.

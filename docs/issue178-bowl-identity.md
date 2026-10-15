@@ -19,6 +19,8 @@ display to existing views without changing assignments or editing permissions.
 ## Database
 
 V21 backfills by `(created_at, node_id)` including deterministic timestamp ties.
+Its window rank is computed once and applied by MERGE, avoiding a per-node
+full-table count (quadratic work during an upgrade).
 The positive INTEGER sequence consumes the backfilled range and supplies new
 numbers through a column default. Allocation is global, concurrency safe and
 nontransactional on PostgreSQL. Rollbacks/deletion leave gaps; the sequence never
@@ -43,6 +45,9 @@ Old receipts without these claims remain readable and have no invented number.
 If the optional name would exceed the existing 4096-byte receipt budget, it is
 omitted from that receipt and delivered in full by the first authenticated online
 sync. The assigned number remains in the receipt.
+If owner metadata still makes the final receipt exceed 4096 bytes, claiming
+returns HTTP 422 and rolls back the transaction. Shorten the organization's
+public name/contact and retry; no undeliverable new ownership is committed.
 
 BLE v1 adds capability `0x0100`, MetadataRequest `0x27`, MetadataResponse `0x28`.
 The request payload is node UUID (16 bytes), organization UUID (16 bytes),

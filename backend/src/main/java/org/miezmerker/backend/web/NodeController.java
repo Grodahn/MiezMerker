@@ -15,6 +15,7 @@ import org.miezmerker.backend.crypto.EcKeyUtils;
 import org.miezmerker.backend.crypto.NodeClaimVerifier;
 import org.miezmerker.backend.domain.NodeDevice;
 import org.miezmerker.backend.domain.NodeState;
+import org.miezmerker.backend.domain.Organization;
 import org.miezmerker.backend.domain.OrganizationStatus;
 import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
@@ -174,12 +175,7 @@ public class NodeController {
                 }
                 // Deterministic retry: same org + same identity returns a fresh receipt
                 // without creating partial state.
-                String receipt = issuer.issueClaimReceipt(existing.getNodeId(), org.getId(),
-                        org.getSlug(), org.getDisplayName(), org.getPublicContact(),
-                        existing.getPublicKeyX(), existing.getPublicKeyY(),
-                        existing.getFingerprint(), Instant.now(), existing.getBowlNumber(), existing.getDisplayName());
-                return new ClaimReceiptView(existing.getNodeId(), org.getId().toString(), receipt,
-                        "Claim-ES256-JWT");
+                return receiptFor(existing, org);
             }
             // Known UNCLAIMED row (e.g. pre-registered): adopt it atomically.
             if (!existing.getFingerprint().equals(fingerprint)) {
@@ -188,12 +184,7 @@ public class NodeController {
             }
             existing.claim(org);
             nodes.save(existing);
-            String receipt = issuer.issueClaimReceipt(existing.getNodeId(), org.getId(),
-                    org.getSlug(), org.getDisplayName(), org.getPublicContact(),
-                    existing.getPublicKeyX(), existing.getPublicKeyY(),
-                    existing.getFingerprint(), Instant.now(), existing.getBowlNumber(), existing.getDisplayName());
-            return new ClaimReceiptView(existing.getNodeId(), org.getId().toString(), receipt,
-                    "Claim-ES256-JWT");
+            return receiptFor(existing, org);
         }
 
         // A reset must rotate both the UUID and device key. Reject duplicate keys
@@ -208,9 +199,19 @@ public class NodeController {
                 request.firmwareVersion());
         node.claim(org);
         node = nodes.saveAndFlush(node);
+        return receiptFor(node, org);
+    }
+
+    private ClaimReceiptView receiptFor(NodeDevice node, Organization org) {
         String receipt = issuer.issueClaimReceipt(node.getNodeId(), org.getId(), org.getSlug(),
                 org.getDisplayName(), org.getPublicContact(), node.getPublicKeyX(),
                 node.getPublicKeyY(), node.getFingerprint(), Instant.now(), node.getBowlNumber(), node.getDisplayName());
+        // Compact JWS is ASCII. Reject inside the claim transaction so an
+        // undeliverable ownership receipt can never commit a new claim.
+        if (receipt.length() > 4096) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Claim receipt exceeds BLE transport budget; shorten the organization's public name or contact");
+        }
         return new ClaimReceiptView(node.getNodeId(), org.getId().toString(), receipt,
                 "Claim-ES256-JWT");
     }
