@@ -1,5 +1,8 @@
 # Node time bootstrap (#129)
 
+Issue #171 adds an explicit field-alpha exception to signed-time authorization.
+See [the policy contract](issue171-field-alpha-phone-clock.md); the signed bootstrap below remains the secure default.
+
 For Windows/PowerShell, IntelliJ and ESP-IDF provisioning and runtime validation,
 see [local signed UTC onboarding (#157)](local-onboarding.md).
 

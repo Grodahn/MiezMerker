@@ -55,7 +55,7 @@ class MockNodeTransport implements NodeTransport {
 function makeMockNode(records: BleRecord[], opts: {
   failAuth?: boolean; failAck?: boolean; fakeNode?: boolean; initialAck?: bigint;
   loseAckOnce?: boolean; failCompact?: boolean; timeEvidence?: boolean; timeUsable?: boolean;
-  phoneTime?: boolean; snapshotReboot?: boolean; snapshotInterrupted?: boolean;
+  alphaClock?: boolean; phoneTime?: boolean; snapshotReboot?: boolean; snapshotInterrupted?: boolean;
 } = {}) {
   let acked = opts.initialAck ?? 0n;
   let lostAck = false;
@@ -69,9 +69,11 @@ function makeMockNode(records: BleRecord[], opts: {
     switch (f.opcode) {
       case Opcode.HelloRequest:
         return encodeFrame({ version: 1, opcode: Opcode.HelloPublic, payload: encodeHelloPublic({
-          serverVer: 1, caps: (opts.timeEvidence ? 0x3f : 0x1f) | (opts.phoneTime ? 0x40 : 0), nodeId: NODE_ID, incarnation: INCARNATION,
+          serverVer: 1, caps: (opts.timeEvidence ? 0x3f : 0x1f) | (opts.phoneTime ? 0x40 : 0) | (opts.alphaClock ? 0x80 : 0), nodeId: NODE_ID, incarnation: INCARNATION,
           firmwareVersion: 'test-1.0.0', claimState: 1, clockStatus: 2,
         })});
+      case Opcode.AlphaPhoneClockRequest:
+        return encodeFrame({ version: 1, opcode: Opcode.AlphaPhoneClockResponse, payload: new Uint8Array([0]) });
       case Opcode.ClockSnapshotRequest: {
         snapshots++;
         if (opts.snapshotInterrupted && snapshots === 2) throw new Error('snapshot disconnected');
@@ -194,6 +196,37 @@ describe('SyncEngine', () => {
   beforeEach(async () => {
     db = new SyncDatabase(`test-${Math.random().toString(36).slice(2)}`);
     store = new SyncStore(db);
+  });
+
+  test('offline reboot alpha path persists before ACK, repeats after interruption, and never calls UTC backend', async () => {
+    vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'FIELD_ALPHA_PHONE_CLOCK');
+    const online = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+    try {
+      const node = makeMockNode([makeRecord(1, 'chip')], { alphaClock: true, loseAckOnce: true });
+      const bootstrapTime = vi.fn();
+      const result = await new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, identity,
+        { bootstrapTime, maxRetries: 1, retryDelayMs: 0 }).sync('credential', () => 1790899200, '22222222-2222-4222-8222-222222222222');
+      expect(result.ok, result.error).toBe(true); expect(result.watermark).toBe(1n);
+      expect((await db.observations.toArray())).toHaveLength(1);
+      expect(result.timeMessage).toContain('FIELD_ALPHA_PHONE_CLOCK');
+      expect(bootstrapTime).not.toHaveBeenCalled();
+      expect(node.opcodes.filter(op => op === Opcode.AlphaPhoneClockRequest)).toHaveLength(2);
+      expect(node.opcodes.indexOf(Opcode.AlphaPhoneClockRequest)).toBeLessThan(node.opcodes.indexOf(Opcode.ChallengeRequest));
+      expect(node.opcodes.indexOf(Opcode.NodeProofRequest)).toBeLessThan(node.opcodes.indexOf(Opcode.BatchRequest));
+      expect(node.opcodes).not.toContain(Opcode.RegistrationTimeChallengeRequest);
+    } finally {
+      vi.unstubAllEnvs();
+      if (online) Object.defineProperty(globalThis, 'navigator', online); else Reflect.deleteProperty(globalThis, 'navigator');
+    }
+  });
+  test('production PWA rejects alpha capability before sending a time sample or protected requests', async () => {
+    const node = makeMockNode([], { alphaClock: true });
+    const result = await new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, identity,
+      { maxRetries: 0 }).sync('credential', () => 1790899200);
+    expect(result.ok).toBe(false); expect(result.error).toContain('Policy');
+    expect(node.opcodes).not.toContain(Opcode.AlphaPhoneClockRequest);
+    expect(node.opcodes).not.toContain(Opcode.BatchRequest);
   });
 
   test('full sync: persist before ack, compact after', async () => {

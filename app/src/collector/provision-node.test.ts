@@ -37,7 +37,7 @@ afterEach(async () => { await new CollectorDatabase().delete(); });
 class ClaimTransport {
   claimed = false; trustedTime = true; dropReceipt = false; bootstrapAvailable = true; rejectReceiptOnce = false;
   rejectReconnect = false; connections = 0;
-  phoneTime = false;
+  phoneTime = false; alphaClock = false;
   last: Uint8Array = new Uint8Array(); operations: Opcode[] = [];
   async connect() {
     if (++this.connections > 1 && this.rejectReconnect) throw new Error('Previous GATT connection is closing');
@@ -48,7 +48,7 @@ class ClaimTransport {
     let opcode: Opcode; let payload: Uint8Array;
     switch (request.opcode) {
       case Opcode.HelloRequest:
-        opcode = Opcode.HelloPublic; payload = encodeHelloPublic({ serverVer: 1, caps: 31 | (this.phoneTime ? 64 : 0), nodeId: NODE,
+        opcode = Opcode.HelloPublic; payload = encodeHelloPublic({ serverVer: 1, caps: 31 | (this.phoneTime ? 64 : 0) | (this.alphaClock ? 128 : 0), nodeId: NODE,
           incarnation: INC, firmwareVersion: 'test', claimState: this.claimed ? 1 : 0, clockStatus: 2 }); break;
       case Opcode.OwnerRequest:
         opcode = Opcode.OwnerResponse; payload = encodeOwnerResponse({ nodeId: NODE, claimState: this.claimed ? 1 : 0,
@@ -68,6 +68,8 @@ class ClaimTransport {
         payload.set(fromBase64Url(c.devicePublicKeyFingerprint), 143); payload.set(fromBase64Url(c.deviceChallengeSignature), 175);
         break;
       }
+      case Opcode.AlphaPhoneClockRequest:
+        this.trustedTime=true; opcode=Opcode.AlphaPhoneClockResponse; payload=new Uint8Array([0]); break;
       case Opcode.RegistrationTimeProofRequest:
         this.trustedTime = true; opcode = Opcode.RegistrationTimeProofResponse; payload = new Uint8Array([0]); break;
       case Opcode.ClaimReceiptRequest:
@@ -192,4 +194,42 @@ test('a claim response received after switching organization is saved but never 
   await provisionNode(transport, NODE, 'org-a');
   expect(transport.claimed).toBe(true); expect(post).toHaveBeenCalledTimes(1);
   expect(listeners.size).toBe(0);
+});
+
+
+test('alpha workshop claim needs no signed UTC bootstrap and preserves backend reservation/receipt', async () => {
+  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY','FIELD_ALPHA_PHONE_CLOCK');
+  try {
+    const transport=new ClaimTransport(); transport.alphaClock=true; transport.trustedTime=false;
+    await provisionNode(transport,NODE,'org-a');
+    expect(transport.claimed).toBe(true);
+    expect(transport.operations).toContain(Opcode.AlphaPhoneClockRequest);
+    expect(transport.operations).not.toContain(Opcode.RegistrationTimeChallengeRequest);
+    expect(transport.operations).not.toContain(Opcode.RegistrationTimeProofRequest);
+    expect(post.mock.calls.some(([path]) => path === '/api/v1/nodes/time-bootstrap')).toBe(false);
+    expect(post.mock.calls.some(([path]) => path === '/api/v1/nodes/claim')).toBe(true);
+    expect(transport.operations).toContain(Opcode.ClaimReceiptRequest);
+  } finally { vi.unstubAllEnvs(); }
+});
+
+
+test('alpha renews a rejected cached receipt once without replacing its connection clock', async () => {
+  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'FIELD_ALPHA_PHONE_CLOCK');
+  try {
+    const transport = new ClaimTransport(); transport.alphaClock = true; transport.dropReceipt = true;
+    // Backend reservation survives a failed BLE delivery; the next visit uses
+    // this cached receipt, which the Node then rejects (e.g. after expiration).
+    await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('disconnected');
+    expect(post.mock.calls.filter(([path]) => path === '/api/v1/nodes/claim')).toHaveLength(1);
+    transport.rejectReceiptOnce = true;
+    await provisionNode(transport, NODE, 'org-a');
+    expect(transport.claimed).toBe(true);
+    expect(post.mock.calls.filter(([path]) => path === '/api/v1/nodes/claim')).toHaveLength(2);
+    expect(post.mock.calls.some(([path]) => path === '/api/v1/nodes/time-bootstrap')).toBe(false);
+    // Exactly one sample for each visit, including the renewed-receipt retry.
+    expect(transport.operations.filter(op => op === Opcode.AlphaPhoneClockRequest)).toHaveLength(2);
+    expect(transport.operations).not.toContain(Opcode.RegistrationTimeChallengeRequest);
+    const db = new CollectorDatabase();
+    expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
+  } finally { vi.unstubAllEnvs(); }
 });

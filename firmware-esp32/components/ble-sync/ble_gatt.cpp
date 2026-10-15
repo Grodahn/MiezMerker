@@ -60,6 +60,7 @@ GattRouter::GattRouter(ble::SyncServer& server, OwnerMetadata& owner)
     : server_(&server), owner_(&owner) {}
 
 void GattRouter::disconnect() {
+    if (alpha_clock_) alpha_clock_->disconnect();
     auth_fragments_.clear();
     auth_total_ = 0;
     receipt_fragments_.clear();
@@ -116,6 +117,15 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         return error_frame(SyncError::UnknownVersion, "unsupported version");
     }
     switch (frame->opcode) {
+        case Opcode::AlphaPhoneClockRequest: {
+            const auto& p = frame->payload;
+            if (!alpha_clock_) return error_frame(SyncError::ClockUnavailable, "FIELD_ALPHA_PHONE_CLOCK disabled");
+            if (p.size() != 9 || p[0] != 1) return error_frame(SyncError::InvalidFrame, "bad alpha clock sample");
+            std::uint64_t utc = 0;
+            for (unsigned i = 0; i < 8; ++i) utc |= std::uint64_t(p[1+i]) << (8*i);
+            if (!alpha_clock_->sample(utc)) return error_frame(SyncError::InvalidState, "alpha clock already sampled or invalid; reconnect");
+            return encode_frame({1, Opcode::AlphaPhoneClockResponse, {0}});
+        }
         case Opcode::ClockSnapshotRequest: {
             if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad clock snapshot request");
             const auto snapshot = server_->clock_snapshot(now_s);
@@ -250,6 +260,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             }
             HelloPublic hello = server_->public_hello();
             hello.caps |= kCapClockSnapshot;
+            if (alpha_clock_) hello.caps |= kCapFieldAlphaPhoneClock;
             if (time_bootstrap_ && evidence_) hello.caps |= kCapTimeEvidence;
             return encode_frame(Frame{kProtocolVersion, Opcode::HelloPublic,
                                       encode_hello_public(hello)});

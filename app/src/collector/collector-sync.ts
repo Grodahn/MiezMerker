@@ -428,7 +428,7 @@ export function humanSyncError(error: string): string {
   const kind = error.split(':')[0];
   const detail = error.includes(':') ? error.slice(error.indexOf(':') + 1).trim() : error;
   switch (kind) {
-    case 'trusted-time': return `${detail} Synchronisierung unvollständig; bitte online erneut versuchen.`;
+    case 'trusted-time': return `${detail} Synchronisierung unvollständig; Sicherheitszeit-Policy prüfen.`;
     case 'incompatible': return `Protokoll inkompatibel. ${detail}`;
     case 'unauthorized': return `Autorisierung abgelehnt. ${detail}`;
     case 'storage': return detail;

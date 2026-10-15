@@ -1,6 +1,7 @@
 import { api } from '../api/client';
 import { fetchCsrfToken, getAuthState } from '../platform/auth';
 import { toBase64Url } from '../platform/device-keys';
+import { supplyAlphaPhoneClock, usesAlphaPhoneClock } from './phone-time';
 import type { NodeTransport } from '../platform/node-transport';
 import { assertAdminMayClaim, ClaimError } from './claim-node';
 import { decodeFrame, encodeFrame, encodeClaimReceipt, Opcode } from './ble-codec';
@@ -12,7 +13,12 @@ export class TimeBootstrapUnavailableError extends ClaimError {
 // Shared purpose-scoped bridge to ADR 0017. The phone forwards signed bytes; only
 // the firmware's independently pinned verifier may establish trusted UTC.
 export async function bootstrapRegistrationTime(transport: NodeTransport, nodeId: string,
-  organizationId: string, assertActive: () => void): Promise<number> {
+  organizationId: string, assertActive: () => void, caps = 0): Promise<number> {
+  assertActive(); assertAdminMayClaim(organizationId);
+  if (usesAlphaPhoneClock(caps)) {
+    await supplyAlphaPhoneClock(transport, () => { assertActive(); assertAdminMayClaim(organizationId); });
+    return 0;
+  }
   return bootstrapNodeTime(transport, nodeId, organizationId, () => {
     assertActive(); assertAdminMayClaim(organizationId);
   }, 'UNCLAIMED');

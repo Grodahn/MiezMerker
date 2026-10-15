@@ -50,3 +50,18 @@ test.each(['MEMBER', 'SYSADMIN'])('%s alone cannot probe claim material', async 
   await expect(verifyRegistrationCandidate(ble, NODE, 'org')).rejects.toThrow();
   expect(ble.connect).not.toHaveBeenCalled();
 });
+
+
+test.each([false,true])('alpha preflight still verifies Node claim signature (tampered=%s)', async tamper => {
+  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY','FIELD_ALPHA_PHONE_CLOCK');
+  try {
+    hello.mockResolvedValue({ nodeId: NODE, claimState: 0, caps: 0x80 });
+    const ble=await transport(tamper);
+    const proof=await ble.read();
+    ble.read.mockResolvedValueOnce(encodeFrame({ version: 1, opcode: Opcode.AlphaPhoneClockResponse, payload: new Uint8Array([0]) })).mockResolvedValueOnce(proof);
+    if (tamper) await expect(verifyRegistrationCandidate(ble,NODE,'org')).rejects.toThrow('Signatur');
+    else await expect(verifyRegistrationCandidate(ble,NODE,'org')).resolves.toBeUndefined();
+    expect(ble.write.mock.calls[0][0][1]).toBe(Opcode.AlphaPhoneClockRequest);
+    expect(ble.write).toHaveBeenCalledTimes(2);
+  } finally { vi.unstubAllEnvs(); }
+});

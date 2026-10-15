@@ -4,6 +4,24 @@ Status: **Accepted architectural contract** — issue #127, epic #126; focused a
 Date: 2026-10-11  
 Related: #3, #4, #5, #6, #7, #8, #10, #13, #17, #18, #76, #108, #121, #128–#134
 
+## Authorization-policy amendment (#171, 2026-10-15)
+
+The signed-time-only authorization requirements below apply to the default
+SIGNED_BACKEND_TIME policy. Explicit FIELD_ALPHA_PHONE_CLOCK builds instead use
+one untrusted, RAM-only phone UTC candidate per BLE connection, advanced with the
+current boot monotonic uptime. Signatures, issuer pin, org/scope/device binding,
+PoP, Node authenticity and per-operation iat/exp checks remain mandatory. A sample
+alone grants no access. Disconnect/reboot clears it; timer rollback/overflow
+invalidates it. Both PWA and firmware opt in; there is no automatic downgrade.
+No NVS/trusted-clock mutation or verified anchor is produced. PHONE_ESTIMATE
+remains separate authenticated observation evidence; existing signed evidence,
+immutable raw observations and separate outbox/ACK lifetimes remain unchanged.
+Phone backdating can bypass expiry, including ACK/COMPACT; #170 still blocks the
+cooperative PWA after confirmed revocation. ADR 0013 documents reduced claim
+freshness. See [the implementation, accepted risks and UNVERIFIED physical
+procedure](../issue171-field-alpha-phone-clock.md). Later hardening, secure-time
+re-enable and revocation mechanisms remain follow-up decisions linked to #171/#134.
+
 ## Decision
 
 An external battery-backed RTC is **optional**, not a requirement for a low-cost MiezMerker Node. The firmware already retains unique per-node sequences, a persistent boot counter and monotonic uptime. **Only a successfully CLAIMED Node records RFID visits.** For every accepted read after claiming, we retain these immutable facts. Separately persisted UTC **time anchors** can reconstruct observation time within the **same boot epoch**. Across unanchored boot epochs we know event ordering and intra-boot elapsed time, but **cannot reconstruct unobserved powered-off durations**. We expose conservative possible intervals rather than invented exact timestamps.
@@ -73,7 +91,7 @@ does not assert that those existing builds already comply.
 | Original capture time | Immutable UTC and clock-status fields sampled at RFID read time; may be null / UNKNOWN |
 | Time anchor | Separately recorded assertion linking one boot uptime to UTC, with provenance and uncertainty |
 | Temporal projection | Rebuildable possible UTC interval for an event, distinct from the original raw observation |
-| Security clock | UTC valid for sensitive authorization only after verified backend-signed bootstrap |
+| Authorization clock | Default: verified backend UTC bounds. Explicit alpha: untrusted session phone UTC advanced by uptime (amendment above). |
 
 Firmware must durably reserve the boot epoch **before** accepting reads; crash/partial-write recovery must not reuse an epoch for unrelated monotonic timelines. Existing boot_counter is sufficient if its uniqueness and rollover guarantees are preserved. Store esp_reset_reason() as diagnostics, but not as elapsed-time evidence. A timer discontinuity (including Deep Sleep where esp_timer resets) requires a fresh epoch or a separately proven continuous monotonic adapter. Never correlate different epochs by subtracting uptime values.
 

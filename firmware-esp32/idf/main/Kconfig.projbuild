@@ -21,6 +21,14 @@ config MM_DEV_GPIO_RFID_PIN
         SuperMini GPIO3 is unused. GPIO2/8/9 are forbidden strapping/BOOT pins.
         USB18/19 and flash pins are outside this range. Recheck wiring conflicts
         before selecting another pin or adding real reader/RTC hardware.
+config MM_FIELD_ALPHA_PHONE_CLOCK
+    bool "FIELD_ALPHA_PHONE_CLOCK: accept untrusted session phone time"
+    default n
+    help
+        Explicit field-alpha risk: a former credential/key holder can backdate
+        the phone to bypass expiry, including reads, ACK and COMPACT. Does not
+        change the issuer pin, credential/PoP/org checks or observation clock.
+        Disabled by default; signed backend UTC remains the secure policy.
 config MM_ISSUER_PUBLIC_KEY_HEX
     string "Independently pinned backend P-256 public key (130 hex characters)"
     default ""

@@ -1,5 +1,5 @@
 import type { NodeTransport } from '../platform/node-transport';
-import { decodeFrame, encodeFrame, Opcode } from './ble-codec';
+import { CAP_FIELD_ALPHA_PHONE_CLOCK, decodeFrame, encodeFrame, Opcode } from './ble-codec';
 import type { StoredTimeEvidence } from './time-evidence';
 
 function snapshot(bytes: Uint8Array, nodeId: string, incarnation: string) {
@@ -40,4 +40,29 @@ export async function collectPhoneTime(transport: NodeTransport, nodeId: string,
     payload: JSON.stringify({ formatVersion: 1, source: 'PHONE_ESTIMATE', anchorId, nodeId, incarnation,
       bootCounter: first.bootCounter, uptimeMs: first.uptimeMs.toString(), utcMs, transportDurationMs }),
   };
+}
+
+// Independent from PHONE_ESTIMATE evidence. Both builds must explicitly opt in;
+// a capability never silently weakens a production PWA's security policy.
+export function usesAlphaPhoneClock(caps: number): boolean {
+  const alpha = import.meta.env.VITE_MM_SECURITY_CLOCK_POLICY === 'FIELD_ALPHA_PHONE_CLOCK';
+  if (Boolean(caps & CAP_FIELD_ALPHA_PHONE_CLOCK) !== alpha) {
+    throw new Error('Sicherheitszeit-Policy stimmt nicht überein. FIELD_ALPHA_PHONE_CLOCK muss in PWA und Firmware ausdrücklich aktiviert sein.');
+  }
+  return alpha;
+}
+
+export async function supplyAlphaPhoneClock(transport: NodeTransport, assertActive: () => void = () => {}): Promise<void> {
+  if (import.meta.env.VITE_MM_SECURITY_CLOCK_POLICY !== 'FIELD_ALPHA_PHONE_CLOCK') throw new Error('FIELD_ALPHA_PHONE_CLOCK deaktiviert.');
+  assertActive();
+  const utc = Date.now();
+  if (!Number.isSafeInteger(utc) || utc <= 0) throw new Error('Handyzeit nicht darstellbar.');
+  const payload = new Uint8Array(9); payload[0] = 1;
+  new DataView(payload.buffer).setBigUint64(1, BigInt(utc), true);
+  await transport.write(encodeFrame({ version: 1, opcode: Opcode.AlphaPhoneClockRequest, payload }));
+  const frame = decodeFrame(await transport.read());
+  assertActive();
+  if (frame?.version !== 1 || frame.opcode !== Opcode.AlphaPhoneClockResponse || frame.payload.length !== 1 || frame.payload[0] !== 0) {
+    throw new Error('Alpha-Handyzeit abgelehnt. Neu verbinden; Handyzeit und Firmware-Policy prüfen.');
+  }
 }

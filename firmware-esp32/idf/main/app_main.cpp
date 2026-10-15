@@ -114,9 +114,11 @@ extern "C" void app_main() {
     ESP_LOGI(tag, "security_time=%s issuer_pin=%s",
              to_string(time_bootstrap.state()).data(),
              crypto.pinned() ? "configured" : "missing");
+#ifndef CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK
     ESP_LOGW(tag,
              "trusted UTC requires backend-signed challenge-bound proof (#130); "
              "claim proof and offline authorization fail closed until BOUNDED");
+#endif
     bootloader_random_disable();
     // Never copy the NimBLE example's automatic NVS erase on errors.
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -130,6 +132,14 @@ extern "C" void app_main() {
     ble_gatt::GattRouter router(sync, owner); router.set_node_identity(&identity);
     router.set_time_bootstrap(&time_bootstrap);
     router.set_time_evidence(&evidence);
+#ifdef CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK
+    SessionPhoneClock alpha_clock(clock);
+    clock.attach_alpha_phone_clock(&alpha_clock);
+    router.set_alpha_phone_clock(&alpha_clock);
+    ESP_LOGW(tag, "FIELD_ALPHA_PHONE_CLOCK: untrusted session phone time; clock manipulation bypasses credential expiry including ACK/COMPACT");
+#else
+    ESP_LOGI(tag, "security_clock_policy=SIGNED_BACKEND_TIME");
+#endif
     ble_gatt::GattEndpoint endpoint(router, sync);
     auto mutex = xSemaphoreCreateRecursiveMutex(); require(mutex != nullptr, "state mutex");
     NimblePeripheral peripheral(router, endpoint, clock, mutex);

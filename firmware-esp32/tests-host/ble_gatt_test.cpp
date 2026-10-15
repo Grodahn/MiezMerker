@@ -630,7 +630,32 @@ void clock_snapshot_authorization_and_reboot() {
     CHECK(!unsafe_server.clock_snapshot(1790899300));
 }
 
+void alpha_clock_is_only_a_session_candidate() {
+    using namespace miezmerker; using namespace miezmerker::ble;
+    Fixture f; auto core=f.make_core(); CHECK(core->initialize()); claim_capture_fixture(*core,f.identity);
+    SyncServer server(*core,f.auth,f.rtc,f.signer,f.config);
+    ble_gatt::GattRouter router(server,f.owner);
+    const auto request=encode_frame({1,Opcode::AlphaPhoneClockRequest,{1,0x00,0x00,0x00,0x00,0x00,0x01,0x00,0x00}});
+    CHECK(decode_frame(router.handle_frame(request,0))->opcode==Opcode::Error); // Default secure build.
+    SessionPhoneClock phone(f.clock); router.set_alpha_phone_clock(&phone);
+    const auto hello=decode_frame(router.handle_frame(encode_frame({1,Opcode::HelloRequest,encode_hello_request(1,kCapAllV1)}),0));
+    CHECK(decode_hello_public(hello->payload)->caps & kCapFieldAlphaPhoneClock);
+    CHECK(decode_frame(router.handle_frame(request,0))->opcode==Opcode::AlphaPhoneClockResponse);
+    CHECK(decode_frame(router.handle_frame(request,0))->opcode==Opcode::Error); // Single sample.
+    for (auto op : {Opcode::StatusRequest,Opcode::BatchRequest,Opcode::AckRequest,Opcode::CompactRequest,Opcode::ClockSnapshotRequest}) {
+        std::vector<std::uint8_t> payload;
+        if(op==Opcode::BatchRequest) payload=encode_batch_request({1,1});
+        if(op==Opcode::AckRequest) payload=encode_ack_request(1);
+        CHECK(decode_frame(router.handle_frame(encode_frame({1,op,payload}),0))->opcode==Opcode::Error);
+    }
+    CHECK(core->ack_watermark()==0 && f.rtc.applied==0);
+    router.disconnect(); std::int64_t l=0,u=0; CHECK(!phone.interval(l,u));
+    CHECK(decode_frame(router.handle_frame(request,0))->opcode==Opcode::AlphaPhoneClockResponse);
+    CHECK(decode_frame(router.handle_frame(encode_frame({1,Opcode::AlphaPhoneClockRequest,{2}}),0))->opcode==Opcode::Error);
+}
+
 int main() {
+    alpha_clock_is_only_a_session_candidate();
     clock_snapshot_authorization_and_reboot();
     time_evidence_transport();
     router_public_and_auth();

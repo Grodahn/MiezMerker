@@ -21,7 +21,7 @@ import type { AppDeviceKeys } from '../platform/device-keys';
 import { beginNodeAuthentication, type TrustedNodeIdentity } from '../platform/node-identity';
 import { NodeOperationCancelledError } from './node-operation';
 import { CAP_TIME_EVIDENCE, CAP_CLOCK_SNAPSHOT } from './ble-codec';
-import { collectPhoneTime } from './phone-time';
+import { collectPhoneTime, supplyAlphaPhoneClock, usesAlphaPhoneClock } from './phone-time';
 import { acknowledgeUploadedEvidence, receiveTimeEvidence, type StoredTimeEvidence } from './time-evidence';
 import { TimeBootstrapUnavailableError } from './registration-time';
 
@@ -328,7 +328,13 @@ export class SyncEngine {
         throw new SyncFailedError('foreign', 'Node gehört einer anderen Organisation.', this.owner);
       }
 
-      if (hello.caps & CAP_TIME_EVIDENCE) {
+      let alphaClock = false;
+      try { alphaClock = usesAlphaPhoneClock(hello.caps); }
+      catch (error) { throw new SyncFailedError('trusted-time', (error as Error).message, this.owner); }
+      if (alphaClock) {
+        await supplyAlphaPhoneClock(this.transport, this.options.assertActive);
+        this.timeMessage = 'FIELD_ALPHA_PHONE_CLOCK: unbestätigte Handyzeit für Berechtigungsablauf verwendet; durch Uhrmanipulation umgehbar.';
+      } else if (hello.caps & CAP_TIME_EVIDENCE) {
         this.phase = 'time-bootstrap';
         this.options.assertActive?.();
         const status = decodeFrame(await this.sendFrame(encodeFrame({ version: 1,
