@@ -146,6 +146,125 @@ test('same organization bowl resumes setup without claiming and remains browser-
   expect(requestDevice).toHaveBeenCalledTimes(1);
 });
 
+test('uncertain BLE confirmation recovers setup without a second claim (#161)', async () => {
+  adminMembership();
+  const { ClaimError } = await import('./claim-node');
+  vi.mocked(provisionNode).mockRejectedValueOnce(
+    new ClaimError('uncertain', 'Napf möglicherweise bereits registriert, Bestätigung verloren (BLE disconnected).'));
+  vi.mocked(fetchNodeSetupState).mockImplementation(async (org: string, node: string) => {
+    if (org === 'org' && node === 'node-new') {
+      return { claimed: true, nodeId: 'node-new', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 };
+    }
+    throw new Error('unexpected node');
+  });
+  await selectUnclaimed();
+  fireEvent.click(await screen.findByRole('button', { name: 'Napf registrieren' }));
+  await vi.waitFor(() => expect(provisionNode).toHaveBeenCalledTimes(1));
+  await screen.findByText(/kein erneutes Claiming/i);
+  await screen.findByRole('dialog', { name: 'Napf registrieren' });
+  expect(provisionNode).toHaveBeenCalledTimes(1);
+  expect(localStorage.getItem('miezmerker-last-setup-node')).toContain('node-new');
+});
+
+test('already-registered claim error without deployment offers setup instead of failing (#161)', async () => {
+  adminMembership();
+  const { ClaimError } = await import('./claim-node');
+  vi.mocked(provisionNode).mockRejectedValueOnce(
+    new ClaimError('backend', 'Dieser Napf ist bereits registriert. Bitte erneut auslesen und Einrichtung fortsetzen; kein erneutes Claiming.'));
+  vi.mocked(fetchNodeSetupState).mockResolvedValue({ claimed: true, nodeId: 'node-new', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 });
+  await selectUnclaimed();
+  fireEvent.click(await screen.findByRole('button', { name: 'Napf registrieren' }));
+  await screen.findByText(/kein erneutes Claiming/i);
+  expect(provisionNode).toHaveBeenCalledTimes(1);
+});
+
+test('ordinary batch sync offers setup for an already CLAIMED node without deployment (#161)', async () => {
+  adminMembership();
+  authorized.value = [{ id: 'a', name: 'Bowl A' }];
+  runBatch.mockResolvedValue([successResult('a', 'node-a')]);
+  vi.mocked(fetchNodeSetupState).mockResolvedValue({ claimed: true, nodeId: 'node-a', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 });
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Näpfe auslesen' }));
+  await vi.waitFor(() => expect(fetchNodeSetupState).toHaveBeenCalledWith('org', 'node-a', expect.anything()));
+  await screen.findByRole('dialog', { name: 'Napf registrieren' });
+  expect(provisionNode).not.toHaveBeenCalled();
+});
+
+test('ordinary batch sync never opens setup for an already assigned node (#161)', async () => {
+  adminMembership();
+  authorized.value = [{ id: 'a', name: 'Bowl A' }];
+  runBatch.mockResolvedValue([successResult('a', 'node-a')]);
+  vi.mocked(fetchNodeSetupState).mockResolvedValue({ claimed: true, nodeId: 'node-a', organizationId: 'org', displayName: 'Der Grüne',
+    activeDeployment: { id: 'dep-1', feedingSiteId: 'site-1', validUntil: null } as never, deploymentCount: 1 });
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Näpfe auslesen' }));
+  await screen.findByText('1 von 1 freigegebenem Napf ausgelesen.');
+  await vi.waitFor(() => expect(fetchNodeSetupState).toHaveBeenCalled());
+  expect(screen.queryByRole('dialog', { name: 'Napf registrieren' })).toBeNull();
+  expect(screen.queryByLabelText('Futterstelle auswählen')).toBeNull();
+});
+
+test('backend-unavailable setup probe invents no state and keeps sync valid (#161)', async () => {
+  adminMembership();
+  authorized.value = [{ id: 'a', name: 'Bowl A' }];
+  runBatch.mockResolvedValue([successResult('a', 'node-a')]);
+  const { SetupError } = await import('./node-setup');
+  vi.mocked(fetchNodeSetupState).mockRejectedValue(new SetupError('backend', 'Napf-Status konnte nicht geladen werden.'));
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Näpfe auslesen' }));
+  await screen.findByText('1 von 1 freigegebenem Napf ausgelesen.');
+  await vi.waitFor(() => expect(fetchNodeSetupState).toHaveBeenCalled());
+  expect(screen.queryByRole('dialog', { name: 'Napf registrieren' })).toBeNull();
+});
+
+test('MEMBER ordinary sync never probes setup or opens a wizard (#161)', async () => {
+  session.user.memberships = [{ organizationId: 'org', status: 'ACTIVE', role: 'MEMBER' }] as never;
+  authorized.value = [{ id: 'a', name: 'Bowl A' }];
+  runBatch.mockResolvedValue([successResult('a', 'node-a')]);
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Näpfe auslesen' }));
+  await screen.findByText('1 von 1 freigegebenem Napf ausgelesen.');
+  expect(fetchNodeSetupState).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: 'Napf registrieren' })).toBeNull();
+});
+
+test('foreign batch result never probes setup or opens a wizard (#161)', async () => {
+  adminMembership();
+  authorized.value = [{ id: 'foreign' }];
+  runBatch.mockResolvedValue([{ ...successResult('foreign', 'node-foreign'), kind: 'foreign', foreignOrganizationName: null, message: 'Dieser Napf ist für deine Organisation nicht verfügbar.' }]);
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Näpfe auslesen' }));
+  await vi.waitFor(() => expect(runBatch).toHaveBeenCalledTimes(1));
+  expect(fetchNodeSetupState).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: 'Napf registrieren' })).toBeNull();
+});
+
+test('organization switch during setup probe leaks no cross-org wizard (#161)', async () => {
+  adminMembership();
+  authorized.value = [{ id: 'a', name: 'Bowl A' }];
+  runBatch.mockResolvedValue([successResult('a', 'node-a')]);
+  let resolveProbe!: (value: unknown) => void;
+  vi.mocked(fetchNodeSetupState).mockReturnValue(new Promise(resolve => { resolveProbe = resolve as never; }));
+  render(<CollectorShell/>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Näpfe auslesen' }));
+  await vi.waitFor(() => expect(fetchNodeSetupState).toHaveBeenCalled());
+  act(() => { session.activeOrganizationId = 'org-b'; listeners.forEach(listener => listener()); });
+  await act(async () => { resolveProbe({ claimed: true, nodeId: 'node-a', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 }); });
+  expect(screen.queryByRole('dialog', { name: 'Napf registrieren' })).toBeNull();
+  expect(screen.queryByLabelText('Futterstelle auswählen')).toBeNull();
+});
+
+test('reload hint resumes setup without claiming (#161)', async () => {
+  adminMembership();
+  vi.mocked(fetchNodeSetupState).mockResolvedValue({ claimed: true, nodeId: 'node-resume', organizationId: 'org', displayName: null, activeDeployment: null, deploymentCount: 0 });
+  localStorage.setItem('miezmerker-last-setup-node', JSON.stringify({ organizationId: 'org', nodeId: 'node-resume' }));
+  render(<CollectorShell/>);
+  await screen.findByText('Einrichtung noch offen');
+  fireEvent.click(screen.getByRole('button', { name: 'Einrichtung fortsetzen' }));
+  await screen.findByRole('dialog', { name: 'Napf registrieren' });
+  expect(provisionNode).not.toHaveBeenCalled();
+});
+
 test('foreign registration selection exposes no organization metadata or claim action', async () => {
   adminMembership();
   requestDevice.mockResolvedValue({ id: 'foreign' });

@@ -3,7 +3,7 @@ import { toBase64Url } from '../platform/device-keys';
 import { CollectorDatabase } from '../platform/offline-store';
 import { assertAdminMayClaim, claimNode, ClaimError } from './claim-node';
 import { getAuthState } from '../platform/auth';
-import { bindNodeOperation } from './node-operation';
+import { bindNodeOperation, NodeOperationCancelledError } from './node-operation';
 import { PublicProbeTransport } from './public-probe';
 import { usesAlphaPhoneClock } from './phone-time';
 import { bootstrapRegistrationTime } from './registration-time';
@@ -12,6 +12,27 @@ import { decodeFrame, decodeClaimAdvertisement, encodeFrame, encodeClaimReceipt,
 
 // Reservation and receipt persist before delivery. A retry after disconnect can
 // redeliver the same backend-issued receipt without recreating or losing it.
+//
+// Issue #161: a receipt accepted by firmware but lost on BLE transport must not
+// surface as a generic claim failure that invites a second cryptographic
+// claim. Transport failures after the backend receipt exists map to
+// ClaimError(kind='uncertain'): the claim may already be committed, the
+// receipt stays retryable, and the UI must recover via authoritative
+// backend/node state (fetchNodeSetupState) instead of re-claiming.
+function isProvisioningCancellation(error: unknown): boolean {
+  if (error instanceof NodeOperationCancelledError) return true;
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  if (error && typeof error === 'object' && (error as { name?: unknown }).name === 'AbortError') return true;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /abgebrochen.*(Benutzer|Organisation)|Node-Vorgang abgebrochen/i.test(message);
+}
+
+function toUncertainError(error: unknown): ClaimError {
+  if (error instanceof ClaimError && error.kind === 'uncertain') return error;
+  const detail = error instanceof Error ? error.message : String(error ?? 'unbekannt');
+  return new ClaimError('uncertain',
+    `Napf möglicherweise bereits registriert, Bestätigung verloren (${detail}). Receipt bleibt gespeichert; Einrichtung ohne erneutes Claiming über Backend-Status fortsetzen.`);
+}
 export async function provisionNode(transport: NodeTransport, nodeId: string, organizationId: string, signal?: AbortSignal): Promise<void | { timeAnchorPending: true; message: string }> {
   assertAdminMayClaim(organizationId);
   const operation = bindNodeOperation(transport, getAuthState().user!.userId, organizationId, signal, 'ADMIN');
@@ -77,21 +98,37 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
       // replacement or signed-time handshake. A short monotonic wait lets a
       // newly issued receipt's iat become valid; firmware still enforces it.
       // Disconnect/abort errors propagate without another reservation.
-      if (!(error instanceof ClaimError)) throw error;
+      if (isProvisioningCancellation(error)) throw error;
+      if (!(error instanceof ClaimError)) throw toUncertainError(error);
       operation.assertActive();
       issuanceWaitMs = alphaClock ? 2100
         : await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
       savedReceipt = await retrieveReceipt();
       if (!savedReceipt) throw new ClaimError('backend', 'Claim-Receipt fehlt.');
       await waitForIssuanceBound();
-      response = await roundTrip(Opcode.ClaimReceiptRequest, encodeClaimReceipt(savedReceipt));
+      try {
+        response = await roundTrip(Opcode.ClaimReceiptRequest, encodeClaimReceipt(savedReceipt));
+      } catch (retryError) {
+        if (isProvisioningCancellation(retryError)) throw retryError;
+        if (!(retryError instanceof ClaimError)) throw toUncertainError(retryError);
+        throw retryError;
+      }
     }
     if (response.length !== 1 || response[0] !== 0) throw new ClaimError('backend', 'Node hat Receipt nicht bestätigt. Bitte erneut versuchen.');
     // Firmware refreshes public Hello/Owner from the committed identity before
     // acknowledging the receipt. Verify those reads on this connection instead
     // of making Android rediscover every characteristic immediately after claim.
     // Final cleanup disconnects; the next protected sync uses a fresh authorizer.
-    const after = await new PublicProbeTransport(transport).readPublicHello({ alreadyConnected: true, keepConnected: true });
+    // A transport loss here (after the receipt ACK) leaves the commit uncertain:
+    // the firmware may already be CLAIMED while this connection cannot prove it.
+    let after: Awaited<ReturnType<PublicProbeTransport['readPublicHello']>>;
+    try {
+      after = await new PublicProbeTransport(transport).readPublicHello({ alreadyConnected: true, keepConnected: true });
+    } catch (error) {
+      if (isProvisioningCancellation(error)) throw error;
+      if (error instanceof ClaimError) throw error;
+      throw toUncertainError(error);
+    }
     if (after.nodeId !== nodeId || after.incarnation !== hello.incarnation || after.claimState !== 1 || after.owner?.organizationId !== organizationId) {
       throw new ClaimError('backend', 'Node-Provisionierung noch nicht bestätigt. Receipt bleibt lokal gespeichert.');
     }
@@ -99,9 +136,18 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     if ((after.caps ?? 0) & CAP_CLOCK_SNAPSHOT) {
       // Claim completion grants no session. Reuse the ordinary credential/PoP/
       // pinned-Node-auth sync flow for the initial phone anchor.
-      const result = await runFieldSync({ createTransport: () => transport, signal, onUpdate: () => {} });
-      operation.assertActive();
-      if (result.nodeState !== 'complete') return { timeAnchorPending: true, message: `Napf registriert; erste Zeitaufnahme noch ausstehend. Bitte erneut auslesen. ${result.nodeMessage}` };
+      // The claim itself is already committed (receipt ACK + owner verified +
+      // durable claimState); a lost anchor sync must not turn it into a claim
+      // failure. Surface it as pending instead (#161).
+      try {
+        const result = await runFieldSync({ createTransport: () => transport, signal, onUpdate: () => {} });
+        operation.assertActive();
+        if (result.nodeState !== 'complete') return { timeAnchorPending: true, message: `Napf registriert; erste Zeitaufnahme noch ausstehend. Bitte erneut auslesen. ${result.nodeMessage}` };
+      } catch (error) {
+        if (isProvisioningCancellation(error)) throw error;
+        const detail = error instanceof Error ? error.message : String(error ?? 'unbekannt');
+        return { timeAnchorPending: true, message: `Napf registriert; erste Zeitaufnahme noch ausstehend. Bitte erneut auslesen. ${detail}` };
+      }
     }
   } finally { await operation.close(); db.close(); }
 }
