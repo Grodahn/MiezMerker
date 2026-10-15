@@ -144,6 +144,43 @@ test('interrupted receipt delivery resumes without another backend reservation',
   await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('disconnected');
   await provisionNode(transport, NODE, 'org-a'); expect(post).toHaveBeenCalledTimes(1);
 });
+test('lost BLE confirmation after receipt is uncertain, never a silent re-claim (#161)', async () => {
+  const { ClaimError } = await import('./claim-node');
+  const transport = new ClaimTransport(); transport.dropReceipt = true;
+  const failure = await provisionNode(transport, NODE, 'org-a').catch(e => e);
+  expect(failure).toBeInstanceOf(ClaimError);
+  expect(failure.kind).toBe('uncertain');
+  expect(String(failure.message)).toMatch(/möglicherweise bereits registriert/i);
+  // Receipt stays retryable; the next visit reuses it without a new reservation.
+  await provisionNode(transport, NODE, 'org-a');
+  expect(post.mock.calls.filter(([path]) => path === '/api/v1/nodes/claim')).toHaveLength(1);
+});
+test('lost post-claim owner confirmation is uncertain and keeps the receipt (#161)', async () => {
+  const { ClaimError } = await import('./claim-node');
+  const { Opcode: Ops } = await import('./ble-codec');
+  const transport = new ClaimTransport();
+  const write = transport.write.bind(transport);
+  let afterReceipt = false;
+  transport.write = async bytes => {
+    const { decodeFrame: decode } = await import('./ble-codec');
+    const opcode = decode(bytes)!.opcode;
+    if (afterReceipt && opcode === Ops.HelloRequest) throw new Error('BLE disconnected during confirmation');
+    await write(bytes);
+    if (opcode === Ops.ClaimReceiptRequest) afterReceipt = true;
+  };
+  const failure = await provisionNode(transport, NODE, 'org-a').catch(e => e);
+  expect(failure).toBeInstanceOf(ClaimError);
+  expect(failure.kind).toBe('uncertain');
+  const db = new CollectorDatabase();
+  expect((await db.nodeMeta.get(NODE))?.claimReceipt).toBe('signed-receipt');
+  db.close();
+});
+test('anchor sync loss after a committed claim stays pending, never a claim failure (#161)', async () => {
+  const transport = new ClaimTransport(); transport.phoneTime = true;
+  vi.mocked(runFieldSync).mockRejectedValueOnce(new Error('BLE disconnected during anchor'));
+  await expect(provisionNode(transport, NODE, 'org-a')).resolves.toMatchObject({ timeAnchorPending: true });
+  const db = new CollectorDatabase(); expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
+});
 test('MEMBER cannot read or deliver claim material', async () => {
   auth.mockReturnValue({ user: { memberships: [{ organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' }] } });
   const transport = new ClaimTransport(); await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('Nur ADMIN');
