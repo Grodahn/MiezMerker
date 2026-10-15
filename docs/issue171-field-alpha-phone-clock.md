@@ -135,3 +135,24 @@ made policy mismatch errors actionable without asking alpha users for Internet.
 Review also identified and documented the reduced stockpiled-claim freshness
 contract. No signature, revocation, outbox or immutable-observation gate was
 removed. No external independent security audit is claimed.
+
+
+## Follow-up PR review and repairs
+
+- **P2 — cached claim receipt recovery:** alpha previously rethrew every rejected
+  receipt and kept selecting the same cached receipt on later visits. A stale or
+  expired receipt could permanently stall workshop registration. It now renews
+  once via the existing idempotent same-owner backend claim path, retains the
+  original connection clock, and retries after a bounded monotonic issuance wait.
+  A BLE interruption/cancellation still propagates without backend renewal.
+- **P2 — challenge consumption on clock failure:** the board adapter previously
+  returned before the cryptographic verifier when authorization time was absent,
+  leaving the pending challenge reusable after supplying time. Both the adapter
+  and portable server now clear authorization/challenge on failure. The real-JWS
+  router regression attempts authentication before sampling time, supplies the
+  sample, rejects replay and protected operations, and succeeds only after a new
+  challenge. This fixes single-use semantics; it does not change the accepted
+  alpha expiration risk or claim freshness contract.
+
+All review repairs and regression cases were completed before running tests, as
+requested for this follow-up. Physical Android/ESP32 validation remains UNVERIFIED.

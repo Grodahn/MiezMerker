@@ -21,7 +21,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     await transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode, payload }));
     const frame = decodeFrame(await transport.read());
     if (!frame || frame.version !== PROTOCOL_VERSION || frame.opcode !== opcode + 1) {
-      throw new ClaimError('backend', 'Registrierung abgelehnt. Signierten Identitätsnachweis und vertrauenswürdige UTC-Zeit prüfen. Gespeichertes Receipt bleibt retrybar.');
+      throw new ClaimError('backend', 'Registrierung abgelehnt. Signierten Identitätsnachweis und Sicherheitszeit-Policy (Alpha: Handyzeit) prüfen. Gespeichertes Receipt bleibt retrybar.');
     }
     return frame.payload;
   };
@@ -72,11 +72,15 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     let response: Uint8Array;
     try { response = await roundTrip(Opcode.ClaimReceiptRequest, encodeClaimReceipt(savedReceipt)); }
     catch (error) {
-      // A bounded retry renews an expired receipt or an older, wider security
-      // interval. Disconnect/abort errors propagate without another reservation.
-      if (alphaClock || !(error instanceof ClaimError)) throw error;
+      // Renew a rejected/expired cached receipt once through the same-owner
+      // backend path. Alpha retains its original session candidate: no clock
+      // replacement or signed-time handshake. A short monotonic wait lets a
+      // newly issued receipt's iat become valid; firmware still enforces it.
+      // Disconnect/abort errors propagate without another reservation.
+      if (!(error instanceof ClaimError)) throw error;
       operation.assertActive();
-      issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
+      issuanceWaitMs = alphaClock ? 2100
+        : await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
       savedReceipt = await retrieveReceipt();
       if (!savedReceipt) throw new ClaimError('backend', 'Claim-Receipt fehlt.');
       await waitForIssuanceBound();

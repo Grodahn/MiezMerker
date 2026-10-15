@@ -192,7 +192,10 @@ bool BoardAuthorizer::authorize(const std::string& credential, const std::array<
         ble::TrustedEpochSeconds) {
     if (!session_) return false;
     std::int64_t lower = 0, upper = 0;
-    if (!crypto_.authorization_interval_ms(lower, upper)) return false;
+    if (!crypto_.authorization_interval_ms(lower, upper)) {
+        session_->disconnect(); // Consume the challenge even before time is available.
+        return false;
+    }
     std::array<unsigned char, 64> proof_bytes{};
     std::copy(proof.begin(), proof.end(), proof_bytes.begin());
     return session_->authorize_with_bounds(

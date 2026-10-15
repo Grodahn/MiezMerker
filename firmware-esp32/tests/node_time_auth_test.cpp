@@ -176,8 +176,18 @@ int main(int argc, char** argv) {
         };
         std::vector<std::uint8_t> sample{1};
         for(unsigned i=0;i<8;++i) sample.push_back(static_cast<std::uint8_t>(1791748800000ULL>>(8*i)));
+        // An adapter can reject before crypto when no clock candidate exists.
+        // The domain boundary must still consume that attempt's challenge.
+        assert(exchange(ble::Opcode::ChallengeRequest).opcode==ble::Opcode::ChallengeResponse);
+        const auto no_clock=exchange(ble::Opcode::AuthRequest,ble::encode_auth_request({credential,proof}));
+        assert(!ble::decode_auth_response(no_clock.payload)->ok);
         assert(exchange(ble::Opcode::AlphaPhoneClockRequest,sample).opcode==ble::Opcode::AlphaPhoneClockResponse);
+        const auto replay=exchange(ble::Opcode::AuthRequest,ble::encode_auth_request({credential,proof}));
+        assert(!ble::decode_auth_response(replay.payload)->ok);
         assert(exchange(ble::Opcode::StatusRequest).opcode==ble::Opcode::Error);
+        assert(exchange(ble::Opcode::AckRequest,ble::encode_ack_request(1)).opcode==ble::Opcode::Error);
+        assert(exchange(ble::Opcode::CompactRequest).opcode==ble::Opcode::Error);
+        assert(reboot.ack_watermark()==0 && reboot.observation_count()==1);
         assert(exchange(ble::Opcode::ChallengeRequest).opcode==ble::Opcode::ChallengeResponse);
         auto auth_frame=exchange(ble::Opcode::AuthRequest,ble::encode_auth_request({credential,proof}));
         assert(ble::decode_auth_response(auth_frame.payload)->ok);

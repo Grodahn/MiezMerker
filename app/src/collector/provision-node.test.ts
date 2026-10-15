@@ -211,3 +211,25 @@ test('alpha workshop claim needs no signed UTC bootstrap and preserves backend r
     expect(transport.operations).toContain(Opcode.ClaimReceiptRequest);
   } finally { vi.unstubAllEnvs(); }
 });
+
+
+test('alpha renews a rejected cached receipt once without replacing its connection clock', async () => {
+  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'FIELD_ALPHA_PHONE_CLOCK');
+  try {
+    const transport = new ClaimTransport(); transport.alphaClock = true; transport.dropReceipt = true;
+    // Backend reservation survives a failed BLE delivery; the next visit uses
+    // this cached receipt, which the Node then rejects (e.g. after expiration).
+    await expect(provisionNode(transport, NODE, 'org-a')).rejects.toThrow('disconnected');
+    expect(post.mock.calls.filter(([path]) => path === '/api/v1/nodes/claim')).toHaveLength(1);
+    transport.rejectReceiptOnce = true;
+    await provisionNode(transport, NODE, 'org-a');
+    expect(transport.claimed).toBe(true);
+    expect(post.mock.calls.filter(([path]) => path === '/api/v1/nodes/claim')).toHaveLength(2);
+    expect(post.mock.calls.some(([path]) => path === '/api/v1/nodes/time-bootstrap')).toBe(false);
+    // Exactly one sample for each visit, including the renewed-receipt retry.
+    expect(transport.operations.filter(op => op === Opcode.AlphaPhoneClockRequest)).toHaveLength(2);
+    expect(transport.operations).not.toContain(Opcode.RegistrationTimeChallengeRequest);
+    const db = new CollectorDatabase();
+    expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
+  } finally { vi.unstubAllEnvs(); }
+});

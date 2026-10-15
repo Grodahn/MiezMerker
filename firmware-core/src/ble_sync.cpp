@@ -59,7 +59,13 @@ bool SyncServer::authorize(const std::string& credential,
         authorizer_->disconnect();  // Every failed attempt consumes the session.
         return false;
     }
-    return authorizer_->authorize(credential, proof, now_s);
+    if (!authorizer_->authorize(credential, proof, now_s)) {
+        // Adapters may reject before reaching crypto (e.g. missing clock).
+        // Every failed attempt must consume its challenge and any old grant.
+        authorizer_->disconnect();
+        return false;
+    }
+    return true;
 }
 
 bool SyncServer::claimed() const {
