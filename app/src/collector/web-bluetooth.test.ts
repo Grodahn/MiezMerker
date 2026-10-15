@@ -135,3 +135,26 @@ describe('Web Bluetooth adapter (GATT contract #6)', () => {
     expect(await channel.read()).toEqual(owner);
   });
 });
+
+
+test('metadata uses protected Batch and bounded MTU-23 fragments without changing bytes', async () => {
+  const { metadataWriteChunks } = await import('../platform/web-bluetooth');
+  const { encodeMetadata } = await import('./ble-codec');
+  const frame = encodeFrame({ version: 1, opcode: Opcode.MetadataRequest,
+    payload: encodeMetadata('44444444-4444-4444-8444-444444444444',
+      '22222222-2222-4222-8222-222222222222', 2147483647, '猫'.repeat(100)),
+  });
+  expect(characteristicForRequest(Opcode.MetadataRequest)).toBe(BLE_CHAR_UUIDS.batch);
+  const chunks = metadataWriteChunks(frame);
+  const joined: number[] = [];
+  for (const [i, chunk] of chunks.entries()) {
+    expect(chunk.length).toBeLessThanOrEqual(20);
+    expect(Array.from(chunk.slice(0, 4))).toEqual([0x50, 0x4d, 1, i === 0 ? 1 : 0]);
+    const view = new DataView(chunk.buffer);
+    expect(view.getUint16(4, true)).toBe(frame.length);
+    expect(view.getUint16(6, true)).toBe(joined.length);
+    joined.push(...chunk.slice(8));
+  }
+  expect(new Uint8Array(joined)).toEqual(frame);
+  expect(() => metadataWriteChunks(helloFrame())).toThrow();
+});

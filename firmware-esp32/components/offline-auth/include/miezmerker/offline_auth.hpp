@@ -9,6 +9,8 @@ namespace miezmerker {
 struct ClaimReceiptInfo {
     std::string node_id, organization_id, organization_name, public_contact;
     std::array<unsigned char, 65> public_key{};
+    std::uint32_t bowl_number{0};
+    std::string display_name{};
 };
 bool verify_claim_receipt(std::string_view receipt, std::span<const unsigned char, 65> issuer_key,
                           std::int64_t trusted_epoch_seconds, ClaimReceiptInfo& out);

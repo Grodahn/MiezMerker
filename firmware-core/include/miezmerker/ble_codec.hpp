@@ -34,6 +34,7 @@ inline constexpr std::uint16_t kCapCompact = 0x0010;
 inline constexpr std::uint16_t kCapTimeEvidence = 0x0020;
 inline constexpr std::uint16_t kCapClockSnapshot = 0x0040;
 inline constexpr std::uint16_t kCapFieldAlphaPhoneClock = 0x0080;
+inline constexpr std::uint16_t kCapMetadata = 0x0100;
 inline constexpr std::uint16_t kCapAllV1 =
     kCapBatch | kCapAck | kCapTimeCorrect | kCapNodeProof | kCapCompact;
 
@@ -76,6 +77,8 @@ enum class Opcode : std::uint8_t {
     ClockSnapshotResponse = 0x24,
     AlphaPhoneClockRequest = 0x25,
     AlphaPhoneClockResponse = 0x26,
+    MetadataRequest = 0x27,
+    MetadataResponse = 0x28,
     Error = 0xFF,
 };
 

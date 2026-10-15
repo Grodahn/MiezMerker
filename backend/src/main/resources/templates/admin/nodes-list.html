@@ -31,6 +31,7 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 <tbody>
 <tr th:each="n : ${nodes}">
 <td>
+<strong th:text="${'Napf #' + n.bowlNumber}">Napf #1</strong>
 <span th:text="${n.displayOrFallback}">Napf</span>
 <small class="muted"><code th:text="${n.nodeId}">node</code></small>
 </td>

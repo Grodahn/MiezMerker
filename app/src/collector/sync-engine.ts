@@ -14,7 +14,7 @@ import {
   decodeFrame, decodeHelloPublic, decodeNodeProofResponse, decodeOwnerResponse,
   decodeStatusResponse, encodeFrame, encodeAckRequest, encodeAuthRequest,
   encodeBatchRequest, encodeHelloRequest, encodeNodeProofRequest,
-  CAP_ALL_V1, Opcode, PROTOCOL_VERSION, SyncError,
+  CAP_ALL_V1, CAP_METADATA, encodeMetadata, Opcode, PROTOCOL_VERSION, SyncError,
 } from './ble-codec';
 import type { NodeTransport } from '../platform/node-transport';
 import type { AppDeviceKeys } from '../platform/device-keys';
@@ -210,6 +210,7 @@ export interface SyncPersistence {
 // Retries after disconnect with fresh challenge; lost ACKs are idempotent.
 export class SyncEngine {
   private timeMessage = '';
+  private metadataWarning: string | undefined;
   private evidenceStored = 0;
   private evidenceIds = new Set<string>();
   private bootstrappedThisVisit = false;
@@ -236,6 +237,7 @@ export class SyncEngine {
 
   async sync(credential: string, trustedNowS: () => number, organizationId?: string | null): Promise<SyncResult> {
     this.timeMessage = '';
+    this.metadataWarning = undefined;
     this.evidenceStored = 0;
     this.evidenceIds.clear();
     this.bootstrappedThisVisit = false;
@@ -429,6 +431,20 @@ export class SyncEngine {
         throw new SyncFailedError('unauthorized', 'Node-Authentizität konnte nicht bestätigt werden (Fake-Node möglich).', this.owner);
       }
       this.phase = 'authorized';
+      // Current authorized backend metadata only. No offline metadata replay.
+      const metadata = this.identity.metadata;
+      if ((hello.caps & CAP_METADATA) && metadata && organizationId
+          && metadata.organizationId.toLowerCase() === organizationId.toLowerCase()) {
+        this.options.assertActive?.();
+        const response = decodeFrame(await this.sendFrame(encodeFrame({ version: 1,
+          opcode: Opcode.MetadataRequest,
+          payload: encodeMetadata(hello.nodeId, organizationId, metadata.bowlNumber, metadata.displayName),
+        }), true));
+        if (response?.opcode !== Opcode.MetadataResponse || response.payload.length !== 1 || response.payload[0] !== 0) {
+          this.metadataWarning = 'Napfname konnte nicht aktualisiert werden; beim nächsten Online-Sync erneut versuchen.';
+        }
+      }
+
 
       if (hello.caps & CAP_CLOCK_SNAPSHOT) {
         if (!organizationId || !this.store.putTimeEvidence) throw new SyncFailedError('storage', 'Dauerhafter Zeitbelegspeicher fehlt.', this.owner);
@@ -581,7 +597,7 @@ export class SyncEngine {
       // Compaction reclaims node space after the copy and ACK are committed.
       // Its failure cannot undo a successful field visit.
       this.phase = 'compacting';
-      let maintenanceWarning: string | undefined;
+      let maintenanceWarning = this.metadataWarning;
       try {
         const compactResp = await this.sendFrame(encodeFrame({
           version: PROTOCOL_VERSION,
@@ -605,7 +621,7 @@ export class SyncEngine {
     }
   }
 
-  private async sendFrame(frame: Uint8Array): Promise<Uint8Array> {
+  private async sendFrame(frame: Uint8Array, allowError = false): Promise<Uint8Array> {
     let response: Uint8Array;
     try {
       await this.transport.write(frame);
@@ -621,7 +637,7 @@ export class SyncEngine {
       throw new SyncFailedError('incompatible',
         `Inkompatible Protokoll-Version in Node-Antwort (v${decoded.version}).`, this.owner);
     }
-    if (decoded.opcode === Opcode.Error) {
+    if (decoded.opcode === Opcode.Error && !allowError) {
       throw new SyncFailedError('protocol', 'Node meldet Protokollfehler.', this.owner);
     }
     return response;

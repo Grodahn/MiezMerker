@@ -99,7 +99,7 @@ struct FixtureRandom : RandomSource {
             first = false;
             return;
         }
-        std::fill(out.begin(), out.end(), 0xAA);
+        std::fill(out.begin(), out.end(), std::uint8_t{0xAA});
         if (!out.empty()) out[0] = 0x01;
         // Ensure UUIDv4 variant bits for anchor IDs (set by manager).
         first = false;
@@ -115,7 +115,7 @@ struct StickyFixtureRandom : RandomSource {
             for (std::size_t i = 0; i < 32; ++i) out[i] = static_cast<std::uint8_t>(i);
             return;
         }
-        std::fill(out.begin(), out.end(), 0xAA);
+        std::fill(out.begin(), out.end(), std::uint8_t{0xAA});
         if (!out.empty()) {
             out[0] = static_cast<std::uint8_t>(0x10 + (calls++ % 200));
             if (out[0] == 0) out[0] = 0x10;

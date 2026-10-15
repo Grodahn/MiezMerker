@@ -205,6 +205,7 @@ int main() {
     NodeIdentityManager mgr(store, mode, random, crypto, clock);
     assert(!mgr.in_claim_mode());
     assert(mgr.initialize());
+    assert(mgr.advertising_name() == "MM-unregistriert");
     auto initial = mgr.identity();
     assert((std::to_integer<unsigned>(initial.node_id[6]) & 0xf0) == 0x40);
     assert((std::to_integer<unsigned>(initial.node_id[8]) & 0xc0) == 0x80);
@@ -287,6 +288,53 @@ int main() {
     mode.enabled = false; // Initial commit requires no physical interaction.
     assert(reboot.apply_claim("receipt"));
     assert(reboot.claimed() && !reboot.in_claim_mode());
+    assert(reboot.advertising_name() == "MM-registriert");
+    assert(!reboot.apply_metadata(initial.node_id, "org-a", 4711, "foreign"));
+    assert(!reboot.apply_metadata(reset.node_id, "org-b", 4711, "foreign"));
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 0, "zero"));
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 2147483648U, "overflow"));
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 4711, std::string("\xc0\xaf", 2)));
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 4711, std::string("a\0b", 3)));
+    assert(reboot.apply_metadata(reset.node_id, "org-a", 4711, ""));
+    assert(reboot.advertising_name() == "MM-4711");
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 4712, "renumber"));
+    assert(reboot.apply_metadata(reset.node_id, "org-a", 4711, "der gelbe"));
+    assert(reboot.advertising_name() == "MM-4711-der-gelbe");
+    store.fail_save = true;
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 4711, "lost"));
+    store.fail_save = false;
+    assert(reboot.initialize() && reboot.advertising_name() == "MM-4711-der-gelbe");
+    std::string unicode;
+    for (int i = 0; i < 100; ++i) unicode += "\xe7\x8c\xab";
+    assert(reboot.apply_metadata(reset.node_id, "org-a", 4711, unicode));
+    assert(reboot.advertising_name().size() == 29);
+    assert(reboot.initialize() && reboot.advertising_name().size() == 29);
+    assert(reboot.identity().display_name == unicode);
+    // Independent claim at the int32 boundary keeps every digit in advertising.
+    {
+        MemoryIdentityStore large_store; TestRandom large_random; FakeCrypto large_crypto;
+        NodeIdentityManager large(large_store, mode, large_random, large_crypto, clock);
+        assert(large.initialize());
+        large_crypto.claim = {large.identity().node_id, large.identity().public_key, "org-a", "Org A", ""};
+        large_crypto.claim.bowl_number = 2147483647U; large_crypto.claim.display_name = unicode;
+        large_crypto.valid_receipt = true;
+        assert(large.apply_claim("receipt"));
+        assert(large.advertising_name().starts_with("MM-2147483647-"));
+        assert(large.advertising_name().size() <= 29);
+    }
+
+    std::string emoji;
+    for (int i = 0; i < 100; ++i) emoji += "\xf0\x9f\x90\x88";
+    assert(reboot.apply_metadata(reset.node_id, "org-a", 4711, emoji));
+    assert(reboot.advertising_name().size() == 28); // 21 available suffix bytes -> 5 complete code points.
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 4711, "\xed\xa0\x80"));
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 4711, "\xf0\x9f"));
+
+    store.commit_then_fail = true;
+    assert(!reboot.apply_metadata(reset.node_id, "org-a", 4711, "committed"));
+    store.commit_then_fail = false;
+    assert(reboot.initialize() && reboot.advertising_name() == "MM-4711-committed");
+
     assert(!reboot.sign_claim(advertisement));
     assert(reboot.initialize());
     assert(reboot.identity().organization_name == "Org A");

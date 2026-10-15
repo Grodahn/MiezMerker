@@ -70,7 +70,7 @@ public class AdminNodesController {
         this.assignments = assignments;
     }
 
-    public record NodeRow(UUID nodeId, String displayName, String displayOrFallback,
+    public record NodeRow(Integer bowlNumber, UUID nodeId, String displayName, String displayOrFallback,
             UUID currentSiteId, String currentSiteName, String firmwareVersion,
             String protocolVersion, String statusNote, String lastContactAt) {}
 
@@ -124,7 +124,7 @@ public class AdminNodesController {
                     siteName = current.getFeedingSite().getName();
                 }
             }
-            rows.add(new NodeRow(n.getNodeId(), n.getDisplayName(),
+            rows.add(new NodeRow(n.getBowlNumber(), n.getNodeId(), n.getDisplayName(),
                     displayOrFallback(n.getDisplayName()),
                     siteId, siteName, n.getFirmwareVersion(),
                     n.getProtocolVersion(), n.getStatusNote(),
@@ -305,6 +305,7 @@ public class AdminNodesController {
         }
         model.addAttribute("nodeId", node.getNodeId());
         model.addAttribute("displayName", node.getDisplayName());
+        model.addAttribute("bowlNumber", node.getBowlNumber());
         model.addAttribute("displayOrFallback",
                 displayOrFallback(node.getDisplayName()));
         model.addAttribute("firmwareVersion", node.getFirmwareVersion());

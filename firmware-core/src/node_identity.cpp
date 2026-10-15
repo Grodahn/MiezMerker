@@ -5,6 +5,28 @@
 
 namespace miezmerker {
 namespace {
+// Strict UTF-8: reject overlong sequences, surrogates, truncation and NUL.
+bool valid_name(const std::string& name) {
+    if (name.size() > 400) return false;
+    for (std::size_t i = 0; i < name.size();) {
+        const auto c = static_cast<unsigned char>(name[i++]);
+        if (!c) return false;
+        if (c < 0x80) continue;
+        unsigned remaining, value, minimum;
+        if (c >= 0xc2 && c <= 0xdf) { remaining = 1; value = c & 31; minimum = 0x80; }
+        else if (c >= 0xe0 && c <= 0xef) { remaining = 2; value = c & 15; minimum = 0x800; }
+        else if (c >= 0xf0 && c <= 0xf4) { remaining = 3; value = c & 7; minimum = 0x10000; }
+        else return false;
+        if (i + remaining > name.size()) return false;
+        while (remaining--) {
+            const auto b = static_cast<unsigned char>(name[i++]);
+            if ((b & 0xc0) != 0x80) return false;
+            value = (value << 6) | (b & 63);
+        }
+        if (value < minimum || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) return false;
+    }
+    return true;
+}
 bool valid_identity(const NodeIdentity& identity) {
     return (std::to_integer<unsigned>(identity.node_id[6]) & 0xf0) == 0x40
         && (std::to_integer<unsigned>(identity.node_id[8]) & 0xc0) == 0x80
@@ -125,17 +147,55 @@ bool NodeIdentityManager::apply_claim(const std::string& receipt) {
     VerifiedClaim claim;
     if (!crypto_.verify_claim(receipt, claim) || claim.node_id != identity_.node_id
         || claim.public_key != identity_.public_key || claim.organization_id.empty()) return false;
-    if (claimed()) return claim.organization_id == identity_.organization_id;
+    if (claim.bowl_number > 2147483647U || !valid_name(claim.display_name)
+        || (!claim.bowl_number && !claim.display_name.empty())) return false;
+    if (claimed()) return claim.organization_id == identity_.organization_id
+        && (!claim.bowl_number || !identity_.bowl_number || claim.bowl_number == identity_.bowl_number);
     if (!in_claim_mode()) return false;
     NodeIdentity candidate = identity_;
     candidate.organization_id = claim.organization_id;
     candidate.organization_name = claim.organization_name;
     candidate.public_contact = claim.public_contact;
     candidate.claim_receipt = receipt;
+    candidate.bowl_number = claim.bowl_number;
+    candidate.display_name = claim.display_name;
     if (candidate.observations) candidate.observations->claim_state = ClaimState::CLAIMED;
     if (!store_.save(candidate)) { ready_ = false; return false; }
     identity_ = std::move(candidate);
     return true;
+}
+
+bool NodeIdentityManager::apply_metadata(const std::array<std::byte, 16>& node,
+        const std::string& organization, std::uint32_t number, const std::string& name) {
+    if (!ready_ || !reload() || !claimed() || node != identity_.node_id
+        || organization != identity_.organization_id || !number || number > 2147483647U
+        || (identity_.bowl_number && identity_.bowl_number != number)
+        || !valid_name(name)) return false;
+    if (identity_.bowl_number == number && identity_.display_name == name) return true;
+    auto candidate = identity_;
+    candidate.bowl_number = number; candidate.display_name = name;
+    // Blob replacement is atomic. A failed write leaves the old record intact;
+    // reload on retry also handles an uncertain commit result.
+    if (!store_.save(candidate)) return false;
+    identity_ = std::move(candidate);
+    return true;
+}
+
+std::string NodeIdentityManager::advertising_name() const {
+    if (!ready_ || !claimed()) return "MM-unregistriert";
+    if (!identity_.bowl_number) return "MM-registriert"; // Legacy, no invented number.
+    std::string name = "MM-" + std::to_string(identity_.bowl_number);
+    if (identity_.display_name.empty()) return name;
+    const auto limit = 29 - name.size() - 1; // One complete local-name AD in scan response.
+    auto bytes = std::min(limit, identity_.display_name.size());
+    while (bytes && bytes < identity_.display_name.size()
+        && (static_cast<unsigned char>(identity_.display_name[bytes]) & 0xc0) == 0x80) --bytes;
+    if (bytes) {
+        auto suffix = identity_.display_name.substr(0, bytes);
+        for (auto& c : suffix) if (static_cast<unsigned char>(c) <= 32 || c == 127) c = '-';
+        name += "-" + suffix;
+    }
+    return name;
 }
 
 bool NodeIdentityManager::sign_session_challenge(std::span<const std::byte> challenge,

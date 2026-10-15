@@ -79,7 +79,7 @@ public class NodeController {
             String tokenType) {}
 
     @Schema(name = "NodeView")
-    public record NodeView(UUID nodeId, String organizationId, String state,
+    public record NodeView(Integer bowlNumber, UUID nodeId, String organizationId, String state,
             String firmwareVersion, String protocolVersion, String statusNote,
             @Schema(type = "string", nullable = true,
                     description = "Optional human-readable bowl label (Node.displayName, "
@@ -114,7 +114,7 @@ public class NodeController {
             @Schema(nullable = true) String publicContact) {}
 
     private static NodeView toView(NodeDevice n) {
-        return new NodeView(n.getNodeId(),
+        return new NodeView(n.getBowlNumber(), n.getNodeId(),
                 n.getOrganization() == null ? null : n.getOrganization().getId().toString(),
                 n.getState().name(), n.getFirmwareVersion(), n.getProtocolVersion(),
                 n.getStatusNote(), n.getDisplayName(),
@@ -177,7 +177,7 @@ public class NodeController {
                 String receipt = issuer.issueClaimReceipt(existing.getNodeId(), org.getId(),
                         org.getSlug(), org.getDisplayName(), org.getPublicContact(),
                         existing.getPublicKeyX(), existing.getPublicKeyY(),
-                        existing.getFingerprint(), Instant.now());
+                        existing.getFingerprint(), Instant.now(), existing.getBowlNumber(), existing.getDisplayName());
                 return new ClaimReceiptView(existing.getNodeId(), org.getId().toString(), receipt,
                         "Claim-ES256-JWT");
             }
@@ -191,7 +191,7 @@ public class NodeController {
             String receipt = issuer.issueClaimReceipt(existing.getNodeId(), org.getId(),
                     org.getSlug(), org.getDisplayName(), org.getPublicContact(),
                     existing.getPublicKeyX(), existing.getPublicKeyY(),
-                    existing.getFingerprint(), Instant.now());
+                    existing.getFingerprint(), Instant.now(), existing.getBowlNumber(), existing.getDisplayName());
             return new ClaimReceiptView(existing.getNodeId(), org.getId().toString(), receipt,
                     "Claim-ES256-JWT");
         }
@@ -207,10 +207,10 @@ public class NodeController {
                 request.publicKeyY(), fingerprint,
                 request.firmwareVersion());
         node.claim(org);
-        nodes.save(node);
+        node = nodes.saveAndFlush(node);
         String receipt = issuer.issueClaimReceipt(node.getNodeId(), org.getId(), org.getSlug(),
                 org.getDisplayName(), org.getPublicContact(), node.getPublicKeyX(),
-                node.getPublicKeyY(), node.getFingerprint(), Instant.now());
+                node.getPublicKeyY(), node.getFingerprint(), Instant.now(), node.getBowlNumber(), node.getDisplayName());
         return new ClaimReceiptView(node.getNodeId(), org.getId().toString(), receipt,
                 "Claim-ES256-JWT");
     }

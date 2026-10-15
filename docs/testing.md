@@ -294,3 +294,7 @@ repeat the entire test plan, review checklist and CI procedure.
 
 Runner regression checks (no Java/Node/C++ dependencies required):
 `python -m unittest discover -s scripts/tests -v`.
+
+`NodeBowlNumberTest` belongs to `node` and `schema`: deterministic pre-V21
+backfill, concurrent sequence allocation, immutable UUID, non-reuse on deletion
+and the claim-receipt byte budget.

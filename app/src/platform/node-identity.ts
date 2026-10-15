@@ -7,6 +7,7 @@ export interface TrustedNodeIdentity {
   nodeId: string;
   publicKeyX: string;
   publicKeyY: string;
+  metadata?: { organizationId: string; bowlNumber: number; displayName: string };
 }
 
 export type NodeIdentityErrorKind = 'forbidden' | 'unavailable';
@@ -37,7 +38,12 @@ export async function loadTrustedNodeIdentity(nodeId: string): Promise<TrustedNo
     }
     throw new NodeIdentityError('unavailable', 'Trusted node identity unavailable', status);
   }
-  return { nodeId: data.nodeId, publicKeyX: data.publicKeyX, publicKeyY: data.publicKeyY };
+  return { nodeId: data.nodeId, publicKeyX: data.publicKeyX, publicKeyY: data.publicKeyY,
+    ...(data.organizationId && Number.isInteger(data.bowlNumber) && data.bowlNumber! > 0
+      && data.bowlNumber! <= 2147483647 ? { metadata: {
+        organizationId: data.organizationId, bowlNumber: data.bowlNumber!, displayName: data.displayName ?? '',
+      } } : {}),
+  };
 }
 
 /** One fresh, single-use proof of possession for a later node session (#18).

@@ -25,6 +25,12 @@ public class NodeDevice {
     @Id
     private UUID nodeId;
 
+    @org.hibernate.annotations.Generated(event = org.hibernate.generator.EventType.INSERT)
+    @Column(name = "bowl_number", nullable = false, unique = true, insertable = false, updatable = false)
+    private Integer bowlNumber;
+
+    public Integer getBowlNumber() { return bowlNumber; }
+
     @Column(name = "public_key_x", nullable = false, length = 64)
     private String publicKeyX;
 

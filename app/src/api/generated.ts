@@ -1200,6 +1200,8 @@ export interface components {
             version: number;
         };
         NodeView: {
+            /** Format: int32 */
+            bowlNumber?: number;
             claimedAt?: string;
             /** @description Optional human-readable bowl label (Node.displayName, trimmed; blank means no name; never unique, never part of BLE/crypto identity) */
             displayName?: string | null;

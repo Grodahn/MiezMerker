@@ -32,3 +32,11 @@ test('distinguishes foreign-organization 403 from unavailable identity', async (
   expect(error.kind).toBe('forbidden');
   expect(error.status).toBe(403);
 });
+
+
+test('authorized metadata stays bound to the backend node and organization', async () => {
+  const organizationId = '22222222-2222-4222-8222-222222222222';
+  get.mockResolvedValue({ data: { nodeId, state: 'CLAIMED', publicKeyX: 'x', publicKeyY: 'y',
+    organizationId, bowlNumber: 4711, displayName: 'Der Gelbe' } });
+  expect((await loadTrustedNodeIdentity(nodeId)).metadata).toEqual({ organizationId, bowlNumber: 4711, displayName: 'Der Gelbe' });
+});

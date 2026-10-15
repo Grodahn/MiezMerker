@@ -236,7 +236,7 @@ bool SimClaimCrypto::generate_keypair(std::span<std::byte, 65> public_key,
     mbedtls_mpi scalar;
     mbedtls_mpi_init(&scalar);
     auto rng = [](void*, unsigned char* out, std::size_t len) -> int {
-        std::fill(out, out + len, 0x2a);
+        std::fill(out, out + len, std::uint8_t{0x2a});
         return 0;
     };
     std::size_t written = 0;

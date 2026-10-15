@@ -335,7 +335,7 @@ export async function runEngineWithDiscovery(
     return { ok: false, message: 'foreign', owner: hello.owner, unclaimed: false, foreign: true,
       nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
   }
-  let pinned: { nodeId: string; publicKeyX: string; publicKeyY: string };
+  let pinned: Awaited<ReturnType<typeof loadTrustedNodeIdentity>>;
   try {
     if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('Offline');
     pinned = await loadTrustedNodeIdentity(hello.nodeId);

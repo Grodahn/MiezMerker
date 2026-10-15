@@ -49,7 +49,7 @@ export interface BatchContextOptions {
 
 function bowlName(node: NodeView | undefined): string | null {
   const name = node?.displayName?.trim();
-  return name ? name : null;
+  return node?.bowlNumber ? `Napf #${node.bowlNumber}${name ? ` · ${name}` : ''}` : name || null;
 }
 
 function siteName(sites: FeedingSiteView[], id: string | null | undefined): string | null {

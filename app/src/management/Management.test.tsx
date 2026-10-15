@@ -197,7 +197,7 @@ test('MEMBER registers an observed chip and retains cat visit history', async ()
 });
 
 test('nodes show the bowl label primarily and keep the technical node id visible', async () => {
-  const named = { ...node, displayName: 'Der Grüne' };
+  const named = { ...node, bowlNumber: 4711, displayName: 'Der Grüne' };
   const unnamed = { ...node, nodeId: 'node-b' };
   get.mockImplementation(async (path: string) => ok(path.endsWith('/feeding-sites') ? [site]
     : path.endsWith('/nodes') ? [named, unnamed] : path.endsWith('/deployments') ? [
@@ -206,6 +206,7 @@ test('nodes show the bowl label primarily and keep the technical node id visible
   render(<Management path="/nodes"/>);
   // Bowl label is shown for the named node; the unnamed node still shows its technical id.
   expect(await screen.findByText('Der Grüne')).toBeTruthy();
+  expect(screen.getByText('Napf #4711')).toBeTruthy();
   expect(screen.getByText(named.nodeId)).toBeTruthy();
   expect(screen.getByText(unnamed.nodeId)).toBeTruthy();
   fireEvent.click(screen.getAllByRole('button', { name: 'Details' })[0]);

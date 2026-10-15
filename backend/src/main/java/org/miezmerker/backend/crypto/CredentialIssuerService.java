@@ -201,6 +201,13 @@ public class CredentialIssuerService {
     public String issueClaimReceipt(UUID nodeId, UUID organizationId, String orgSlug,
             String orgName, String contact, String nodeX, String nodeY, String nodeFingerprint,
             Instant now) {
+        return issueClaimReceipt(nodeId, organizationId, orgSlug, orgName, contact,
+                nodeX, nodeY, nodeFingerprint, now, null, null);
+    }
+
+    public String issueClaimReceipt(UUID nodeId, UUID organizationId, String orgSlug,
+            String orgName, String contact, String nodeX, String nodeY, String nodeFingerprint,
+            Instant now, Integer bowlNumber, String displayName) {
         // Provisioning trust is long-lived: the node stores org + trust anchor durably.
         // 10 years is effectively "until factory reset"; rotation happens via re-claim
         // after reset (new identity), not via receipt expiry.
@@ -213,6 +220,8 @@ public class CredentialIssuerService {
                 .expirationTime(Date.from(expires))
                 .claim("ver", CREDENTIAL_VERSION)
                 .claim("kind", "claim")
+                .claim("bowl_number", bowlNumber)
+                .claim("display_name", displayName)
                 .claim("org", organizationId.toString())
                 .claim("org_slug", orgSlug)
                 .claim("org_name", orgName)
@@ -223,7 +232,14 @@ public class CredentialIssuerService {
                 .claim("ipk_x", publicXB64u())
                 .claim("ipk_y", publicYB64u())
                 .build();
-        return sign(claims);
+        String receipt = sign(claims);
+        // Keep the existing 4096-byte receipt transport usable when the
+        // optional bowl label would push otherwise valid owner metadata over
+        // budget. The first authenticated online sync delivers the full label.
+        if (receipt.length() > 4096 && displayName != null) {
+            receipt = sign(new JWTClaimsSet.Builder(claims).claim("display_name", null).build());
+        }
+        return receipt;
     }
 
     private String sign(JWTClaimsSet claims) {

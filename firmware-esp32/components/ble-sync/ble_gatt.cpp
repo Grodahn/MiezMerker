@@ -66,6 +66,7 @@ void GattRouter::disconnect() {
     receipt_fragments_.clear();
     receipt_total_ = 0;
     evidence_fragments_.clear(); evidence_total_ = 0;
+    metadata_fragments_.clear(); metadata_total_ = 0;
     server_->disconnect();
 }
 
@@ -78,11 +79,16 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
                                                    ble::TrustedEpochSeconds now_s) {
     // Auth/receipt transport envelopes. An empty response accepts a partial
     // write; the board retains the final response for the following read.
-    if (!request.empty() && (request[0] == 0x4d || request[0] == 0x4e || request[0] == 0x4f)) {
+    if (!request.empty() && (request[0] == 0x4d || request[0] == 0x4e || request[0] == 0x4f || request[0] == 0x50)) {
+        const bool metadata = request[0] == 0x50;
+        if (metadata && !server_->authorized(now_s)) {
+            metadata_fragments_.clear(); metadata_total_ = 0;
+            return error_frame(SyncError::Unauthorized, "metadata requires authorization");
+        }
         const bool evidence = request[0] == 0x4f;
         const bool receipt = request[0] == 0x4e;
-        auto& fragments = evidence ? evidence_fragments_ : receipt ? receipt_fragments_ : auth_fragments_;
-        auto& expected_total = evidence ? evidence_total_ : receipt ? receipt_total_ : auth_total_;
+        auto& fragments = metadata ? metadata_fragments_ : evidence ? evidence_fragments_ : receipt ? receipt_fragments_ : auth_fragments_;
+        auto& expected_total = metadata ? metadata_total_ : evidence ? evidence_total_ : receipt ? receipt_total_ : auth_total_;
         auto reject = [&]() {
             fragments.clear();
             expected_total = 0;
@@ -92,7 +98,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             request[2] != 1 || request[3] > 1) return reject();
         const std::size_t total = request[4] | (static_cast<std::size_t>(request[5]) << 8);
         const std::size_t offset = request[6] | (static_cast<std::size_t>(request[7]) << 8);
-        if (total < (evidence ? 57U : receipt ? 7U : 70U) || total > (evidence ? 57U : receipt ? 4102U : 2118U)) return reject();
+        if (total < (metadata ? 40U : evidence ? 57U : receipt ? 7U : 70U) || total > (metadata ? 440U : evidence ? 57U : receipt ? 4102U : 2118U)) return reject();
         if (request[3] == 1) {
             fragments.clear();
             expected_total = total;
@@ -106,7 +112,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         fragments.clear();
         expected_total = 0;
         auto decoded = decode_frame(assembled);
-        if (!decoded || (evidence ? decoded->opcode != Opcode::TimeEvidenceReceiptRequest : receipt
+        if (!decoded || (metadata ? decoded->opcode != Opcode::MetadataRequest : evidence ? decoded->opcode != Opcode::TimeEvidenceReceiptRequest : receipt
             ? decoded->opcode != Opcode::ClaimReceiptRequest && decoded->opcode != Opcode::RegistrationTimeProofRequest
             : decoded->opcode != Opcode::AuthRequest)) return reject();
         return handle_frame(assembled, now_s);
@@ -117,6 +123,21 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
         return error_frame(SyncError::UnknownVersion, "unsupported version");
     }
     switch (frame->opcode) {
+        case Opcode::MetadataRequest: {
+            if (!server_->authorized(now_s)) return error_frame(SyncError::Unauthorized, "metadata requires authorization");
+            const auto& p = frame->payload;
+            if (!identity_ || p.size() < 36 || p.size() > 436)
+                return error_frame(SyncError::InvalidFrame, "bad metadata");
+            std::array<std::byte, 16> node{};
+            NodeId org;
+            for (unsigned i = 0; i < 16; ++i) { node[i] = static_cast<std::byte>(p[i]); org.bytes[i] = p[16+i]; }
+            std::uint32_t number = 0;
+            for (unsigned i = 0; i < 4; ++i) number |= std::uint32_t(p[32+i]) << (8*i);
+            const std::string name(p.begin()+36, p.end());
+            if (!identity_->apply_metadata(node, org.to_string(), number, name))
+                return error_frame(SyncError::InvalidState, "metadata rejected");
+            return encode_frame({1, Opcode::MetadataResponse, {0}});
+        }
         case Opcode::AlphaPhoneClockRequest: {
             const auto& p = frame->payload;
             if (!alpha_clock_) return error_frame(SyncError::ClockUnavailable, "FIELD_ALPHA_PHONE_CLOCK disabled");
@@ -260,6 +281,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
             }
             HelloPublic hello = server_->public_hello();
             hello.caps |= kCapClockSnapshot;
+            if (identity_) hello.caps |= kCapMetadata;
             if (alpha_clock_) hello.caps |= kCapFieldAlphaPhoneClock;
             if (time_bootstrap_ && evidence_) hello.caps |= kCapTimeEvidence;
             return encode_frame(Frame{kProtocolVersion, Opcode::HelloPublic,
@@ -285,6 +307,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
                 Frame{kProtocolVersion, Opcode::OwnerResponse, encode_owner_response(info)});
         }
         case Opcode::ChallengeRequest: {
+            metadata_fragments_.clear(); metadata_total_ = 0;
             if (!frame->payload.empty()) return error_frame(SyncError::InvalidFrame, "bad challenge");
             std::array<std::uint8_t, 32> nonce{};
             if (!server_->begin_challenge(nonce)) {
@@ -294,6 +317,7 @@ std::vector<std::uint8_t> GattRouter::handle_frame(const std::vector<std::uint8_
                                       encode_challenge_response(nonce)});
         }
         case Opcode::AuthRequest: {
+            metadata_fragments_.clear(); metadata_total_ = 0;
             auto req = decode_auth_request(frame->payload);
             if (!req) return error_frame(SyncError::InvalidFrame, "bad auth");
             const bool ok = server_->authorize(req->credential, req->proof, now_s);
