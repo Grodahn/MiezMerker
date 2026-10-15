@@ -179,18 +179,118 @@ reported failures, or zero executed tests becomes exit code 1. Skipped tests do
 not count as executed. Unknown wrapper arguments/domains return 2. Inspect
 `$LASTEXITCODE` in PowerShell or `$?` in POSIX immediately after execution.
 
-## Development policy
+## Development policy: risk review → focused development → integrated review → regression → CI
 
-1. **A — Implementation loop:** Run the smallest affected selection. After a fix,
-   rerun the failing test first. Read full logs only when compact diagnostics are
-   insufficient; do not run the whole repository matrix after every edit.
-2. **B — Local completion:** Once changes stabilize, run relevant domain
-   regressions once. Run typechecks/build/API consistency checks when changed
-   interfaces require them.
-3. **C — GitHub CI:** Let existing CI run the broad regression matrix. Do not
-   repeatedly duplicate full CI locally without a concrete risk or failure.
-   Investigate failed jobs through failed tests and relevant logs, without
-   downloading all successful job logs.
+Follow the **0 → A → R → B → C** order below. This is a scheduling strategy,
+**not** permission to reduce acceptance criteria, assertions, coverage, security
+review, or existing CI gates. Use the existing compact runner and preserve its
+failure and empty-selection semantics.
+
+0. **Contract and risk map, before editing (0).** Read the authoritative
+   issue/ADR, find the smallest set of implementation files and their actual
+   consumers, and check ongoing work on shared interfaces. For auth, claims,
+   BLE, storage and time handling, think through revocation, stale async
+   results, reboot, interrupted persistence, replay, cross-tenant access and
+   failure recovery **before writing code**. Plan focused tests and the
+   affected-domain regression now. This is a concise working plan, not a
+   second research issue or an excuse to delay implementation.
+1. **Focused implementation loop (A).** Write code and use the smallest
+   meaningful unit/integration test selection, including directly affected
+   consumers outside the edited directory. On failure, fix and rerun the
+   failing test first, then its affected group. Run TypeScript typechecking
+   early when changing shared types/interfaces. Preserve complete logs and
+   native failure status; avoid repeating broad frontend suites after edits.
+2. **Integrated issue-contract/security review and repair (R).** Before
+   declaring local completion, review the changed diff, its direct
+   dependencies, invariants, edge cases, accepted issue scope, and test
+   selection. Consolidate confirmed in-scope findings into **one repair
+   phase** and run tests targeted at repaired behavior. Stop and report
+   scope-expanding dependencies rather than implementing adjacent tickets.
+   Revisit the *wider* review only for new contract/security/high-risk changes;
+   small localized fixes do not automatically restart the entire review.
+3. **Affected-domain local completion (B).** After the review/repairs
+   stabilize, run **one** affected-domain regression selection, the necessary
+   production build/typecheck/API checks, and relevant browser tests.
+   Choose the selection by changed **behavior and consumers**, not just
+   directory proximity. Tests previously passing do not validate later
+   behavior changes automatically: use the decision rules below.
+4. **Final-head GitHub CI and closeout (C).** Submit/push the PR and require
+   the existing complete GitHub CI matrix, including applicable firmware,
+   PostgreSQL, backend and browser/end-to-end checks, on the **exact final
+   head SHA**. Inspect failed checks narrowly and fix confirmed in-scope
+   errors. A changed head requires fresh CI; a green check from a previous
+   SHA is not proof for the final commit. Once the required checks are green,
+   complete the report/PR without unnecessary extra full-suite passes or
+   minutes of post-green polling. Do not auto-merge unless requested.
+
+### Which tests to rerun after a late fix?
+
+- **Localized fix without shared-contract impact:** rerun the failing test
+  and directly affected consumers. Reassess whether the existing completion
+  regression remains representative; do not reflexively rerun an unchanged
+  unrelated domain.
+- **Auth/security, public API, cross-tab race, persistent data, migration,
+  temporal projection, BLE protocol or other shared-contract change:**
+  reevaluate the risk map/review and rerun the corresponding affected-domain
+  regression, typecheck/build and browser coverage as needed. A previous B
+  result does not cover a modified contract.
+- **Upstream merge during a parallel implementation:** integrate relevant
+  merged changes **before B** when feasible, inspect the combined diff, then
+  verify affected integration behavior. If main moves after B, evaluate actual
+  shared-file/interface impact before another local run; avoid automatic
+  rebases solely because an unrelated commit landed. CI must still correspond
+  to the final PR head SHA.
+- **Failure in CI:** rerun the failing test locally if reproducible, fix it,
+  then execute the affected checks and get fresh CI on the new commit. Never
+  delete, skip, relax, or mock out failing required tests to gain a green run.
+
+Example for auth changes: focused implementation tests can be
+
+```text
+python scripts/test.py frontend src/platform/auth.test.ts src/platform/auth-offline.test.ts src/collector/authorization.test.ts
+```
+
+After integration review and repairs stabilize, a broader affected-domain
+selection may be
+
+```text
+python scripts/test.py frontend src/platform src/collector src/App.test.tsx
+```
+
+Include storage, upload, BLE cancellation and browser tests when the changed
+authorization behavior reaches them. These examples do not replace the
+issue-specific test matrix.
+
+### CI waiting and agent prompts
+
+Prefer a supported CI watch (for example `gh pr checks --watch`), when
+available, rather than chains of fixed 60-second sleeps and repeated status
+requests. If only polling is possible, space checks sensibly and avoid idle
+delays after all final-head checks have passed. No CI timeout or missing
+required check should be reported as success.
+
+Use concise Codex task prompts; `AGENTS.md` and this file already own the
+default workflow. Example:
+
+```text
+Implement Grodahn/MiezMerker#<issue> (issue is the authoritative contract).
+Follow AGENTS.md and docs/testing.md, using 0→A→R→B→C:
+map high-risk/security/integration cases before coding; focused tests during
+implementation; one consolidated review-and-repair before affected-domain
+completion; full GitHub CI on the final PR head.
+
+Respect boundaries: <issue-specific dependencies and non-goals>.
+Fix confirmed in-scope review and CI findings autonomously; report blockers
+rather than broadening the issue. Do not pause between normal stages.
+Open/update a PR but do NOT merge without explicit approval.
+Report PR/SHA, actual tests and CI, review findings/fixes, remaining risks and
+hardware validation as VERIFIED or UNVERIFIED. Be token-efficient; never
+weaken tests or security gates for speed.
+```
+
+If `AGENTS.md` was already injected into the agent's context, do not reread
+or reproduce it. Prompts should add **issue-specific constraints**, not
+repeat the entire test plan, review checklist and CI procedure.
 
 Runner regression checks (no Java/Node/C++ dependencies required):
 `python -m unittest discover -s scripts/tests -v`.

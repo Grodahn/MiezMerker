@@ -1,18 +1,30 @@
 # Development and testing
 
-Follow the three stages in [docs/testing.md](docs/testing.md).
+Follow the ordered **0 → A → R → B → C** process in
+[docs/testing.md](docs/testing.md):
 
-- **A — Implementation loop:** Run the smallest affected class, method, file,
-  or CTest selection. After a fix, rerun the failing test first. Use the compact
-  runner and inspect full logs only when diagnostics require them. Do not run
-  the whole repository matrix after every edit.
-- **B — Local completion:** Once implementation stabilizes, run the affected
-  domain regression once. Add typechecks/build/API consistency checks when
-  interfaces change. Investigate and fix confirmed in-scope failures.
-- **C — GitHub CI:** Existing CI runs the broader regression matrix, including
-  PostgreSQL and end-to-end tests. Do not repeatedly duplicate it locally
-  without a concrete risk or failure. For failed CI jobs, inspect failed tests
-  and relevant logs; do not download every successful job log.
+- **0 — Contract and risk map (before code):** Identify the issue contract,
+  changed interfaces and direct consumers; map security, concurrency, offline
+  persistence, cross-tenant and data-loss risks where relevant. Identify focused
+  tests and the affected-domain completion selection. Check for parallel PRs
+  touching the same boundaries before planning integration.
+- **A — Focused implementation:** Implement and run the smallest useful tests;
+  after a failure, rerun its test first, then the directly affected group.
+  Typecheck early when modifying TypeScript interfaces. Do not run broad
+  regressions after each edit.
+- **R — Integrated review and repair:** **Before** the completion regression,
+  review the entire issue diff, direct dependencies, acceptance criteria and
+  relevant security/race conditions. Consolidate confirmed in-scope fixes into
+  one repair phase. Rerun tests impacted by repairs, not every broad suite.
+- **B — Local completion:** After review fixes stabilize, run the affected
+  domain regression, required build/typecheck/API checks and relevant browser
+  tests. Revalidate when subsequent changes invalidate those results.
+- **C — GitHub CI and closeout:** Confirm the existing full CI on the **final
+  PR head commit**, including PostgreSQL/end-to-end coverage. Diagnose failed
+  checks narrowly; never mask or skip required gates. Once green, finish without
+  redundant reruns, reviews or idle post-green polling.
+
+These stages are an **execution order, not a test-coverage reduction**.
 
 ## Preferred test commands
 
@@ -62,18 +74,30 @@ defaults for implementation, review-and-repair, and CI investigations.
   assertion, exception, or relevant serial-log window. For a failure, locate the
   first actionable error and nearby context instead of dumping/truncating an
   entire log. Do not use pipes/filters that turn failed commands into success.
-- **Compact GitHub/CI inspection:** Request only check name, state, conclusion,
-  and needed identifiers for polling. Avoid verbose job details and successful
-  job logs. Check running CI at sensible intervals (normally **at least 60
-  seconds apart**) rather than busy-polling; inspect only failed steps and
-  focused log sections unless wider evidence is genuinely needed.
-- **Scoped reviews, one integrated closeout:** During implementation, review
-  the changed files, their direct dependencies, and relevant tests. Once the
-  behavior stabilizes, perform **one integrated issue-contract/security review**
-  and the required broader verification. Fix confirmed in-scope findings and
-  rerun affected checks; do not automatically restart a full repository-wide
-  review after each small fix. Revisit the full scope if a fix changes contracts,
-  security boundaries, or other high-risk behavior.
+- **Compact GitHub/CI inspection:** Request only check name, state, conclusion
+  and identifiers. Prefer a supported watch mechanism (for example,
+  `gh pr checks --watch`) over repetitive fixed `sleep 60` polling; if
+  watching is unavailable, poll at sensible bounded intervals while avoiding
+  unnecessary idle waiting. Inspect failed jobs and focused log sections, not
+  all successful job logs. A green final-head CI requires no additional
+  arbitrary waiting or another full verification solely for reassurance.
+- **Early risks, one integrated review:** Investigate security/concurrency,
+  permissions, immutable data, time/boot boundaries and recovery paths *before*
+  they become late review surprises. After implementing with focused tests,
+  conduct **one substantive issue-contract/security review before B**, repair
+  confirmed findings, then complete the affected-domain regression. Reopen
+  wider review only if a fix changes contracts, security boundaries, or other
+  high-risk behavior; otherwise retest the affected slice.
+- **Parallel changes and integration:** Keep independent issues on separate
+  branches. Before B, incorporate relevant already-merged upstream changes
+  once and check the actual integration diff. If main advances later, assess
+  whether it affects the PR before rebasing or repeating regressions. Never
+  claim green CI from a different head SHA.
+- **Compact agent prompts:** Task prompts should primarily specify the GitHub
+  issue, task-specific boundaries/dependencies, review-and-repair expectation,
+  merge policy and final evidence. Follow this document and the short template
+  in `docs/testing.md`; do not restate the full test/review instructions in
+  each prompt. If AGENTS.md was injected, treat it as already read.
 - **Avoid avoidable exploration:** Check real paths before running commands,
   reuse previously established paths/results, and batch independent focused
   inspections when useful. Treat already-injected `AGENTS.md` as read; open it
