@@ -433,7 +433,7 @@ export function CollectorShell(props: {
       if (registration && results[0]?.kind === 'success') {
         setFreigebenMessage('Dieser Napf gehört bereits zu deiner Organisation.');
       }
-      const activeAdmin = getAuthState().user?.memberships.some(m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN');
+      const activeAdmin = isActiveAdminFor(organizationId);
       const candidate = results.find(result => result.kind === 'unclaimed' && result.nodeId);
       if (candidate && !operation.signal.aborted) {
         if (!activeAdmin) setFreigebenMessage('Ein Organisationsadmin muss diesen Napf registrieren.');
@@ -711,8 +711,8 @@ export function CollectorShell(props: {
               setClaimMessage(originalMessage);
             }
           } catch {
-              if (stillActive()) setClaimMessage(originalMessage);
-            }
+            if (stillActive()) setClaimMessage(originalMessage);
+          }
           }
         } catch {
           if (stillActive()) setClaimMessage(originalMessage);
