@@ -53,6 +53,7 @@ class MockNodeTransport implements NodeTransport {
 
 // Helper: build a mock node that serves 3 records then completes.
 function makeMockNode(records: BleRecord[], opts: {
+  metadata?: boolean; metadataRejected?: boolean;
   failAuth?: boolean; failAck?: boolean; fakeNode?: boolean; initialAck?: bigint;
   loseAckOnce?: boolean; failCompact?: boolean; timeEvidence?: boolean; timeUsable?: boolean;
   alphaClock?: boolean; phoneTime?: boolean; snapshotReboot?: boolean; snapshotInterrupted?: boolean;
@@ -69,9 +70,12 @@ function makeMockNode(records: BleRecord[], opts: {
     switch (f.opcode) {
       case Opcode.HelloRequest:
         return encodeFrame({ version: 1, opcode: Opcode.HelloPublic, payload: encodeHelloPublic({
-          serverVer: 1, caps: (opts.timeEvidence ? 0x3f : 0x1f) | (opts.phoneTime ? 0x40 : 0) | (opts.alphaClock ? 0x80 : 0), nodeId: NODE_ID, incarnation: INCARNATION,
+          serverVer: 1, caps: (opts.timeEvidence ? 0x3f : 0x1f) | (opts.phoneTime ? 0x40 : 0) | (opts.alphaClock ? 0x80 : 0) | (opts.metadata ? 0x100 : 0), nodeId: NODE_ID, incarnation: INCARNATION,
           firmwareVersion: 'test-1.0.0', claimState: 1, clockStatus: 2,
         })});
+      case Opcode.MetadataRequest:
+        return encodeFrame({ version: 1, opcode: opts.metadataRejected ? Opcode.Error : Opcode.MetadataResponse,
+          payload: new Uint8Array([0]) });
       case Opcode.AlphaPhoneClockRequest:
         return encodeFrame({ version: 1, opcode: Opcode.AlphaPhoneClockResponse, payload: new Uint8Array([0]) });
       case Opcode.ClockSnapshotRequest: {
@@ -196,6 +200,71 @@ describe('SyncEngine', () => {
   beforeEach(async () => {
     db = new SyncDatabase(`test-${Math.random().toString(36).slice(2)}`);
     store = new SyncStore(db);
+  });
+
+  test.each([
+    { capable: true, metadataOrg: '22222222-2222-4222-8222-222222222222', sent: true },
+    { capable: false, metadataOrg: '22222222-2222-4222-8222-222222222222', sent: false },
+    { capable: true, metadataOrg: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sent: false },
+    { capable: true, metadataOrg: undefined, sent: false },
+  ])('metadata is authenticated, bound, capability gated and optional offline: %j', async ({ capable, metadataOrg, sent }) => {
+    const node = makeMockNode([makeRecord(1, 'chip')], { metadata: capable });
+    const pinned = { ...identity, ...(metadataOrg ? { metadata: {
+      organizationId: metadataOrg, bowlNumber: 4711, displayName: 'der gelbe',
+    } } : {}) };
+    const engine = new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, pinned);
+    const result = await engine.sync('valid-credential', () => 1790899200, '22222222-2222-4222-8222-222222222222');
+    expect(result.ok).toBe(true);
+    expect(node.opcodes.includes(Opcode.MetadataRequest)).toBe(sent);
+    if (sent) {
+      expect(node.opcodes.indexOf(Opcode.MetadataRequest)).toBeGreaterThan(node.opcodes.indexOf(Opcode.NodeProofRequest));
+      expect(node.opcodes.indexOf(Opcode.MetadataRequest)).toBeLessThan(node.opcodes.indexOf(Opcode.BatchRequest));
+    }
+    expect(node.getAcked()).toBe(1n);
+  });
+
+  test('metadata persistence rejection does not block durable observation sync', async () => {
+    const node = makeMockNode([makeRecord(1, 'chip')], { metadata: true, metadataRejected: true });
+    const engine = new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, { ...identity,
+      metadata: { organizationId: '22222222-2222-4222-8222-222222222222', bowlNumber: 4711, displayName: '' },
+    });
+    const result = await engine.sync('valid-credential', () => 1790899200, '22222222-2222-4222-8222-222222222222');
+    expect(result.ok).toBe(true);
+    expect(result.maintenanceWarning).toContain('Napfname');
+    expect(node.getAcked()).toBe(1n);
+  });
+
+  test('metadata and compaction warnings are both preserved', async () => {
+    const node = makeMockNode([makeRecord(1, 'chip')], {
+      metadata: true, metadataRejected: true, failCompact: true,
+    });
+    const engine = new SyncEngine(new MockNodeTransport(node.handler), store, mockKeys, { ...identity,
+      metadata: { organizationId: '22222222-2222-4222-8222-222222222222', bowlNumber: 4711, displayName: '' },
+    });
+    const result = await engine.sync('valid-credential', () => 1790899200, '22222222-2222-4222-8222-222222222222');
+    expect(result.ok).toBe(true);
+    expect(result.maintenanceWarning).toContain('Napfname');
+    expect(result.maintenanceWarning).toContain('Speicherbereinigung');
+    expect(node.getAcked()).toBe(1n);
+  });
+
+  test('successful metadata retry clears the earlier warning', async () => {
+    const node = makeMockNode([makeRecord(1, 'chip')], { metadata: true, loseAckOnce: true });
+    let metadataAttempts = 0;
+    const link = new MockNodeTransport(async frame => {
+      if (decodeFrame(frame)?.opcode === Opcode.MetadataRequest && ++metadataAttempts === 1) {
+        return encodeFrame({ version: 1, opcode: Opcode.Error, payload: new Uint8Array([0]) });
+      }
+      return node.handler(frame);
+    });
+    const engine = new SyncEngine(link, store, mockKeys, { ...identity,
+      metadata: { organizationId: '22222222-2222-4222-8222-222222222222', bowlNumber: 4711, displayName: '' },
+    }, { maxRetries: 1, retryDelayMs: 0 });
+    const result = await engine.sync('valid-credential', () => 1790899200, '22222222-2222-4222-8222-222222222222');
+    expect(result.ok).toBe(true);
+    expect(metadataAttempts).toBe(2);
+    expect(result.maintenanceWarning).toBeUndefined();
+    expect(node.getAcked()).toBe(1n);
   });
 
   test('offline reboot alpha path persists before ACK, repeats after interruption, and never calls UTC backend', async () => {

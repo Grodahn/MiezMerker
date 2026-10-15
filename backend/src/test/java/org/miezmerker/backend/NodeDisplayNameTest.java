@@ -60,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NodeDisplayNameTest {
     @Value("${local.server.port}") int port;
 
+    @Autowired org.miezmerker.backend.crypto.CredentialIssuerService issuer;
     @Autowired AppUserRepository users;
     @Autowired OrganizationRepository organizations;
     @Autowired MembershipRepository memberships;
@@ -163,7 +164,42 @@ class NodeDisplayNameTest {
                 + ",\"claimSignature\":\"" + sig + "\"}";
         var res = post("/api/v1/nodes/claim", json);
         assertEquals(200, res.statusCode(), res.body());
+        var receipt = issuer.verify(mapper.readTree(res.body()).get("receipt").asText());
+        var number = nodes.findById(n.nodeId()).orElseThrow().getBowlNumber();
+        assertNotNull(number);
+        assertTrue(number > 0);
+        assertEquals(number.longValue(), receipt.getLongClaim("bowl_number"));
+        var view = mapper.readTree(get("/api/v1/nodes/" + n.nodeId()).body());
+        assertEquals(number.intValue(), view.get("bowlNumber").asInt());
         return n;
+    }
+
+    @Test
+    void oversizedReceiptRollsBackClaimAndAllowsRetryAfterOwnerMetadataIsShortened() throws Exception {
+        Seed fixture = seed();
+        login("n50-admin-a@example.org", "supersecret-password-a");
+        var organization = fixture.orgA();
+        organization.setPublicContact("\u0001".repeat(500));
+        organizations.saveAndFlush(organization);
+        NodeKeys node = NodeKeys.fresh();
+        long timestamp = Instant.now().toEpochMilli();
+        String signature = NodeClaimVerifier.signClaim(node.kp().getPrivate(), node.nodeId(), node.x(), node.y(), timestamp);
+        String request = mapper.writeValueAsString(java.util.Map.of(
+                "nodeId", node.nodeId(), "organizationId", organization.getId(),
+                "publicKeyX", node.x(), "publicKeyY", node.y(),
+                "timestampMillis", timestamp, "claimSignature", signature));
+
+        var rejected = post("/api/v1/nodes/claim", request);
+        assertEquals(422, rejected.statusCode(), rejected.body());
+        assertTrue(nodes.findById(node.nodeId()).isEmpty(), "Undeliverable claim must not commit ownership");
+
+        organization.setPublicContact("");
+        organizations.saveAndFlush(organization);
+        var accepted = post("/api/v1/nodes/claim", request);
+        assertEquals(200, accepted.statusCode(), accepted.body());
+        String receipt = mapper.readTree(accepted.body()).get("receipt").asText();
+        assertTrue(receipt.length() <= 4096);
+        assertTrue(issuer.verify(receipt).getLongClaim("bowl_number") > 0);
     }
 
     @Test

@@ -240,3 +240,11 @@ Workshop claiming uses the same candidate, retaining backend ADMIN, signature,
 ownership and signed receipt gates. Phone-chosen timestamps reduce claim
 freshness and permit credential expiration bypass; see [risks and physical
 acceptance](../../docs/issue171-field-alpha-phone-clock.md).
+
+
+## Bowl metadata extension (#178)
+
+Capability `0x0100`, protected Batch opcodes `0x27/0x28`, bounded transport
+marker `0x50`. See [the complete contract](../../docs/issue178-bowl-identity.md)
+for byte layout, authentication, retry, NVS compatibility and advertising budgets.
+BLE names are public, spoofable display hints, never trusted identities.

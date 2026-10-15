@@ -71,6 +71,7 @@ public:
 
     /// Advertisement service data (4 B). No identity/chip/pending/org.
     std::vector<std::uint8_t> advertisement_bytes() const;
+    std::string advertising_name() const { return identity_ ? identity_->advertising_name() : "MM-unregistriert"; }
 
 private:
     ble::SyncServer* server_;
@@ -86,6 +87,8 @@ private:
     std::size_t receipt_total_{0};
     std::vector<std::uint8_t> evidence_fragments_;
     std::size_t evidence_total_{0};
+    std::vector<std::uint8_t> metadata_fragments_;
+    std::size_t metadata_total_{0};
 };
 
 }  // namespace miezmerker::ble_gatt

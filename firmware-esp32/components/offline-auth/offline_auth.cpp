@@ -305,6 +305,13 @@ bool verify_claim_receipt(std::string_view receipt, std::span<const unsigned cha
         || !integer(c, "iat", issued) || !integer(c, "exp", expires)
         || issued > now || expires <= now || issued >= expires) return false;
     ClaimReceiptInfo candidate;
+    if (cJSON_GetObjectItemCaseSensitive(c, "bowl_number")) {
+        std::int64_t number;
+        if (!integer(c, "bowl_number", number) || number <= 0 || number > 2147483647) return false;
+        candidate.bowl_number = static_cast<std::uint32_t>(number);
+        candidate.display_name = string(c, "display_name");
+        if (candidate.display_name.size() > 400) return false;
+    }
     candidate.node_id = string(c, "sub"); candidate.organization_id = string(c, "org");
     candidate.organization_name = string(c, "org_name"); candidate.public_contact = string(c, "contact");
     // Backend allows 255 name / 500 contact characters. Bound UTF-8 storage by
@@ -337,6 +344,13 @@ bool verify_claim_receipt_with_bounds(std::string_view receipt,
         || !interval_covers(issued, expires, lower_ms, upper_ms))
         return false;
     ClaimReceiptInfo candidate;
+    if (cJSON_GetObjectItemCaseSensitive(c, "bowl_number")) {
+        std::int64_t number;
+        if (!integer(c, "bowl_number", number) || number <= 0 || number > 2147483647) return false;
+        candidate.bowl_number = static_cast<std::uint32_t>(number);
+        candidate.display_name = string(c, "display_name");
+        if (candidate.display_name.size() > 400) return false;
+    }
     candidate.node_id = string(c, "sub");
     candidate.organization_id = string(c, "org");
     candidate.organization_name = string(c, "org_name");

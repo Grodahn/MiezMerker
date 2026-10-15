@@ -47,9 +47,32 @@ struct Boot {
           core(clock, observations, observations, identity, random, CoreConfig{0}) {}
     void claim(FakeCrypto& crypto) {
         crypto.claim = {identity.identity().node_id, identity.identity().public_key, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Test", ""};
+        crypto.claim.bowl_number = 4711; crypto.claim.display_name = "der gelbe";
         assert(identity.apply_claim("fixture-receipt"));
     }
 };
+void legacy_identity_load() {
+    Cell id, log; ManualClock clock; Physical mode; Time time; FixedRandomSource random{42}; FakeCrypto crypto;
+    Boot first(id, log, clock, mode, random, crypto, time);
+    assert(first.core.initialize());
+    const auto uuid = first.identity.identity().node_id;
+    const auto key = first.identity.identity().private_key;
+    // Pre-#178 record: no v2 trailer. Keep the original record and its CRC envelope.
+    assert(id.data.size() > 11);
+    id.data.erase(id.data.end()-11, id.data.end()-4);
+    std::uint32_t crc = 0xffffffff;
+    for (std::size_t i = 0; i < id.data.size()-4; ++i) {
+        crc ^= id.data[i];
+        for (int bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xedb88320U & (0U - (crc & 1)));
+    }
+    crc = ~crc;
+    for (unsigned i = 0; i < 4; ++i) id.data[id.data.size()-4+i] = static_cast<std::uint8_t>(crc >> (8*i));
+    Boot upgraded(id, log, clock, mode, random, crypto, time);
+    assert(upgraded.core.initialize());
+    assert(upgraded.identity.identity().node_id == uuid && upgraded.identity.identity().private_key == key);
+    assert(upgraded.identity.identity().bowl_number == 0 && upgraded.identity.advertising_name() == "MM-unregistriert");
+}
+
 void persistence() {
     Cell id, log; ManualClock clock; Physical mode; Time time; FixedRandomSource random{42}; FakeCrypto crypto;
     Boot first(id, log, clock, mode, random, crypto, time);
@@ -61,6 +84,7 @@ void persistence() {
     const auto original = encode_record(first.core.load_observations().front());
     Boot reboot(id, log, clock, mode, random, crypto, time);
     assert(reboot.core.initialize());
+    assert(reboot.identity.advertising_name() == "MM-4711-der-gelbe");
     assert(reboot.core.node_id() == node && reboot.identity.identity().private_key == key);
     assert(reboot.identity.identity().node_id == incarnation_node);
     assert(reboot.core.next_sequence() == 2 && encode_record(reboot.core.load_observations().front()) == original);
@@ -169,7 +193,22 @@ void endpoint() {
     owner.organization_name = std::string(127, 'n') + "\xe7\x8c\xab";
     owner.public_contact = std::string(190, 'c') + "\xe7\x8c\xab" + std::string(63, 'c');
     SyncServer sync(boot.core, auth, rtc, signer); GattRouter router(sync, owner); GattEndpoint transport(router, sync);
+    router.set_node_identity(&boot.identity);
+    auto metadata = [&](const std::string& org, std::uint32_t number, const std::string& name) {
+        std::vector<std::uint8_t> p;
+        for (auto v : boot.identity.identity().node_id) p.push_back(static_cast<std::uint8_t>(v));
+        const auto organization = NodeId::parse(org).value();
+        p.insert(p.end(), organization.bytes.begin(), organization.bytes.end());
+        for (unsigned i = 0; i < 4; ++i) p.push_back(static_cast<std::uint8_t>(number >> (8*i)));
+        p.insert(p.end(), name.begin(), name.end());
+        return encode_frame({1, Opcode::MetadataRequest, p});
+    };
+    const auto update = metadata(claimed.organization_id, 4711, "updated");
     transport.connect();
+    assert(transport.write(Characteristic::Batch, update, 517, 1, 1) == AccessResult::unauthorized);
+    auto rejected = decode_frame(router.handle_frame(update, 1));
+    assert(rejected && rejected->opcode == Opcode::Error);
+    assert(boot.identity.advertising_name() == "MM-4711-der-gelbe");
     assert(transport.read(Characteristic::Owner, false, 1, 1) == AccessResult::ok);
     const auto public_owner_frame = decode_frame(transport.value(Characteristic::Owner));
     assert(public_owner_frame && public_owner_frame->opcode == Opcode::OwnerResponse);
@@ -190,6 +229,51 @@ void endpoint() {
     assert(transport.write(Characteristic::ClaimReceipt, credential, 23, 5, 1) == AccessResult::invalid);
     assert(transport.write(Characteristic::Auth, credential, 185, 6, 1) == AccessResult::ok);
     assert(transport.read(Characteristic::Status, false, 7, 1) == AccessResult::ok);
+    assert(transport.write(Characteristic::Batch, metadata("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", 4711, "foreign"), 517, 7, 1) == AccessResult::ok);
+    assert(decode_frame(transport.value(Characteristic::Batch))->opcode == Opcode::Error);
+    assert(boot.identity.advertising_name() == "MM-4711-der-gelbe");
+    assert(transport.write(Characteristic::Batch, metadata(claimed.organization_id, 4712, "renumber"), 517, 7, 1) == AccessResult::ok);
+    assert(decode_frame(transport.value(Characteristic::Batch))->opcode == Opcode::Error);
+    // An interrupted fragmented transfer changes neither identity nor observations.
+    std::vector<std::uint8_t> start{0x50, 0x4d, 1, 1,
+        static_cast<std::uint8_t>(update.size()), 0, 0, 0};
+    start.insert(start.end(), update.begin(), update.begin()+12);
+    assert(router.handle_frame(start, 1).empty());
+    assert(boot.identity.advertising_name() == "MM-4711-der-gelbe");
+    // A new challenge also invalidates partial metadata, even if a new
+    // authorization later permits another request on this connection.
+    assert(decode_frame(router.handle_frame(encode_frame({1, Opcode::ChallengeRequest, {}}), 1))->opcode == Opcode::ChallengeResponse);
+    auth.allowed = true;
+    std::vector<std::uint8_t> continuation{0x50, 0x4d, 1, 0,
+        static_cast<std::uint8_t>(update.size()), 0, 12, 0};
+    continuation.insert(continuation.end(), update.begin()+12, update.begin()+24);
+    assert(decode_frame(router.handle_frame(continuation, 1))->opcode == Opcode::Error);
+    router.disconnect();
+    assert(decode_frame(router.handle_frame(start, 1))->opcode == Opcode::Error);
+    auth.allowed = true;
+    for (std::size_t offset = 0; offset < update.size(); offset += 12) {
+        std::vector<std::uint8_t> chunk{0x50, 0x4d, 1, static_cast<std::uint8_t>(offset == 0),
+            static_cast<std::uint8_t>(update.size()), 0, static_cast<std::uint8_t>(offset), 0};
+        chunk.insert(chunk.end(), update.begin()+offset, update.begin()+std::min(offset+12, update.size()));
+        const auto response = router.handle_frame(chunk, 1);
+        if (offset + 12 < update.size()) assert(response.empty());
+        else assert(decode_frame(response)->opcode == Opcode::MetadataResponse);
+    }
+    assert(boot.identity.advertising_name() == "MM-4711-updated");
+    NodeIdentity persisted; assert(boot.store.load(persisted) == NodeIdentityLoadResult::loaded);
+    assert(persisted.bowl_number == 4711 && persisted.display_name == "updated");
+    assert(boot.core.observation_count() == 4);
+    // Idempotent delivery performs no persistent write.
+    id.fail_before = true;
+    assert(boot.identity.apply_metadata(persisted.node_id, persisted.organization_id, 4711, "updated"));
+    id.fail_before = true;
+    assert(!boot.identity.apply_metadata(persisted.node_id, persisted.organization_id, 4711, "not committed"));
+    assert(boot.identity.advertising_name() == "MM-4711-updated");
+    id.fail_before = false; id.fail_after = true;
+    assert(!boot.identity.apply_metadata(persisted.node_id, persisted.organization_id, 4711, "committed"));
+    assert(boot.store.load(persisted) == NodeIdentityLoadResult::loaded && persisted.display_name == "committed");
+    assert(boot.identity.apply_metadata(persisted.node_id, persisted.organization_id, 4711, "committed"));
+    assert(boot.identity.advertising_name() == "MM-4711-committed");
     std::uint64_t tick = 8;
     for (unsigned mtu : {23U, 185U, 277U, 517U, 1000U}) {
         assert(transport.write(Characteristic::Batch, encode_frame({1, Opcode::BatchRequest, encode_batch_request({1, 64})}), mtu, tick++, 1) == AccessResult::ok);
@@ -211,4 +295,4 @@ void endpoint() {
     assert(transport.read(Characteristic::Status, false, tick + 10001, 1) == AccessResult::unauthorized);
 }
 }
-int main() { persistence(); interruption(); exhaustion(); endpoint(); std::cout << "board persistence and GATT adapter regression passed\n"; }
+int main() { legacy_identity_load(); persistence(); interruption(); exhaustion(); endpoint(); std::cout << "board persistence and GATT adapter regression passed\n"; }

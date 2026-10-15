@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
         assert(foreign.begin(fill_nonce,challenge));
         assert(!foreign.authorize_with_bounds(credential,proof,l,u));
         // A fresh challenge defeats replay of the old fixture PoP.
-        auto other_nonce=[](std::span<unsigned char> out) { std::fill(out.begin(),out.end(),0x42); return true; };
+        auto other_nonce=[](std::span<unsigned char> out) { std::fill(out.begin(),out.end(),static_cast<unsigned char>(0x42)); return true; };
         assert(session.begin(other_nonce,challenge));
         assert(!session.authorize_with_bounds(credential,proof,l,u));
         phone.disconnect(); assert(!phone.sample(0));

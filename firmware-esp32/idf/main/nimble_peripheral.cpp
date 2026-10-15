@@ -38,7 +38,7 @@ void NimblePeripheral::start() {
     ble_hs_cfg.sync_cb = synced; ble_hs_cfg.reset_cb = reset;
     ble_hs_cfg.sm_bonding = 0; ble_hs_cfg.sm_mitm = 0;
     ble_svc_gap_init(); ble_svc_gatt_init();
-    check(ble_svc_gap_device_name_set("MM-Node"), "device name");
+    check(ble_svc_gap_device_name_set(router_.advertising_name().c_str()), "device name");
     check(ble_att_set_preferred_mtu(517), "preferred MTU");
     check(ble_uuid_from_str(&service_uuid_, ble_gatt::kServiceUuid), "service UUID");
     const char* ids[] = {ble_gatt::kInfoUuid, ble_gatt::kOwnerUuid, ble_gatt::kChallengeUuid,
@@ -80,19 +80,20 @@ void NimblePeripheral::advertise() {
     ble_hs_adv_fields fields{};
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     fields.uuids128 = &service_uuid_.u128; fields.num_uuids128 = 1; fields.uuids128_is_complete = 1;
-    check(ble_gap_adv_set_fields(&fields), "advertisement UUID");
-    // 128-bit Service Data is AD type 0x21. Technical version/flags only.
-    auto data = router_.advertisement_bytes();
-    std::vector<std::uint8_t> response{21, 0x21};
-    response.insert(response.end(), service_uuid_.u128.value, service_uuid_.u128.value + 16);
-    response.insert(response.end(), data.begin(), data.end());
-    const std::uint8_t name[] = {8, 0x09, 'M','M','-','N','o','d','e'};
-    response.insert(response.end(), std::begin(name), std::end(name));
-    check(ble_gap_adv_rsp_set_data(response.data(), static_cast<int>(response.size())), "scan response");
+    // Legacy budgets: primary = flags(3) + complete UUID(18) = 21 bytes.
+    // Scan response = complete local name(2 + <=29). Capabilities/claim state
+    // remain available through Hello; redundant service data is omitted.
+    check(ble_gap_adv_set_fields(&fields), "advertisement fields");
+    const auto name = router_.advertising_name();
+    check(ble_svc_gap_device_name_set(name.c_str()), "device name");
+    ble_hs_adv_fields response{};
+    response.name = reinterpret_cast<const std::uint8_t*>(name.data());
+    response.name_len = static_cast<std::uint8_t>(name.size()); response.name_is_complete = 1;
+    check(ble_gap_adv_rsp_set_fields(&response), "scan response");
     ble_gap_adv_params parameters{};
     parameters.conn_mode = BLE_GAP_CONN_MODE_UND; parameters.disc_mode = BLE_GAP_DISC_MODE_GEN;
     check(ble_gap_adv_start(address_type_, nullptr, BLE_HS_FOREVER, &parameters, gap, this), "advertise start");
-    ESP_LOGI("ble", "advertising service=%s flags=%u", ble_gatt::kServiceUuid, data[1]);
+    ESP_LOGI("ble", "advertising service=%s flags=%u", ble_gatt::kServiceUuid, router_.advertisement_bytes()[1]);
 }
 void NimblePeripheral::refresh_advertisement() {
     Lock lock(mutex_);

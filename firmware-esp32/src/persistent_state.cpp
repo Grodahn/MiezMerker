@@ -60,6 +60,9 @@ constexpr std::uint32_t identity_magic = 0x01494d4d, log_magic = 0x014f4d4d;
 // Complete owner metadata uses the backend's character bounds in UTF-8 bytes.
 constexpr std::size_t name_bytes = 255 * 4, contact_bytes = 500 * 4;
 bool valid_identity(const NodeIdentity& id) {
+    if (id.bowl_number > 2147483647U || (id.organization_id.empty()
+        && (id.bowl_number || !id.display_name.empty()))
+        || (!id.bowl_number && !id.display_name.empty())) return false;
     if ((std::to_integer<unsigned>(id.node_id[6]) & 0xf0) != 0x40
         || (std::to_integer<unsigned>(id.node_id[8]) & 0xc0) != 0x80
         || id.public_key[0] != std::byte{4}
@@ -100,6 +103,11 @@ NodeIdentityLoadResult PersistentIdentity::load(NodeIdentity& out) {
         candidate.organization_name = r.string(name_bytes);
         candidate.public_contact = r.string(contact_bytes);
         candidate.claim_receipt = r.string(4096);
+        if (r.pos != r.end) { // Optional v2 trailer; old records remain readable.
+            if (r.number(1) != 2) return NodeIdentityLoadResult::error;
+            candidate.bowl_number = static_cast<std::uint32_t>(r.number(4));
+            candidate.display_name = r.string(400);
+        }
         r.done();
         if (!valid_identity(candidate)) return NodeIdentityLoadResult::error;
         out = std::move(candidate);
@@ -119,6 +127,7 @@ bool PersistentIdentity::save(const NodeIdentity& id) {
         }
         w.string(id.organization_id, 36); w.string(id.organization_name, name_bytes);
         w.string(id.public_contact, contact_bytes); w.string(id.claim_receipt, 4096);
+        w.number(2, 1); w.number(id.bowl_number, 4); w.string(id.display_name, 400);
         return blob_.replace(w.finish());
     } catch (const std::exception&) { return false; }
 }

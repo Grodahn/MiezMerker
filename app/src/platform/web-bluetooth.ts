@@ -182,6 +182,7 @@ export function characteristicForRequest(opcode: Opcode): string {
     case Opcode.StatusRequest: return BLE_CHAR_UUIDS.status;
     case Opcode.BatchRequest:
     case Opcode.TimeEvidenceRequest:
+    case Opcode.MetadataRequest:
     case Opcode.ClockSnapshotRequest:
     case Opcode.TimeEvidenceReceiptRequest: return BLE_CHAR_UUIDS.batch;
     case Opcode.AckRequest:
@@ -435,7 +436,9 @@ export class WebBluetoothTransport implements NodeTransport {
     const chunks = uuid === BLE_CHAR_UUIDS.auth ? authWriteChunks(frame)
       : uuid === BLE_CHAR_UUIDS.claimReceipt ? transportWriteChunks(frame, 0x4e, 4102)
       : uuid === BLE_CHAR_UUIDS.batch && decodeFrame(frame)?.opcode === Opcode.TimeEvidenceReceiptRequest
-        ? evidenceReceiptWriteChunks(frame) : [frame];
+        ? evidenceReceiptWriteChunks(frame)
+      : uuid === BLE_CHAR_UUIDS.batch && decodeFrame(frame)?.opcode === Opcode.MetadataRequest
+        ? metadataWriteChunks(frame) : [frame];
     for (const chunk of chunks) {
       await withTimeout(char.writeValueWithResponse(new Uint8Array(chunk)), GATT_OP_TIMEOUT_MS, 'Schreiben zeitüberschritten.');
     }
@@ -462,6 +465,15 @@ export class WebBluetoothTransport implements NodeTransport {
       char.addEventListener?.('characteristicvaluechanged', onValue);
     });
   }
+}
+
+export function metadataWriteChunks(frame: Uint8Array): Uint8Array[] {
+  const decoded = decodeFrame(frame);
+  if (!decoded || decoded.version !== 1 || decoded.opcode !== Opcode.MetadataRequest
+      || decoded.payload.length < 36 || decoded.payload.length > 436) {
+    throw new BluetoothTransportError('protocol', 'Ungültige Napfmetadaten.');
+  }
+  return transportWriteChunks(frame, 0x50, 440);
 }
 
 export function authWriteChunks(frame: Uint8Array): Uint8Array[] {

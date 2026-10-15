@@ -54,6 +54,8 @@ export enum Opcode {
   ClockSnapshotResponse = 0x24,
   AlphaPhoneClockRequest = 0x25,
   AlphaPhoneClockResponse = 0x26,
+  MetadataRequest = 0x27,
+  MetadataResponse = 0x28,
   Error = 0xff,
 }
 
@@ -607,3 +609,14 @@ export function encodeClaimReceipt(receipt: string): Uint8Array {
 
 // Additive ADR 0017 extension, independent of legacy required v1 bits.
 export const CAP_TIME_EVIDENCE = 0x0020;
+export const CAP_METADATA = 0x0100;
+export function encodeMetadata(nodeId: string, organizationId: string, bowlNumber: number, displayName: string): Uint8Array {
+  const name = new TextEncoder().encode(displayName);
+  if (!Number.isInteger(bowlNumber) || bowlNumber <= 0 || bowlNumber > 2147483647
+      || name.length > 400 || displayName.includes('\0')) throw new Error('Invalid node metadata');
+  const payload = new Uint8Array(36 + name.length);
+  payload.set(uuidToBytes(nodeId)); payload.set(uuidToBytes(organizationId), 16);
+  new DataView(payload.buffer).setUint32(32, bowlNumber, true);
+  payload.set(name, 36);
+  return payload;
+}

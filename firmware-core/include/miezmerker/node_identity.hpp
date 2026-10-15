@@ -28,6 +28,8 @@ struct NodeIdentity {
     std::string organization_name;
     std::string public_contact;
     std::string claim_receipt;
+    std::uint32_t bowl_number{0};
+    std::string display_name{};
 };
 
 // Legacy adapter retained for source compatibility. Initial claiming no longer
@@ -68,6 +70,8 @@ struct VerifiedClaim {
     std::string organization_id;
     std::string organization_name;
     std::string public_contact;
+    std::uint32_t bowl_number{0};
+    std::string display_name{};
 };
 
 // Required cryptographic adapter, never random-byte or always-success defaults.
@@ -107,6 +111,12 @@ public:
     bool in_claim_mode() const { return ready_ && !claimed(); }
     bool claimed() const { return !identity_.organization_id.empty(); }
     bool apply_claim(const std::string& receipt);
+    // Caller must authorize the current session; explicit bindings defend against
+    // misrouted messages. Zero means a legacy receipt has no number yet.
+    bool apply_metadata(const std::array<std::byte, 16>& node,
+                        const std::string& organization, std::uint32_t number,
+                        const std::string& name);
+    std::string advertising_name() const;
 
     // Produce the canonical backend claim proof for a ready UNCLAIMED identity.
     bool sign_claim(ClaimAdvertisement& advertisement);

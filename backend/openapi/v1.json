@@ -1006,6 +1006,10 @@
       },
       "NodeView": {
         "properties": {
+          "bowlNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
           "claimedAt": {
             "type": "string"
           },

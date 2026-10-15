@@ -36,7 +36,7 @@ describe('batch feeding-site context (issue #76)', () => {
     Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
     const loader = loaderFor({
       nodes: [
-        { nodeId: NODE_A, displayName: 'Der Grüne' },
+        { nodeId: NODE_A, bowlNumber: 4711, displayName: 'Der Grüne' },
         { nodeId: NODE_B, displayName: 'Silberner' },
       ],
       deployments: [
@@ -55,7 +55,7 @@ describe('batch feeding-site context (issue #76)', () => {
     const contexts = await resolveBatchContexts([NODE_A, NODE_B], 'org-a', {}, loader as never);
     expect(contexts.get(NODE_A)?.siteName).toBe('Garten');
     expect(contexts.get(NODE_B)?.siteName).toBe('Scheune');
-    expect(contexts.get(NODE_A)?.displayName).toBe('Der Grüne');
+    expect(contexts.get(NODE_A)?.displayName).toBe('Napf #4711 · Der Grüne');
     expect(contexts.get(NODE_A)?.activity).toHaveLength(1);
   });
 

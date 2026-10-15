@@ -18,6 +18,7 @@ function NodeDetail({ node, history, sites, close, saved }: {
     .sort((a, b) => Date.parse(b.validFrom ?? '') - Date.parse(a.validFrom ?? ''));
   // #50: show the human-readable bowl label primarily; node_id stays as technical detail.
   return <section className="detail" aria-label="Node-Details"><h2>{node.displayName ? <>Napf {node.displayName} </> : <>Node </>}<code>{node.nodeId}</code></h2>
+    {node.bowlNumber && <p>Napf #{node.bowlNumber}</p>}
     <p>Aktuelle Futterstelle: {siteName(sites, currentDeployment(history, node.nodeId)?.feedingSiteId)}</p>
     <p>Letzter bekannter Serverkontakt / Upload: {time(node.lastContactAt)}</p>
     <form className="management-form" onSubmit={event => {
@@ -27,6 +28,7 @@ function NodeDetail({ node, history, sites, close, saved }: {
         body: { firmwareVersion: firmwareVersion.trim(), protocolVersion: protocolVersion.trim(), statusNote: statusNote.trim(), displayName },
       })), saved);
     }}>
+      <p>Bluetooth-Namen sind öffentlich und nachahmbar. Änderungen erscheinen nach dem nächsten Online-Sync. Bitte keine sensiblen Namen verwenden.</p>
       <label>Napf-Bezeichnung (optional)<input maxLength={100} value={displayName} onChange={e => setDisplayName(e.target.value)}/></label>
       <label>Firmwareversion<input maxLength={64} value={firmwareVersion} onChange={e => setFirmware(e.target.value)}/></label>
       <label>Protokollversion<input maxLength={32} value={protocolVersion} onChange={e => setProtocol(e.target.value)}/></label>
@@ -60,7 +62,7 @@ export function Nodes({ organizationId, admin }: { organizationId: string; admin
     {admin && <p>Neue Nodes werden mit dem vorhandenen <a href="/sync">Vor-Ort-Sync / ADMIN-Claiming</a> angelegt.</p>}
     <button onClick={list.reload}>Aktualisieren</button><LoadState {...list}/>
     {data && (data.nodes.length ? <Table label="Nodes" headings={['Node', 'Aktuelle Futterstelle', 'Versionen', 'Letzter Kontakt / Hinweise', 'Details']}>
-      {data.nodes.map(node => <tr key={node.nodeId}><td>{node.displayName ? <>{node.displayName}<small><code>{node.nodeId}</code> · {node.state}</small></> : <><code>{node.nodeId}</code><small>{node.state}</small></>}</td>
+      {data.nodes.map(node => <tr key={node.nodeId}><td>{node.bowlNumber && <strong>Napf #{node.bowlNumber} </strong>}{node.displayName ? <>{node.displayName}<small><code>{node.nodeId}</code> · {node.state}</small></> : <><code>{node.nodeId}</code><small>{node.state}</small></>}</td>
         <td>{siteName(data.sites, currentDeployment(data.history, node.nodeId)?.feedingSiteId)}</td>
         <td>Firmware: {node.firmwareVersion || 'Unbekannt'}<small>Protokoll: {node.protocolVersion || 'Unbekannt'}</small></td>
         <td>{time(node.lastContactAt)}<small className="preserve-lines">{node.statusNote}</small></td>

@@ -25,6 +25,7 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 <h2>Stammdaten</h2>
 <dl>
 <dt>Napf-Bezeichnung</dt><dd th:text="${displayName != null ? displayName : 'Unbenannter Napf'}">Name</dd>
+<dt>Napfnummer</dt><dd th:text="${bowlNumber}">1</dd>
 <dt>Node-UUID (technisch)</dt><dd><code th:text="${nodeId}">node</code></dd>
 <dt>Firmware</dt><dd th:text="${firmwareVersion != null ? firmwareVersion : 'Unbekannte Firmware'}">fw</dd>
 <dt>Protokoll</dt><dd th:text="${protocolVersion != null ? protocolVersion : 'Unbekannt'}">proto</dd>
@@ -44,6 +45,7 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 <div>
 <label for="node-displayName">Napf-Bezeichnung</label>
 <input id="node-displayName" name="displayName" type="text" maxlength="100" th:value="${formDisplayName}" autocomplete="off"/>
+<p>Bluetooth-Namen sind öffentlich und nachahmbar. Änderungen erscheinen nach dem nächsten berechtigten Online-Sync. Keine sensiblen Namen verwenden.</p>
 </div>
 <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
 <button class="btn" type="submit">Name speichern</button>

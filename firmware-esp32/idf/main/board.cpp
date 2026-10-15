@@ -177,6 +177,7 @@ bool BoardCrypto::verify_claim(const std::string& receipt, VerifiedClaim& claim)
     std::transform(verified.public_key.begin(), verified.public_key.end(), claim.public_key.begin(), [](auto b) { return static_cast<std::byte>(b); });
     claim.organization_id = verified.organization_id; claim.organization_name = verified.organization_name;
     claim.public_contact = verified.public_contact;
+    claim.bowl_number = verified.bowl_number; claim.display_name = verified.display_name;
     return true;
 }
 bool BoardCrypto::authorization_interval_ms(std::int64_t& lower_ms,
