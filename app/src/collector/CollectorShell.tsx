@@ -14,7 +14,8 @@ import type { BackendSyncState } from './backend-upload';
 import { ClaimError } from './claim-node';
 import { provisionNode } from './provision-node';
 import { verifyRegistrationCandidate } from './registration-probe';
-import { fetchNodeSetupState } from './node-setup';
+import { fetchNodeSetupState, SetupError } from './node-setup';
+import { authorizationPermits } from '../platform/authorization-status';
 import { assets } from '../assets';
 import { Graphic } from '../ui/Graphic';
 import { NodeSetupWizard } from './NodeSetupWizard';
@@ -30,6 +31,65 @@ import {
 import { Status } from '../ui/Status';
 import { bluetoothErrorMessage, errorStatus, statusMessages, syncHelp } from '../ui/status-messages';
 import './sync.css';
+
+// Issue #161: authoritative, organization-bound recovery for CLAIMED nodes
+// without an initial deployment. The stored ids are only a resume hint; the
+// backend/node state decides. Never derived from BLE names or local flags,
+// never re-claims, never opens for foreign or already-assigned nodes.
+function isActiveAdminFor(organizationId: string): boolean {
+  const state = getAuthState();
+  if (state.user && !authorizationPermits(state.user.userId, organizationId)) return false;
+  return Boolean(state.user?.memberships.some(
+    m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN'));
+}
+
+function rememberSetupHint(organizationId: string, nodeId: string): void {
+  try {
+    localStorage.setItem('miezmerker-last-setup-node', JSON.stringify({ organizationId, nodeId }));
+  } catch { /* Resume hint is best-effort; backend state stays authoritative. */ }
+}
+
+function clearSetupHint(): void {
+  try { localStorage.removeItem('miezmerker-last-setup-node'); } catch { /* best-effort */ }
+}
+
+// Returns the first own CLAIMED node without any deployment history.
+// Returns null for foreign/assigned/unclaimed/offline/backend failures:
+// no invented authoritative setup state, sync stays valid.
+async function findMissingInitialSetup(
+  organizationId: string,
+  nodeIds: string[],
+  signal?: AbortSignal,
+): Promise<{ organizationId: string; nodeId: string } | null> {
+  if (!isActiveAdminFor(organizationId)) return null;
+  const unique = [...new Set(nodeIds.filter(Boolean))];
+  for (const nodeId of unique) {
+    if (signal?.aborted) return null;
+    try {
+      const setup = await fetchNodeSetupState(organizationId, nodeId, { signal });
+      if (setup.organizationId !== organizationId) continue;
+      if (setup.claimed && !setup.activeDeployment && setup.deploymentCount === 0) {
+        return { organizationId, nodeId: setup.nodeId };
+      }
+    } catch (error) {
+      // No authoritative state: never invent setup, keep the local sync valid.
+      // Per-node isolation (foreign, forbidden, validation, closed history)
+      // skips only this node; transport/session/backend failures stop the
+      // probe because the remaining nodes would fail the same way.
+      if (error instanceof SetupError) {
+        if (error.kind === 'foreign' || error.kind === 'forbidden-role' ||
+            error.kind === 'validation' || error.kind === 'conflict-existing') continue;
+        return null;
+      }
+      if (error instanceof DOMException && error.name === 'AbortError') return null;
+      const message = error instanceof Error ? error.message : String(error ?? '');
+      if (/abgebrochen/i.test(message)) return null;
+      // Generic transport/backend failure: stop probing, sync stays valid.
+      return null;
+    }
+  }
+  return null;
+}
 
 // Single shared MiezMerker PWA under /app. No second collector application.
 // Issue #76: one user-initiated "Futterstelle auslesen" sequentially
@@ -370,7 +430,10 @@ export function CollectorShell(props: {
       if (registration && results[0]?.kind === 'foreign') {
         setFreigebenMessage('Dieser Napf ist für deine Organisation nicht verfügbar.');
       }
-      const activeAdmin = getAuthState().user?.memberships.some(m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN');
+      if (registration && results[0]?.kind === 'success') {
+        setFreigebenMessage('Dieser Napf gehört bereits zu deiner Organisation.');
+      }
+      const activeAdmin = isActiveAdminFor(organizationId);
       const candidate = results.find(result => result.kind === 'unclaimed' && result.nodeId);
       if (candidate && !operation.signal.aborted) {
         if (!activeAdmin) setFreigebenMessage('Ein Organisationsadmin muss diesen Napf registrieren.');
@@ -382,14 +445,6 @@ export function CollectorShell(props: {
               await verifyRegistrationCandidate(new WebBluetoothTransport(input.device as never), candidate.nodeId!, organizationId, operation.signal);
             }
             if (stillActive()) { setFreigebenMessage(''); verifiedCandidate = candidate; }
-          }
-        }
-      } else if (registration && results[0]?.kind === 'success') {
-        setFreigebenMessage('Dieser Napf gehört bereits zu deiner Organisation.');
-        if (activeAdmin && results[0].nodeId) {
-          const setup = await fetchNodeSetupState(organizationId, results[0].nodeId, { signal: operation.signal });
-          if (stillActive() && !setup.activeDeployment && setup.deploymentCount === 0) {
-            setSetupNodeId(setup.nodeId); setSetupOrgId(organizationId);
           }
         }
       }
@@ -411,6 +466,27 @@ export function CollectorShell(props: {
           if (stillActive()) setClaimReceipt('');
         } finally {
           db.close();
+        }
+      }
+      // Issue #161 recovery: an already CLAIMED own node without an initial
+      // deployment is offered the existing setup wizard on any ordinary sync,
+      // not only on the narrow registration-success path. Backend state
+      // decides; probe failures keep the local sync valid and never block
+      // otherwise valid data transfer.
+      if (!verifiedCandidate && succeededNodeIds.length && !operation.signal.aborted) {
+        try {
+          const missing = await findMissingInitialSetup(organizationId, succeededNodeIds, operation.signal);
+          if (missing && stillActive()) {
+            setSetupNodeId(missing.nodeId);
+            setSetupOrgId(missing.organizationId);
+            rememberSetupHint(missing.organizationId, missing.nodeId);
+            setResumeCandidate(null);
+            if (!registration) {
+              setBatchNotice('Napf registriert, Einrichtung offen: Futterstellen-Zuordnung kann direkt abgeschlossen werden.');
+            }
+          }
+        } catch {
+          // Setup probe is best-effort; sync/contexts stay valid.
         }
       }
       // A renewed credential during the batch updates the header; the visit's
@@ -488,6 +564,22 @@ export function CollectorShell(props: {
         setBatchResults(merged);
         const succeededNodeIds = merged.filter(r => r.kind === 'success' && r.nodeId).map(r => r.nodeId as string);
         if (succeededNodeIds.length && !operation.signal.aborted) await loadContextsFor(succeededNodeIds, organizationId, operation.signal);
+        // Issue #161: retried syncs also recover CLAIMED nodes without an
+        // initial deployment. Probe failures never invalidate the retry.
+        if (succeededNodeIds.length && !operation.signal.aborted) {
+          try {
+            const missing = await findMissingInitialSetup(organizationId, succeededNodeIds, operation.signal);
+            if (missing && stillActive()) {
+              setSetupNodeId(missing.nodeId);
+              setSetupOrgId(missing.organizationId);
+              rememberSetupHint(missing.organizationId, missing.nodeId);
+              setResumeCandidate(null);
+              setBatchNotice('Napf registriert, Einrichtung offen: Futterstellen-Zuordnung kann direkt abgeschlossen werden.');
+            }
+          } catch {
+            // Best-effort only.
+          }
+        }
       } catch {
         if (orgStillActive()) setBatchNotice('Wiederholung abgebrochen. Bereits abgeschlossene Näpfe bleiben gültig.');
       } finally {
@@ -570,13 +662,61 @@ export function CollectorShell(props: {
       setFreigebenMessage('');
       setSetupNodeId(nodeId);
       setSetupOrgId(organizationId);
-      try {
-        localStorage.setItem('miezmerker-last-setup-node',
-          JSON.stringify({ organizationId, nodeId }));
-      } catch { /* Resume hint is best-effort; backend state stays authoritative. */ }
+      rememberSetupHint(organizationId, nodeId);
       setResumeCandidate(null);
-    }).catch((e: unknown) => {
-      if (stillActive()) setClaimMessage(e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.');
+    }).catch(async (e: unknown) => {
+      if (!stillActive()) return;
+      const originalMessage = e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.';
+      // Issue #161: a committed receipt with a lost BLE confirmation must not
+      // end as "claim failed, claim again". Recover authoritatively: if the
+      // backend already owns this CLAIMED node without a deployment, offer the
+      // existing wizard instead of a second cryptographic claim.
+      // Foreign nodes, missing ADMIN membership and explicit cancellations
+      // never recover here. The recovery awaits before the operation cleanup
+      // below so stillActive() stays valid until the authoritative check
+      // completes.
+      const recoverable = e instanceof ClaimError
+        ? (e.kind === 'uncertain' || e.kind === 'backend')
+        : true;
+      if (!recoverable) {
+        setClaimMessage(originalMessage);
+        return;
+      }
+      if (operation.signal.aborted) {
+        setClaimMessage(originalMessage);
+        return;
+      }
+      try {
+        const missing = await findMissingInitialSetup(organizationId, [nodeId], operation.signal);
+        if (!stillActive()) return;
+        if (missing) {
+          setClaimMessage('Napf registriert, Einrichtung offen. Claim bleibt gültig; kein erneutes Claiming erforderlich.');
+          setBatchResults(previous => previous.filter(result => result.browserId !== entry.id));
+          setFreigebenMessage('');
+          setSetupNodeId(missing.nodeId);
+          setSetupOrgId(missing.organizationId);
+          rememberSetupHint(missing.organizationId, missing.nodeId);
+          setResumeCandidate(null);
+        } else {
+          // Distinguish already-completed setups from genuine failures
+          // without inventing state: a CLAIMED node with an active
+          // deployment is done, everything else keeps the original error.
+          try {
+            const state = await fetchNodeSetupState(organizationId, nodeId, { signal: operation.signal });
+            if (!stillActive()) return;
+            if (state.claimed && state.activeDeployment) {
+              setClaimMessage('Napf ist bereits registriert und eingerichtet. Kein erneutes Claiming erforderlich.');
+              setBatchResults(previous => previous.filter(result => result.browserId !== entry.id));
+            } else {
+              setClaimMessage(originalMessage);
+            }
+          } catch {
+            if (stillActive()) setClaimMessage(originalMessage);
+          }
+          }
+        } catch {
+          if (stillActive()) setClaimMessage(originalMessage);
+        }
     }).finally(() => { if (batchController.current === operation) { batchController.current = null; setClaimBusy(false); } });
   }, [devices, claimBusy, batchRunning]);
 
@@ -665,7 +805,7 @@ export function CollectorShell(props: {
       </button>}
     </>}
 
-    {claimTarget && claimMessage && <Status kind={claimMessage === 'Napf registriert!' ? 'success' : 'error'} title="Napf registrieren" message={claimMessage}/>}
+    {claimTarget && claimMessage && <Status kind={claimMessage === 'Napf registriert!' || claimMessage.startsWith('Napf registriert;') || claimMessage.includes('Einrichtung offen') || claimMessage.includes('bereits registriert und eingerichtet') ? 'success' : 'error'} title="Napf registrieren" message={claimMessage}/>}
     {!claimTarget && claimMessage && <Status kind="info" title="Napf registrieren" message={claimMessage}/>}
 
     <dialog ref={registrationDialog} className="registration-dialog" aria-label="Napf registrieren"
@@ -679,8 +819,17 @@ export function CollectorShell(props: {
       {claimBusy && <Status kind="loading" title="Napf wird sicher registriert …"/>}
       {isAdmin && auth.activeOrganizationId && setupNodeId && setupOrgId === auth.activeOrganizationId &&
         <NodeSetupWizard key={`${setupOrgId}/${setupNodeId}`} guided organizationId={auth.activeOrganizationId} nodeId={setupNodeId} onComplete={() => {
-          try { localStorage.removeItem('miezmerker-last-setup-node'); } catch { /* best-effort */ }
+          clearSetupHint();
           setResumeCandidate(null);
+          // Refresh the feeding-site context so the completed assignment is
+          // visible without another manual sync (#161).
+          const doneOrg = auth.activeOrganizationId;
+          const doneNode = setupNodeId;
+          if (doneOrg && doneNode) {
+            void loadContextsFor([doneNode], doneOrg, AbortSignal.timeout(10_000)).catch(() => {
+              // Context refresh is best-effort; the deployment itself is done.
+            });
+          }
         }}/> }
       {!registrationCandidate && <button type="button" onClick={closeRegistration}>Einrichtung schließen</button>}
     </dialog>

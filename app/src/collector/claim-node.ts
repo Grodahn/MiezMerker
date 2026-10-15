@@ -15,7 +15,8 @@ export type ClaimFailureKind =
   | 'trusted-time'
   | 'conflict-foreign'
   | 'backend'
-  | 'offline';
+  | 'offline'
+  | 'uncertain';
 
 export class ClaimError extends Error {
   constructor(
