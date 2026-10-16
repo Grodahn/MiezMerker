@@ -62,6 +62,11 @@ Backend tags cover all existing test classes:
 | system | FoundationTest, SystemControllerTest, SystemPrivilegeTest |
 
 `TemporalVisitAggregationTest` and `TemporalProjectionEngineTest` belong to `visits`;
+`AdminTemporalPresentationTest` belongs to `admin`, `auth`, and `visits` and covers
+bounded page projection, stable node lock order, tenant-scoped name lookup and
+outward minute rounding of phone estimates (#182). HTTP regressions in
+`AdminObservationsVisitsTest` and `TimeEvidenceTest` cover separate raw/projected
+rendering, late evidence, historical deployment changes and uncertain time.
 `TimeEvidenceTest` belongs to `node`, `auth`, and `visits` and covers #132/#133
 evidence, temporal history, tenant isolation, and the explicit capacity limit.
 

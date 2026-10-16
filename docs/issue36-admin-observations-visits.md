@@ -47,6 +47,30 @@ Neither page aggregates observations or repairs clocks. FeedingSites use the
 frozen associations stored by ingestion/aggregation, never current Node
 placement, so moving a Node does not reinterpret old records.
 
+### Separate temporal presentation (#182)
+
+The raw table additionally displays `boot-interval-v2` projections in a separate
+column: quality, UTC bounds (including a single open boundary), uncertainty
+policies/anchor IDs and historical attribution provenance. Phone estimates are
+explicitly approximate; displayed minute bounds round outwards. Receipt time is
+never used as an observation time. Raw values, RTC/site filters, ordering,
+pagination and visit-gap-v1 remain unchanged.
+
+Only visible rows (at most 100, excluding pagination lookahead) are projected,
+grouped by Node with stable lock ordering. The existing projection service keeps
+its bounded evidence/history reads and snapshot locks; the enclosing MVC
+transaction therefore permits locking instead of using a PostgreSQL read-only
+transaction. Its existing capacity errors propagate as HTTP 503; the adapter
+does not truncate evidence or guess a partial projection.
+
+Both raw projections and `/admin/visits/temporal` resolve historical site names
+with one bounded lookup by projected site IDs **and active organization**.
+Missing/unresolvable IDs display “Futterstelle nicht eindeutig bestimmbar”.
+There is no lookup of today's Node placement. Site labels are current names of
+the historical site entities, not a new history of site renames. The existing
+temporal visit UI retains local-time display with UTC fallback; raw Admin times
+remain UTC. No physical ESP32/Android run is claimed for this presentation change.
+
 ## Recompute
 
 `POST /admin/visits/recompute` requires Spring Security CSRF and ACTIVE ADMIN.

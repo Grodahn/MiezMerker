@@ -32,12 +32,15 @@ public class AdminObservationsVisitsController {
     private final AdminService admins;
     private final ObservationVisitQueryService queries;
     private final VisitAggregationService aggregation;
+    private final AdminTemporalPresentation temporal;
 
     public AdminObservationsVisitsController(AdminService admins,
-            ObservationVisitQueryService queries, VisitAggregationService aggregation) {
+            ObservationVisitQueryService queries, VisitAggregationService aggregation,
+            AdminTemporalPresentation temporal) {
         this.admins = admins;
         this.queries = queries;
         this.aggregation = aggregation;
+        this.temporal = temporal;
     }
 
     // Plain form strings allow neutral validation feedback without echoing errors into logs.
@@ -71,7 +74,7 @@ public class AdminObservationsVisitsController {
             UUID first, UUID last) {}
 
     @GetMapping({"/admin/observations", "/admin/visits"})
-    @Transactional(readOnly = true)
+    @Transactional
     public String list(@AuthenticationPrincipal AppUserDetails principal, HttpSession session,
             Model model, @ModelAttribute("filters") Filters filters,
             jakarta.servlet.http.HttpServletRequest request) {
@@ -81,7 +84,10 @@ public class AdminObservationsVisitsController {
         String route = raw ? "/admin/observations" : "/admin/visits";
         model.addAttribute("raw", raw);
         model.addAttribute("route", route);
+        model.addAttribute("projections", java.util.Map.of());
+        model.addAttribute("siteNames", java.util.Map.of());
         List<Object> rows = new ArrayList<>();
+        List<RawObservation> visible = List.of();
         boolean more = false;
         try {
             if (filters.limit < 1 || filters.limit > 100 || filters.offset < 0
@@ -98,7 +104,8 @@ public class AdminObservationsVisitsController {
                 var page = queries.observations(principal.getId(), active.id(), node, site,
                         filters.chipId, from, to, filters.limit + 1, filters.offset, true, sequence);
                 more = page.size() > filters.limit;
-                page.stream().limit(filters.limit).map(AdminObservationsVisitsController::observationRow)
+                visible = page.stream().limit(filters.limit).toList();
+                visible.stream().map(AdminObservationsVisitsController::observationRow)
                         .forEach(rows::add);
             } else {
                 var page = queries.visits(principal.getId(), active.id(), site, filters.chipId,
@@ -112,6 +119,13 @@ public class AdminObservationsVisitsController {
         } catch (ResponseStatusException e) {
             if (e.getStatusCode() != HttpStatus.NOT_FOUND) throw e;
             // Absent and foreign filter resources have the same empty outcome.
+        }
+        // Projection failures must retain their status, not be mistaken for invalid filters.
+        if (!visible.isEmpty()) {
+            var projected = temporal.projectPage(principal.getId(), active.id(), visible);
+            model.addAttribute("projections", projected);
+            model.addAttribute("siteNames", temporal.siteNames(principal.getId(), active.id(),
+                    projected.values().stream().map(p -> p.derivedFeedingSiteId()).toList()));
         }
         model.addAttribute("rows", rows);
         model.addAttribute("previous", filters.offset > 0 ? pageUrl(route, filters,

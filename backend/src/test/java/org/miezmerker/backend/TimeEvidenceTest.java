@@ -298,6 +298,27 @@ class TimeEvidenceTest {
         assertEquals("BOUNDED",history.items().get(2).quality());
         assertTrue(history.items().stream().allMatch(i->i.observationCount()==1));
     }
+    @Test void adminShowsOneSidedBoundsAndConflictsWithoutInventedTimeOrSite() throws Exception {
+        raw(1,1,1000); raw(2,5,1200);
+        evidence.ingest(userA.getId(),request(1,1000,1300,UTC));
+        assertEquals(200,http("POST","/api/v1/auth/login","{\"email\":\"a@example.org\",\"password\":\"test-password\"}",true).statusCode());
+        var bounded=page(1,1).items().getFirst();
+        assertEquals(UNKNOWN,bounded.quality()); assertNull(bounded.latestUtcMs());
+        var response=http("GET","/admin/observations?sequence=2",null,false);
+        assertEquals(200,response.statusCode());
+        String html=response.body();
+        assertTrue(html.contains("UNKNOWN"));
+        assertTrue(html.contains("Keine belegte Obergrenze"));
+        assertTrue(html.contains(Instant.ofEpochMilli(bounded.earliestUtcMs()).toString()));
+        assertTrue(html.contains("Futterstelle nicht eindeutig bestimmbar"));
+        evidence.ingest(userA.getId(),request(1,2800,3000,UTC+9000));
+        response=http("GET","/admin/observations?sequence=1",null,false);
+        assertEquals(200,response.statusCode());
+        assertTrue(response.body().contains("CONFLICT"));
+        assertTrue(response.body().contains("Zeitbelege widersprechen sich"));
+        assertFalse(response.body().contains("Frühestens:"));
+        assertTrue(response.body().contains("Futterstelle nicht eindeutig bestimmbar"));
+    }
     @Test void reversedUptimeAcrossPaginationAndBootOrderYieldConflict() {
         raw(1,1,1000); raw(2,1,900); evidence.ingest(userA.getId(),request(1,1000,1300,UTC));
         assertEquals(CONFLICT,page(1,1).items().getFirst().quality());
