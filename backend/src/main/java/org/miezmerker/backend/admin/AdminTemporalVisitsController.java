@@ -14,7 +14,10 @@ import org.springframework.web.server.ResponseStatusException;
 public class AdminTemporalVisitsController {
     private final AdminService admins;
     private final TemporalVisitService visits;
-    public AdminTemporalVisitsController(AdminService admins,TemporalVisitService visits) { this.admins=admins; this.visits=visits; }
+    private final AdminTemporalPresentation temporal;
+    public AdminTemporalVisitsController(AdminService admins,TemporalVisitService visits,AdminTemporalPresentation temporal) {
+        this.admins=admins; this.visits=visits; this.temporal=temporal;
+    }
     @GetMapping("/admin/visits/temporal")
     public String read(@AuthenticationPrincipal AppUserDetails principal,HttpSession session,Model model,
             @RequestParam(defaultValue="") String chipId,@RequestParam(defaultValue="0") int offset) {
@@ -31,7 +34,12 @@ public class AdminTemporalVisitsController {
         model.addAttribute("userEmail",admins.emailFor(principal.getId()));
         model.addAttribute("chipId",chipId); model.addAttribute("offset",offset);
         if(!chipId.isBlank()) {
-            try { model.addAttribute("page",visits.read(principal.getId(),active.id(),chipId,offset,20)); }
+            try {
+                var page=visits.read(principal.getId(),active.id(),chipId,offset,20);
+                model.addAttribute("page",page);
+                model.addAttribute("siteNames",temporal.siteNames(principal.getId(),active.id(),
+                        page.items().stream().map(i -> i.feedingSiteId()).toList()));
+            }
             catch(ResponseStatusException e) {
                 if(e.getStatusCode()==HttpStatus.BAD_REQUEST) model.addAttribute("error","Bitte Chip-ID und Seitenauswahl prüfen.");
                 else if(e.getStatusCode()==HttpStatus.CONFLICT) model.addAttribute("error","Neue Beobachtungen eingegangen. Bitte die Seite erneut laden.");

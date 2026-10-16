@@ -71,6 +71,8 @@ class AdminObservationsVisitsTest {
 
     @Autowired org.miezmerker.backend.service.VisitAggregationService aggregation;
     @Autowired org.miezmerker.backend.service.ObservationIngestService ingest;
+    @Autowired org.miezmerker.backend.service.TimeEvidenceService evidence;
+    @Autowired org.miezmerker.backend.admin.AdminTemporalPresentation temporalPresentation;
     HttpClient client;
     CookieManager cookies;
 
@@ -298,6 +300,145 @@ class AdminObservationsVisitsTest {
     String table(String html) {
         int start = html.indexOf("<tbody>");
         return start < 0 ? "" : html.substring(start, html.indexOf("</tbody>", start));
+    }
+
+    record TemporalData(Fixture f, NodeDevice node, UUID incarnation, FeedingSite historical,
+            FeedingSite current, RawObservation first, RawObservation second) {}
+
+    TemporalData temporalData() {
+        var f = seed();
+        var node = saveClaimedNode(f.orgA());
+        var incarnation = UUID.randomUUID();
+        var historical = saveSite(f.orgA(), "Zum schnurrenden Löffel", null, null);
+        var current = saveSite(f.orgA(), "Heute anderer Napfplatz", null, null);
+        var start = Instant.parse("2026-10-16T07:55:00Z");
+        deployments.save(new NodeDeployment(f.orgA(), node, historical, start.minusSeconds(60), start.plusSeconds(120)));
+        deployments.save(new NodeDeployment(f.orgA(), node, current, start.plusSeconds(120), null));
+        var result = ingest.ingestBatch(f.adminA().getId(), f.orgA().getId(), java.util.List.of(
+                new org.miezmerker.backend.service.ObservationIngestService.IngestItem(
+                        node.getNodeId(), 1, "PHONECHIP", null, "UNKNOWN", incarnation.toString(), 218125L, 1),
+                new org.miezmerker.backend.service.ObservationIngestService.IngestItem(
+                        node.getNodeId(), 2, "PHONECHIP", null, "UNKNOWN", incarnation.toString(), 224275L, 1)));
+        assertEquals(2, result.inserted());
+        return new TemporalData(f, node, incarnation, historical, current,
+                observations.findByNodeNodeIdAndSequence(node.getNodeId(), 1).orElseThrow(),
+                observations.findByNodeNodeIdAndSequence(node.getNodeId(), 2).orElseThrow());
+    }
+
+    void phoneAnchor(TemporalData d, long uptime, long utc) {
+        evidence.ingestPhone(d.f().adminA().getId(), new org.miezmerker.backend.service.TimeEvidenceProtocol.PhoneRequest(
+                d.f().orgA().getId().toString(), UUID.randomUUID().toString(), d.node().getNodeId().toString(),
+                d.incarnation().toString(), 1, java.math.BigInteger.valueOf(uptime), utc, 120, "PHONE_ESTIMATE", 1));
+    }
+
+    @Test
+    void latePhoneEvidenceShowsHistoricalNamesSeparatelyWithoutChangingRawApiOrV1() throws Exception {
+        var d = temporalData(); loginA();
+        String rawBefore = page("/api/v1/observations?organizationId=" + d.f().orgA().getId());
+        String unknown = table(page("/admin/observations"));
+        assertTrue(unknown.contains("Zeitpunkt unbekannt"));
+        assertTrue(unknown.contains("Futterstelle nicht eindeutig bestimmbar"));
+        long utc = Instant.parse("2026-10-16T07:55:30Z").toEpochMilli();
+        phoneAnchor(d, 218125, utc);
+        phoneAnchor(d, 224275, utc + 6150);
+        phoneAnchor(d, 230000, utc + 11875);
+        String html = table(page("/admin/observations"));
+        assertTrue(html.contains("Uhrzeit unbekannt"));
+        assertTrue(html.contains("RTC-Rohwert (ms): nicht vorhanden"));
+        assertTrue(html.contains("ESTIMATED"));
+        assertTrue(html.contains("Geschätzt (ca.), nicht bestätigt"));
+        assertTrue(html.contains("2026-10-16 07:55 UTC"));
+        assertTrue(html.contains("2026-10-16 07:56 UTC"));
+        assertTrue(html.contains("PHONE_ESTIMATE"));
+        assertTrue(html.contains("ENTIRE_INTERVAL_IN_HISTORICAL_DEPLOYMENT"));
+        assertTrue(html.contains("Futterstelle (historisch abgeleitet): Zum schnurrenden Löffel"));
+        assertFalse(html.contains(d.current().getName()));
+        String visits = page("/admin/visits/temporal?chipId=PHONECHIP");
+        assertTrue(visits.contains("Historische Futterstelle: Zum schnurrenden Löffel"));
+        assertFalse(visits.contains(d.current().getName()));
+        assertEquals(rawBefore, page("/api/v1/observations?organizationId=" + d.f().orgA().getId()));
+        for (var before : java.util.List.of(d.first(), d.second())) {
+            var after = observations.findById(before.getId()).orElseThrow();
+            assertNull(after.getObservedAtMs()); assertEquals("UNKNOWN", after.getClockStatus());
+            assertNull(after.getFeedingSite()); assertNull(after.getDeployment());
+            assertEquals(before.getReceivedAt(), after.getReceivedAt());
+        }
+        aggregation.recompute(d.f().adminA().getId(), d.f().orgA().getId(), null, null);
+        assertEquals(0, derivedVisits.count());
+        assertTrue(page("/admin/observations?from=2026-10-16T07:00").contains("Keine Ergebnisse"));
+        assertTrue(page("/admin/observations?feedingSiteId=" + d.historical().getId()).contains("Keine Ergebnisse"));
+        String first = table(page("/admin/observations?limit=1"));
+        String second = table(page("/admin/observations?limit=1&offset=1"));
+        assertNotEquals(first, second);
+        assertEquals(1, first.split("Futterstelle \\(historisch abgeleitet\\)", -1).length - 1);
+    }
+
+    @Test
+    void laterEvidenceAcrossDeploymentBoundaryRemovesHistoricalAttribution() throws Exception {
+        var d = temporalData(); loginA();
+        long utc = Instant.parse("2026-10-16T07:55:30Z").toEpochMilli();
+        phoneAnchor(d, 218125, utc);
+        assertTrue(table(page("/admin/observations")).contains(d.historical().getName()));
+        phoneAnchor(d, 230000, utc + 240000);
+        String html = table(page("/admin/observations"));
+        assertTrue(html.contains("ESTIMATED"));
+        assertTrue(html.contains("Futterstelle nicht eindeutig bestimmbar"));
+        assertFalse(html.contains(d.historical().getName()));
+        assertFalse(html.contains(d.current().getName()));
+        assertTrue(page("/admin/visits/temporal?chipId=PHONECHIP").contains("Futterstelle nicht eindeutig bestimmbar"));
+    }
+
+    @Test
+    void missingAndOverlappingDeploymentHistoryNeverFallsBackToCurrentSite() throws Exception {
+        var d = temporalData(); loginA();
+        long utc = Instant.parse("2026-10-16T07:55:30Z").toEpochMilli();
+        phoneAnchor(d, 218125, utc);
+        var history = deployments.findByOrganizationIdAndNodeNodeId(d.f().orgA().getId(), d.node().getNodeId());
+        var historical = history.stream().filter(h -> h.getFeedingSite().getId().equals(d.historical().getId())).findFirst().orElseThrow();
+        historical.setValidUntil(Instant.ofEpochMilli(utc - 1000));
+        deployments.save(historical);
+        String missing = table(page("/admin/observations"));
+        assertTrue(missing.contains("ESTIMATED"));
+        assertTrue(missing.contains("Futterstelle nicht eindeutig bestimmbar"));
+        assertFalse(missing.contains(d.current().getName()));
+        historical.setValidUntil(Instant.ofEpochMilli(utc + 60000));
+        deployments.save(historical);
+        assertTrue(table(page("/admin/observations")).contains(d.historical().getName()));
+        deployments.save(new NodeDeployment(d.f().orgA(), d.node(), d.current(),
+                Instant.ofEpochMilli(utc - 10000), Instant.ofEpochMilli(utc + 10000)));
+        String overlapping = table(page("/admin/observations"));
+        assertTrue(overlapping.contains("Futterstelle nicht eindeutig bestimmbar"));
+        assertFalse(overlapping.contains(d.historical().getName()));
+        assertFalse(overlapping.contains(d.current().getName()));
+        String visits = page("/admin/visits/temporal?chipId=PHONECHIP");
+        assertTrue(visits.contains("Futterstelle nicht eindeutig bestimmbar"));
+        assertFalse(visits.contains(d.current().getName()));
+    }
+
+    @Test
+    void projectedNamesAreTenantScopedAndMembershipIsRechecked() throws Exception {
+        var d = temporalData();
+        var foreign = saveSite(d.f().orgB(), "Secret Foreign Site", null, null);
+        assertEquals(java.util.Map.of(d.historical().getId(), d.historical().getName()),
+                temporalPresentation.siteNames(d.f().adminA().getId(), d.f().orgA().getId(),
+                        java.util.List.of(d.historical().getId(), foreign.getId(), UUID.randomUUID())));
+        loginA();
+        assertFalse(table(page("/admin/observations?nodeId=" + UUID.randomUUID())).contains("PHONECHIP"));
+        http();
+        assertLoginSuccess(formLogin("a35-multi-admin@example.org", "supersecret-password-x"));
+        String csrf = adminPageCsrf("/admin/org");
+        postForm("/admin/org", formBody(csrf, "organizationId", d.f().orgA().getId().toString()));
+        assertTrue(page("/admin/visits/temporal?chipId=PHONECHIP").contains("Einzelne RFID"));
+        csrf = adminPageCsrf("/admin/org");
+        postForm("/admin/org", formBody(csrf, "organizationId", d.f().orgB().getId().toString()));
+        assertFalse(page("/admin/visits/temporal?chipId=PHONECHIP").contains("Einzelne RFID"));
+        assertFalse(table(page("/admin/observations")).contains("PHONECHIP"));
+        for (String[] account : new String[][]{{"member", "m"}, {"pending", "p"}, {"disabled", "d"}}) {
+            http();
+            formLogin("a35-" + account[0] + "-a@example.org", "supersecret-password-" + account[1]);
+            assertEquals(403, get("/admin/observations").statusCode());
+            assertEquals(403, get("/admin/visits/temporal?chipId=PHONECHIP").statusCode());
+        }
     }
 
     @Test

@@ -28,8 +28,9 @@ class AdminObservationsVisitsControllerTest {
     AppUserDetails principal = mock(AppUserDetails.class);
     MockHttpSession session = new MockHttpSession();
     UUID userId = UUID.randomUUID(), orgId = UUID.randomUUID();
+    AdminTemporalPresentation temporal = mock(AdminTemporalPresentation.class);
     AdminObservationsVisitsController controller =
-            new AdminObservationsVisitsController(admins, queries, aggregation);
+            new AdminObservationsVisitsController(admins, queries, aggregation, temporal);
 
     @BeforeEach
     void activeAdmin() {
@@ -57,6 +58,28 @@ class AdminObservationsVisitsControllerTest {
             }
         }
         verifyNoInteractions(queries);
+    }
+
+    @Test
+    void projectsOnlyVisibleRowsAndKeepsPaginationLookaheadOutOfProjection() {
+        var first = mock(RawObservation.class);
+        var lookahead = mock(RawObservation.class);
+        var node = mock(NodeDevice.class);
+        when(first.getNode()).thenReturn(node);
+        when(node.getNodeId()).thenReturn(UUID.randomUUID());
+        when(first.getReceivedAt()).thenReturn(Instant.now());
+        when(queries.observations(userId, orgId, null, null, "", null, null, 2, 0, true, null))
+                .thenReturn(List.of(first, lookahead));
+        when(temporal.projectPage(userId, orgId, List.of(first))).thenReturn(java.util.Map.of());
+        var filters = new AdminObservationsVisitsController.Filters(); filters.setLimit(1);
+        var request = mock(HttpServletRequest.class);
+        when(request.getServletPath()).thenReturn("/admin/observations");
+        var model = new ExtendedModelMap();
+        controller.list(principal, session, model, filters, request);
+        verify(temporal).projectPage(userId, orgId, List.of(first));
+        verifyNoInteractions(lookahead);
+        assertEquals(1, ((List<?>) model.get("rows")).size());
+        assertNotNull(model.get("next"));
     }
 
     @Test
