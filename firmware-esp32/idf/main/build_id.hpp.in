@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr char firmware_git[] = "@MM_BUILD_ID@";
