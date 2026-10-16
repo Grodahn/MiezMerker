@@ -1,4 +1,5 @@
 #include "board.hpp"
+#include "build_id.hpp"
 #include "nimble_peripheral.hpp"
 #include "miezmerker/esp32_composition.hpp"
 #include "miezmerker/node_time_verify.hpp"
@@ -82,7 +83,8 @@ void command(std::string_view line, Core& core, NodeIdentityManager& identity, B
 #endif
 }
 extern "C" void app_main() {
-    ESP_LOGI(tag, "app_main ESP32-C3 IDF=%s firmware=%s", esp_get_idf_version(), esp_app_get_description()->version);
+    ESP_LOGI(tag, "app_main ESP32-C3 IDF=%s firmware=%s firmware_git=%s",
+        esp_get_idf_version(), esp_app_get_description()->version, firmware_git);
     BoardClock clock;
     BoardRandom random;
     DirectClaimMode direct_claim;
@@ -207,8 +209,8 @@ extern "C" void app_main() {
         }
 #endif
         if (now >= heartbeat) {
-            ESP_LOGI(tag, "alive heap=%lu storage=%s", static_cast<unsigned long>(esp_get_free_heap_size()),
-                observations.healthy() ? "ready" : "error");
+            ESP_LOGI(tag, "alive heap=%lu storage=%s fw=%s", static_cast<unsigned long>(esp_get_free_heap_size()),
+                observations.healthy() ? "ready" : "error", firmware_git);
             heartbeat = now + 10000;
         }
         xSemaphoreGiveRecursive(mutex); vTaskDelay(pdMS_TO_TICKS(25));
