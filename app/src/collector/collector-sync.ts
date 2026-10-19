@@ -17,7 +17,7 @@ import { OfflineIdentity, OfflineIdentityDatabase } from '../platform/offline-id
 import { WebCryptoDeviceKeys } from '../platform/device-keys';
 import { loadTrustedNodeIdentity, NodeIdentityError } from '../platform/node-identity';
 import type { NodeTransport } from '../platform/node-transport';
-import { SyncEngine, SyncFailedError } from './sync-engine';
+import { SyncEngine, SyncFailedError, type SyncResult } from './sync-engine';
 import type { OwnerInfo } from './ble-codec';
 import { CollectorObservationStore } from './observation-store';
 import { CollectorDatabase, requestPersistentStorage } from '../platform/offline-store';
@@ -252,6 +252,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       uploadedCount: stats.uploaded,
       fertig: true,
       nodeMessage: `${engineResult.timeMessage ? engineResult.timeMessage + ' ' : ''}${engineResult.evidenceStored ? `${engineResult.evidenceStored} Zeit-/Bootbelege dauerhaft lokal gespeichert; Backend-Upload ausstehend. ` : ''}Fertig: ${engineResult.received} Beobachtungen sicher übernommen und quittiert (Stand ${engineResult.watermark}).` +
+        storageMessage(engineResult.nodeStorage) +
         (engineResult.maintenanceWarning ? ` ${engineResult.maintenanceWarning}` : ''),
     });
 
@@ -292,6 +293,10 @@ function phaseMessage(phase: string, received: number): string {
   }
 }
 
+function storageMessage(storage: SyncResult['nodeStorage']): string {
+  return storage ? ` Node-Speicher: ${storage.before} → ${storage.remaining} belegte Plätze (${storage.freed} freigegeben).` : '';
+}
+
 interface EngineOutcome {
   ok: boolean;
   message: string;
@@ -305,6 +310,7 @@ interface EngineOutcome {
   publicKeyX?: string;
   publicKeyY?: string;
   maintenanceWarning?: string;
+  nodeStorage?: SyncResult['nodeStorage'];
   timeMessage?: string;
   evidenceStored?: number;
 }
@@ -393,7 +399,7 @@ export async function runEngineWithDiscovery(
       return { ok: true, message: 'Fertig.', owner, unclaimed: false, foreign: false,
         nodeId: hello.nodeId, incarnation: hello.incarnation,
         received: result.recordsReceived, watermark: result.watermark.toString(),
-        maintenanceWarning: result.maintenanceWarning, timeMessage: result.timeMessage, evidenceStored: result.evidenceStored,
+        maintenanceWarning: result.maintenanceWarning, nodeStorage: result.nodeStorage, timeMessage: result.timeMessage, evidenceStored: result.evidenceStored,
         publicKeyX: pinned.publicKeyX, publicKeyY: pinned.publicKeyY };
     }
     const errorText = result.error ?? 'Sync fehlgeschlagen.';
@@ -407,6 +413,7 @@ export async function runEngineWithDiscovery(
         nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
     }
     return { ok: false, message: `${result.timeMessage ? result.timeMessage + ' ' : ''}${humanSyncError(errorText)}` +
+        storageMessage(result.nodeStorage) + (result.maintenanceWarning ? ` ${result.maintenanceWarning}` : '') +
         (result.evidenceStored ? ` ${result.evidenceStored} Zeit-/Bootbelege bleiben dauerhaft lokal gespeichert; Backend-Upload separat ausstehend.` : ''), owner, unclaimed: false, foreign: false,
       nodeId: hello.nodeId, incarnation: hello.incarnation, received: result.recordsReceived, watermark: result.watermark.toString() };
   } catch (e) {

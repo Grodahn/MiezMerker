@@ -1,7 +1,10 @@
 // @vitest-environment node
 import 'fake-indexeddb/auto';
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+const post = vi.hoisted(() => vi.fn());
+vi.mock('../api/client', () => ({ api: { POST: post } }));
 vi.mock('../platform/auth', () => ({
+  fetchCsrfToken: async () => 'csrf',
   getAuthState: () => ({ user: { userId: 'user', memberships: [{ organizationId: 'org-a', status: 'ACTIVE', role: 'MEMBER' }] }, activeOrganizationId: 'org-a' }),
   subscribeAuth: () => () => {},
 }));
@@ -9,6 +12,7 @@ import { bindNodeOperation } from './node-operation';
 import { SyncDatabase, SyncEngine, SyncStore } from './sync-engine';
 import { CollectorDatabase } from '../platform/offline-store';
 import { CollectorObservationStore } from './observation-store';
+import { BackendUploader } from './backend-upload';
 import {
   decodeBatchRequest, decodeFrame, encodeFrame, encodeHelloPublic, encodeOwnerResponse,
   encodeAuthResponse, encodeStatusResponse, encodeBatchResponse, encodeAckResponse,
@@ -53,6 +57,7 @@ function nodeHandler(records: BleRecord[], opts: {
   dropConnectionMidBatch?: boolean;
 } = {}) {
   let acked = 0n;
+  let log = [...records];
   let batchCalls = 0;
   let failedOnce = false;
   const opcodes: Opcode[] = [];
@@ -89,7 +94,7 @@ function nodeHandler(records: BleRecord[], opts: {
       }
       case Opcode.StatusRequest:
         return encodeFrame({ version: 1, opcode: Opcode.StatusResponse, payload: encodeStatusResponse({
-          pending: records.length, ackWatermark: acked, storeStatus: 0, clockStatus: 2,
+          pending: log.filter(r => r.sequence > acked).length, ackWatermark: acked, storeStatus: 0, clockStatus: 2,
           epochMs: 1790899200000n, nextSequence: records.length ? records[records.length - 1].sequence + 1n : acked + 1n,
         }) });
       case Opcode.BatchRequest: {
@@ -99,8 +104,8 @@ function nodeHandler(records: BleRecord[], opts: {
           throw new Error('BLE-Verbindung abgebrochen');
         }
         const req = decodeBatchRequest(f.payload)!;
-        const page = records.filter(r => r.sequence >= req.fromSequence).slice(0, req.maxRecords);
-        const more = page.length > 0 && records.some(r => r.sequence > page[page.length - 1].sequence);
+        const page = log.filter(r => r.sequence >= req.fromSequence).slice(0, req.maxRecords);
+        const more = page.length > 0 && log.some(r => r.sequence > page[page.length - 1].sequence);
         return encodeFrame({ version: 1, opcode: Opcode.BatchResponse, payload: encodeBatchResponse({
           fromSequence: req.fromSequence, more,
           nextCursor: page.length > 0 ? page[page.length - 1].sequence + 1n : req.fromSequence,
@@ -112,10 +117,13 @@ function nodeHandler(records: BleRecord[], opts: {
         return encodeFrame({ version: 1, opcode: Opcode.AckResponse, payload: encodeAckResponse({
           newWatermark: acked, error: SyncError.Ok,
         }) });
-      case Opcode.CompactRequest:
+      case Opcode.CompactRequest: {
+        const before = log.length;
+        log = log.filter(r => r.sequence > acked);
         return encodeFrame({ version: 1, opcode: Opcode.CompactResponse, payload: encodeCompactResponse({
-          freed: 0, remaining: 0, ackWatermark: acked, error: SyncError.Ok,
+          freed: before - log.length, remaining: log.length, ackWatermark: acked, error: SyncError.Ok,
         }) });
+      }
       default:
         throw new Error('unexpected opcode');
     }
@@ -132,8 +140,43 @@ describe('SyncEngine extended field scenarios (issue #8)', () => {
   let db: SyncDatabase;
   let store: SyncStore;
   beforeEach(() => {
+    post.mockReset();
     db = new SyncDatabase(`ext-${Math.random().toString(36).slice(2)}`);
     store = new SyncStore(db);
+  });
+
+  test('offline compaction preserves durable outbox, later idempotent upload and empty visit', async () => {
+    const name = `compaction-outbox-${Math.random()}`;
+    let collectorDb = new CollectorDatabase(name);
+    let collectorStore = new CollectorObservationStore(collectorDb);
+    const node = nodeHandler([makeRecord(1), makeRecord(2)]);
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+    try {
+      const copied = await new SyncEngine(new MockTransport(node.handler), collectorStore, mockKeys, identity,
+        { maxRetries: 0 }).sync('cred', () => 1790899200, 'org-a');
+      expect(copied.ok).toBe(true);
+      expect(copied.nodeStorage).toEqual({ before: 2, freed: 2, remaining: 0 });
+      expect((await new BackendUploader(collectorStore).upload('org-a')).state).toBe('waiting-for-network');
+      expect(post).not.toHaveBeenCalled();
+      collectorDb.close();
+      collectorDb = new CollectorDatabase(name);
+      collectorStore = new CollectorObservationStore(collectorDb);
+      expect(await collectorStore.pendingUploads('org-a')).toHaveLength(2);
+      Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+      post.mockResolvedValue({ data: { results: [
+        { nodeId: NODE_ID, sequence: '1', status: 'CREATED' },
+        { nodeId: NODE_ID, sequence: '2', status: 'DUPLICATE_IDENTICAL' },
+      ] } });
+      const uploaded = await new BackendUploader(collectorStore).upload('org-a');
+      expect(uploaded.state).toBe('complete');
+      expect(uploaded.uploaded).toBe(1); expect(uploaded.duplicates).toBe(1);
+      expect((await collectorStore.uploadStats(NODE_ID)).uploaded).toBe(2);
+      const empty = await new SyncEngine(new MockTransport(node.handler), collectorStore, mockKeys, identity,
+        { maxRetries: 0 }).sync('cred', () => 1790899200, 'org-a');
+      expect(empty.ok).toBe(true); expect(empty.recordsReceived).toBe(0);
+      expect(empty.nodeStorage).toEqual({ before: 0, freed: 0, remaining: 0 });
+      expect(await collectorStore.sequences(NODE_ID, INCARNATION, 'org-a')).toEqual([1n, 2n]);
+    } finally { collectorDb.close(); await collectorDb.delete(); }
   });
 
   test('thousands of observations across multiple batches complete', async () => {
@@ -297,6 +340,35 @@ describe('SyncEngine extended field scenarios (issue #8)', () => {
       expect(await collectorStore.pendingUploads('org-a')).toHaveLength(1);
       expect(node.opcodes).not.toContain(Opcode.AckRequest);
       expect(node.opcodes.filter(op => op === Opcode.ChallengeRequest)).toHaveLength(1);
+      expect(raw.connected).toBe(false);
+    } finally { await operation.close(); collectorDb.close(); await collectorDb.delete(); }
+  });
+
+  test.each(['compact', 'status'])('context cancellation during maintenance %s is terminal after durable ACK', async stage => {
+    const collectorDb = new CollectorDatabase(`cancelled-maintenance-${Math.random()}`);
+    const collectorStore = new CollectorObservationStore(collectorDb);
+    const controller = new AbortController();
+    const node = nodeHandler([makeRecord(1)]);
+    let compacted = false;
+    const raw = new MockTransport(async frame => {
+      const opcode = decodeFrame(frame)?.opcode;
+      const response = await node.handler(frame);
+      if (opcode === Opcode.CompactRequest) {
+        compacted = true;
+        if (stage === 'compact') controller.abort();
+      } else if (opcode === Opcode.StatusRequest && compacted) controller.abort();
+      return response;
+    });
+    const operation = bindNodeOperation(raw, 'user', 'org-a', controller.signal);
+    try {
+      const result = await new SyncEngine(operation.transport, collectorStore, mockKeys, identity,
+        { maxRetries: 3, retryDelayMs: 0 }).sync('cred', () => 1790899200, 'org-a');
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('cancelled');
+      expect(result.watermark).toBe(1n);
+      expect(node.getAcked()).toBe(1n);
+      expect(node.opcodes.filter(opcode => opcode === Opcode.ChallengeRequest)).toHaveLength(1);
+      expect(await collectorStore.pendingUploads('org-a')).toHaveLength(1);
       expect(raw.connected).toBe(false);
     } finally { await operation.close(); collectorDb.close(); await collectorDb.delete(); }
   });

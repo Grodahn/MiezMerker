@@ -49,6 +49,7 @@ export interface SyncResult {
   recordsReceived: number;
   watermark: bigint;
   maintenanceWarning?: string;
+  nodeStorage?: { before: number; freed: number; remaining: number };
   timeMessage?: string;
   evidenceStored?: number;
 }
@@ -592,14 +593,12 @@ export class SyncEngine {
       // not turn the completed copy into a failed field visit.
       try { await this.store.saveSession?.(this.session); } catch { /* best effort */ }
 
-      if (watermark < this.status.nextSequence - 1n || stored.some(sequence => sequence > watermark)) {
-        throw new SyncFailedError('incomplete',
-          'sequence gap remains: Sequenzlücke blockiert ACK (spätere Records bleiben unquittiert auf dem Node).', this.owner);
-      }
+      const incomplete = watermark < this.status.nextSequence - 1n || stored.some(sequence => sequence > watermark);
       // Compaction reclaims node space after the copy and ACK are committed.
       // Its failure cannot undo a successful field visit.
       this.phase = 'compacting';
       let maintenanceWarning = this.metadataWarning;
+      let nodeStorage: SyncResult['nodeStorage'];
       try {
         const compactResp = await this.sendFrame(encodeFrame({
           version: PROTOCOL_VERSION,
@@ -612,14 +611,34 @@ export class SyncEngine {
         if (!compact || compact.error !== SyncError.Ok || compact.ackWatermark !== watermark) {
           throw new Error('compaction failed');
         }
-      } catch {
+        nodeStorage = { before: compact.freed + compact.remaining, freed: compact.freed, remaining: compact.remaining };
+        // Status.pending excludes ACKed records; only CompactResponse reports
+        // actual occupied slots. A fresh status also catches captures during sync.
+        const statusFrame = decodeFrame(await this.sendFrame(encodeFrame({
+          version: PROTOCOL_VERSION, opcode: Opcode.StatusRequest, payload: new Uint8Array(),
+        })));
+        const status = statusFrame?.opcode === Opcode.StatusResponse ? decodeStatusResponse(statusFrame.payload) : null;
+        if (!status || status.ackWatermark !== watermark) throw new Error('storage status unavailable');
+        if (status.storeStatus !== 0) {
+          maintenanceWarning = [maintenanceWarning,
+            'Node-Speicher voll oder fast voll; beim nächsten Besuch erneut synchronisieren und bereinigen.']
+            .filter(Boolean).join(' ');
+        }
+      } catch (error) {
+        // User/context cancellation is terminal, including after a durable
+        // ACK. Never turn an obsolete visit into a success or reconnect it.
+        if (error instanceof NodeOperationCancelledError) throw error;
         maintenanceWarning = [maintenanceWarning,
-          'Node-Speicherbereinigung ausstehend; beim nächsten Besuch erneut versuchen.']
+          'Node-Speicherbereinigung nicht vollständig bestätigt; beim nächsten Besuch erneut versuchen. Bei anhaltendem Speicherfehler ist ein Node-Neustart erforderlich.']
           .filter(Boolean).join(' ');
       }
 
-      this.phase = 'complete';
-      return { ok: true, recordsReceived: this.received, watermark, maintenanceWarning, timeMessage: this.timeMessage, evidenceStored: this.evidenceStored };
+      // Even a permanent gap must not strand the already durable ACKed prefix.
+      // Compaction never covers the unacknowledged suffix beyond that gap.
+      this.phase = incomplete ? 'failed' : 'complete';
+      return { ok: !incomplete,
+        error: incomplete ? 'incomplete: sequence gap remains: Sequenzlücke blockiert ACK (spätere Records bleiben unquittiert auf dem Node).' : undefined,
+        recordsReceived: this.received, watermark, maintenanceWarning, nodeStorage, timeMessage: this.timeMessage, evidenceStored: this.evidenceStored };
     } finally {
       await this.transport.disconnect();
     }

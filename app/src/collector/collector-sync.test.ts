@@ -20,6 +20,7 @@ import { loadTrustedNodeIdentity } from '../platform/node-identity';
 import { CollectorDatabase } from '../platform/offline-store';
 import { CollectorObservationStore } from './observation-store';
 import { runEngineWithDiscovery, runFieldSync } from './collector-sync';
+import { SyncEngine } from './sync-engine';
 import { OfflineIdentity } from '../platform/offline-identity';
 import type { NodeTransport } from '../platform/node-transport';
 import { decodeFrame, encodeFrame, encodeHelloPublic, encodeOwnerResponse, Opcode } from './ble-codec';
@@ -79,6 +80,26 @@ describe('runEngineWithDiscovery node identity resolution', () => {
     store = new CollectorObservationStore(db);
     await store.open();
     Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+  });
+
+  test.each([true, false])('storage diagnostics and maintenance warnings survive outcome mapping (complete=%s)', async complete => {
+    authAs('org-a');
+    mockedLoad.mockResolvedValue({ nodeId: NODE_ID, publicKeyX: 'x', publicKeyY: 'y' });
+    vi.spyOn(SyncEngine.prototype, 'sync').mockResolvedValue({
+      ok: complete, error: complete ? undefined : 'incomplete: sequence gap remains',
+      recordsReceived: 2, watermark: 1n,
+      nodeStorage: { before: 2, freed: 1, remaining: 1 }, maintenanceWarning: 'Node-Speicher fast voll',
+    });
+    const outcome = await runEngineWithDiscovery(new ProbeOnlyTransport(), store, {} as never,
+      'cred', 'org-a', () => 1790899200, () => {}, () => {});
+    expect(outcome.ok).toBe(complete);
+    if (complete) {
+      expect(outcome.nodeStorage).toEqual({ before: 2, freed: 1, remaining: 1 });
+      expect(outcome.maintenanceWarning).toContain('fast voll');
+    } else {
+      expect(outcome.message).toContain('2 → 1');
+      expect(outcome.message).toContain('fast voll');
+    }
   });
 
   test('offline: falls back to locally stored backend-pinned node key', async () => {
