@@ -1,6 +1,7 @@
 """Exercise the actual PowerShell setup, without printing any private material."""
 import json
 import base64
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -31,7 +32,7 @@ class DevIssuerTest(unittest.TestCase):
         # The script's errors and public output must never contain key material.
         self.assertEqual(0, result.returncode, result.stderr)
         pair = json.loads((self.directory / 'issuer.json').read_text())
-        self.assertNotIn(pair['private'], result.stdout + result.stderr)
+        self.assertTrue(pair['private'] not in result.stdout + result.stderr, 'Private key leaked')
         return pair
 
     def test_repeated_setup_preserves_pair_pin_and_defaults_closed(self):
@@ -39,14 +40,14 @@ class DevIssuerTest(unittest.TestCase):
         store = (self.directory / 'issuer.json').read_bytes()
         defaults = (self.directory / 'sdkconfig.issuer.defaults').read_bytes()
         second = self.run_setup('-CheckFirmwarePin', str(self.directory / 'sdkconfig.issuer.defaults'))
-        self.assertEqual(first, self.success(second))
-        self.assertEqual(store, (self.directory / 'issuer.json').read_bytes())
+        self.assertTrue(first == self.success(second), 'Pair changed')
+        self.assertTrue(store == (self.directory / 'issuer.json').read_bytes(), 'Store changed')
         self.assertEqual(defaults, (self.directory / 'sdkconfig.issuer.defaults').read_bytes())
         self.assertIn('false (no live NTP monitoring)', second.stdout)
         self.assertEqual(130, len(defaults.decode().split('"')[1]))
         props = (self.directory / 'backend-issuer.properties').read_text()
-        self.assertIn('private-key-pkcs8-b64=' + first['private'], props)
-        self.assertNotIn('clock-healthy', props)
+        self.assertTrue('private-key-pkcs8-b64=' + first['private'] in props, 'Export differs')
+        self.assertTrue('clock-healthy' not in props, 'Persistent UTC attestation')
 
     def test_missing_wrong_pin_and_corrupt_store_are_never_replaced(self):
         self.success(self.run_setup())
@@ -57,7 +58,7 @@ class DevIssuerTest(unittest.TestCase):
             result = self.run_setup('-CheckFirmwarePin', str(config))
             self.assertNotEqual(0, result.returncode)
             self.assertIn('missing or mismatched', result.stderr)
-            self.assertEqual(store, (self.directory / 'issuer.json').read_bytes())
+            self.assertTrue(store == (self.directory / 'issuer.json').read_bytes(), 'Store changed')
         for corrupt in ('{broken', '{"private":"","public":""}'):
             (self.directory / 'issuer.json').write_text(corrupt)
             self.assertNotEqual(0, self.run_setup().returncode)
@@ -69,14 +70,92 @@ class DevIssuerTest(unittest.TestCase):
         env = dict(self.env, ISSUER_PRIVATE_PKCS8_B64=pair['private'], ISSUER_PUBLIC_SPKI_B64=pair['public'])
         self.assertNotEqual(0, self.run_setup(directory=imported, env=env).returncode)
         self.assertEqual(0, self.run_setup('-ImportFromEnvironment', directory=imported, env=env).returncode)
-        self.assertEqual(pair, json.loads((imported / 'issuer.json').read_text()))
+        self.assertTrue(pair == json.loads((imported / 'issuer.json').read_text()), 'Import differs')
         other = Path(self.temp.name) / 'other'
         self.assertEqual(0, self.run_setup(directory=other).returncode)
         other_pair = json.loads((other / 'issuer.json').read_text())
         env['ISSUER_PUBLIC_SPKI_B64'] = other_pair['public']
         self.assertNotEqual(0, self.run_setup('-ImportFromEnvironment', env=env).returncode)
-        self.assertEqual(pair, json.loads((self.directory / 'issuer.json').read_text()))
+        self.assertTrue(pair == json.loads((self.directory / 'issuer.json').read_text()), 'Store changed')
         self.assertNotEqual(0, self.run_setup('-ImportFromEnvironment', directory=Path(self.temp.name) / 'bad', env=env).returncode)
+
+    def test_pin_conversion_and_fingerprint_match_spki_point(self):
+        pair = self.success(self.run_setup())
+        # P-256 named-curve SPKI ends in the uncompressed 65-byte point.
+        point = base64.b64decode(pair['public'])[-65:]
+        self.assertEqual(4, point[0])
+        pin = (self.directory / 'sdkconfig.issuer.defaults').read_text().split('"')[1]
+        self.assertEqual(point.hex(), pin)
+        result = self.run_setup()
+        self.assertIn(hashlib.sha256(point).hexdigest(), result.stdout)
+
+    def test_conflicting_exports_and_environment_fail_before_writes(self):
+        pair = self.success(self.run_setup())
+        paths = [self.directory / name for name in
+                 ('issuer.json', 'backend-issuer.properties', 'sdkconfig.issuer.defaults')]
+        original = [p.read_bytes() for p in paths]
+        for path, invalid in ((paths[1], b'broken properties'),
+                              (paths[2], b'CONFIG_MM_ISSUER_PUBLIC_KEY_HEX=""\n')):
+            path.write_bytes(invalid)
+            before = [p.read_bytes() for p in paths]
+            result = self.run_setup('-AttestHealthyUtc')
+            self.assertNotEqual(0, result.returncode)
+            self.assertTrue(before == [p.read_bytes() for p in paths], 'Conflict modified files')
+            self.assertTrue(pair['private'] not in result.stdout + result.stderr, 'Private key leaked')
+            for p, content in zip(paths, original):
+                p.write_bytes(content)
+        result = self.run_setup(env=dict(self.env, ISSUER_PUBLIC_SPKI_B64='conflict'))
+        self.assertNotEqual(0, result.returncode)
+        self.assertTrue(original == [p.read_bytes() for p in paths], 'Override modified files')
+        paths[0].unlink()
+        paths[1].unlink()
+        result = self.run_setup()
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse(paths[0].exists(), 'Orphaned pin caused key rotation')
+
+    def test_duplicate_or_malformed_pin_is_rejected(self):
+        self.success(self.run_setup())
+        valid = (self.directory / 'sdkconfig.issuer.defaults').read_text()
+        config = Path(self.temp.name) / 'sdkconfig'
+        for suffix in (valid, 'CONFIG_MM_ISSUER_PUBLIC_KEY_HEX=""\n',
+                       ' CONFIG_MM_ISSUER_PUBLIC_KEY_HEX =garbage\n'):
+            config.write_text(valid + suffix)
+            self.assertNotEqual(0, self.run_setup('-CheckFirmwarePin', str(config)).returncode)
+
+    def test_explicit_missing_defaults_check_fails_without_recreating_exports(self):
+        self.success(self.run_setup())
+        store = (self.directory / 'issuer.json').read_bytes()
+        properties = self.directory / 'backend-issuer.properties'
+        defaults = self.directory / 'sdkconfig.issuer.defaults'
+        expected_properties, expected_defaults = properties.read_bytes(), defaults.read_bytes()
+        properties.unlink()
+        defaults.unlink()
+        for config in (defaults, Path(self.temp.name) / 'missing-sdkconfig'):
+            result = self.run_setup('-AttestHealthyUtc', '-CheckFirmwarePin', str(config))
+            self.assertNotEqual(0, result.returncode)
+            self.assertFalse(defaults.exists(), 'Missing checked pin was recreated')
+            self.assertFalse(properties.exists(), 'Failed check recreated backend export')
+            self.assertTrue(store == (self.directory / 'issuer.json').read_bytes(), 'Store changed')
+        self.success(self.run_setup())
+        self.assertTrue(expected_properties == properties.read_bytes(), 'Recovered export differs')
+        self.assertEqual(expected_defaults, defaults.read_bytes())
+        self.assertTrue(store == (self.directory / 'issuer.json').read_bytes(), 'Recovery rotated pair')
+
+    def test_wrong_curve_and_invalid_base64_are_rejected(self):
+        pair = self.success(self.run_setup())
+        for key in ('private', 'public'):
+            for value in ('not-base64!', base64.b64encode(b'not DER').decode(),
+                          # Change named-curve OID prime256v1 to prime192v1.
+                          base64.b64encode(base64.b64decode(pair[key]).replace(
+                              bytes.fromhex('06082a8648ce3d030107'),
+                              bytes.fromhex('06082a8648ce3d030101'))).decode()):
+                altered = dict(pair, **{key: value})
+                store = json.dumps(altered)
+                (self.directory / 'issuer.json').write_text(store)
+                result = self.run_setup()
+                self.assertNotEqual(0, result.returncode)
+                self.assertTrue(store == (self.directory / 'issuer.json').read_text(), 'Invalid store changed')
+                self.assertTrue(pair['private'] not in result.stdout + result.stderr, 'Private key leaked')
 
     def test_repository_secret_storage_refused(self):
         self.assertNotEqual(0, self.run_setup(directory=SCRIPT.parent / 'issuer').returncode)
@@ -90,8 +169,8 @@ class DevIssuerTest(unittest.TestCase):
             (self.directory / 'issuer.json').write_text(store)
             result = self.run_setup()
             self.assertNotEqual(0, result.returncode)
-            self.assertNotIn(altered['private'], result.stdout + result.stderr)
-            self.assertEqual(store, (self.directory / 'issuer.json').read_text())
+            self.assertTrue(altered['private'] not in result.stdout + result.stderr, 'Private key leaked')
+            self.assertTrue(store == (self.directory / 'issuer.json').read_text(), 'Store changed')
 
     def test_shell_environment_and_private_storage_permissions(self):
         self.success(self.run_setup())
@@ -124,7 +203,7 @@ class DevIssuerTest(unittest.TestCase):
             result = subprocess.run([shell, '-NoProfile', '-File', str(SCRIPT), '-KeyDirectory', str(self.directory)],
                                     env=self.env, capture_output=True, text=True)
             self.success(result)
-            self.assertEqual(pair, (self.directory / 'issuer.json').read_bytes())
+            self.assertTrue(pair == (self.directory / 'issuer.json').read_bytes(), 'Store changed')
             self.assertEqual(pin, (self.directory / 'sdkconfig.issuer.defaults').read_bytes())
 
     @unittest.skipUnless(os.name == 'nt' and shutil.which('powershell'), 'Windows PowerShell required')

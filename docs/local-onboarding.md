@@ -1,4 +1,4 @@
-# Local signed UTC onboarding (#157)
+# Local signed UTC onboarding and issuer setup (#157, #159)
 
 Use Windows PowerShell **5.1** or PowerShell **7.2+** (`pwsh`), your existing IntelliJ JDK/Spring Boot,
 PostgreSQL and ESP-IDF 6.1 installation. No OpenSSL or Python crypto package is
@@ -45,7 +45,7 @@ Run on the machine actually hosting Spring Boot:
 w32tm /query /status /verbose
 w32tm /query /source
 w32tm /stripchart /computer:time.windows.com /samples:5 /dataonly
-Get-Date -AsUTC
+[DateTime]::UtcNow
 # Only after checking recent synchronization, a trusted source and acceptable offset:
 & ./scripts/dev-issuer.ps1 -AttestHealthyUtc
 ```
@@ -143,6 +143,9 @@ is correct. A missing pin denies time/claim/sync. A mismatched valid pin rejects
 the proof; neither PWA nor `/issuer` may replace it. Intentional rotation needs
 coordinated backend and firmware provisioning.
 
+The PWA has no issuer secret and configures no firmware pin; it transports signed
+artifacts. Never adopt a trust anchor from an untrusted HTTP `/issuer` response.
+
 ## 5. Validate Android onboarding and sync
 
 Use the existing HTTPS/Web Bluetooth PWA setup and an ACTIVE organization ADMIN.
@@ -181,3 +184,114 @@ Host tests exercise signed proof validation, pin mismatch, replay rejection,
 ADMIN claiming and sync regression. They do not establish physical Android/ESP
 E2E success; record that sequence on hardware separately without logging proofs,
 private keys, raw RFID identifiers or credential bodies.
+
+## 6. Conflicting configuration and safe recovery
+
+Setup validates existing `backend-issuer.properties`, `sdkconfig.issuer.defaults`
+and inherited issuer variables before changing any export. Malformed files,
+duplicate pin assignments and mismatches abort. Restore the intended configuration
+from an encrypted, operator-only backup. If only a generated export was damaged,
+verify and back up `issuer.json`, remove only that damaged export, then rerun.
+Never delete the pair to repair an export. A remaining public defaults file also
+blocks fresh generation when the pair is missing: it may belong to an existing fleet.
+An explicit `-CheckFirmwarePin` always requires an existing configuration file,
+even when it names `sdkconfig.issuer.defaults`; it never creates the file being
+checked. Run setup without that option to recover missing exports from a valid pair.
+
+Keep an encrypted backup of the entire issuer directory. Test restoration to a
+protected directory outside Git using `-KeyDirectory` and compare the recorded
+public fingerprint. Private keys cannot be recovered from firmware or `/issuer`.
+The helper cannot inspect arbitrary IntelliJ JVM/command-line overrides or prove
+which firmware is running: compare backend startup and ESP serial fingerprints.
+
+## 7. Manual Windows fallback
+
+Use OpenSSL on PATH with Windows PowerShell 5.1 or 7. This is a fresh-installation
+fallback, never a repair for a fleet with existing keys. Start in a private shell
+without tracing/transcription. Choose a NEW directory outside every Git checkout.
+The following commands write secret files with an ACL limited to your user:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$manualDir = Join-Path $env:LOCALAPPDATA 'MiezMerker/issuer-manual'
+if (Test-Path -LiteralPath $manualDir) { throw 'Existing directory: restore/reuse instead' }
+[void][IO.Directory]::CreateDirectory($manualDir)
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = New-Object Security.AccessControl.DirectorySecurity
+$acl.SetOwner($sid)
+$acl.SetAccessRuleProtection($true, $false)
+$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+  $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+if ($PSVersionTable.PSEdition -eq 'Desktop') { [IO.DirectoryInfo]::new($manualDir).SetAccessControl($acl) }
+else { [IO.FileSystemAclExtensions]::SetAccessControl([IO.DirectoryInfo]::new($manualDir), $acl) }
+& openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$manualDir/issuer.pem"
+if ($LASTEXITCODE -ne 0) { throw 'Generation failed' }
+& openssl pkcs8 -topk8 -nocrypt -in "$manualDir/issuer.pem" -outform DER -out "$manualDir/private.der"
+if ($LASTEXITCODE -ne 0) { throw 'PKCS8 export failed' }
+& openssl pkey -in "$manualDir/issuer.pem" -pubout -outform DER -out "$manualDir/public.der"
+if ($LASTEXITCODE -ne 0) { throw 'SPKI export failed' }
+$privateB64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$manualDir/private.der"))
+$publicDer = [IO.File]::ReadAllBytes("$manualDir/public.der")
+$publicB64 = [Convert]::ToBase64String($publicDer)
+# Named P-256 SPKI prefix before the 65-byte uncompressed point.
+$prefix = ([BitConverter]::ToString($publicDer[0..25])).Replace('-', '').ToLowerInvariant()
+if ($publicDer.Length -ne 91 -or $prefix -cne '3059301306072a8648ce3d020106082a8648ce3d030107034200') {
+  throw 'Unexpected SPKI; no pin exported'
+}
+$point = [byte[]]$publicDer[26..90]
+$pin = ([BitConverter]::ToString($point)).Replace('-', '').ToLowerInvariant()
+if ($pin -cnotmatch '^04[0-9a-f]{128}$') { throw 'Invalid P-256 point' }
+$sha = [Security.Cryptography.SHA256]::Create()
+try { $fingerprint = ([BitConverter]::ToString($sha.ComputeHash($point))).Replace('-', '').ToLowerInvariant() }
+finally { $sha.Dispose() }
+[IO.File]::WriteAllText("$manualDir/backend-issuer.properties",
+  "miezmerker.issuer.private-key-pkcs8-b64=$privateB64`nmiezmerker.issuer.public-key-spki-b64=$publicB64`n")
+[IO.File]::WriteAllText("$manualDir/sdkconfig.issuer.defaults", "CONFIG_MM_ISSUER_PUBLIC_KEY_HEX=`"$pin`"`n")
+Write-Host "Issuer public SHA256(point)=$fingerprint"
+```
+
+Stop on any failure. Do not use OpenSSL `-text`, print secret variables, or use
+Unix `base64 -w0`. PEM, private DER and properties are all secrets. Use the
+properties URI in section 3 and the defaults path in section 4, replacing the
+directory. The public key is derived from the private PEM; backend startup
+validates the pair. Compare both runtime fingerprints before onboarding.
+
+To move the manual pair into the normal validated, idempotent store, import it
+from this same private shell (a different existing store is rejected):
+
+```powershell
+$env:ISSUER_PRIVATE_PKCS8_B64 = $privateB64
+$env:ISSUER_PUBLIC_SPKI_B64 = $publicB64
+try { & ./scripts/dev-issuer.ps1 -ImportFromEnvironment }
+finally {
+  Remove-Item Env:ISSUER_PRIVATE_PKCS8_B64, Env:ISSUER_PUBLIC_SPKI_B64
+  Remove-Variable privateB64, publicB64
+}
+```
+
+## 8. Reflash and deliberate rotation
+
+For a routine reflash, reuse the same directory and pair: run setup, check the
+actual sdkconfig with `-CheckFirmwarePin`, build/flash as in section 4 and compare
+serial fingerprints. Never regenerate keys or erase NVS as part of a build clean.
+
+Rotation deliberately uses a NEW directory; there is no in-place force switch:
+
+1. Confirm the rotation decision, inventory all registered nodes and backend
+   instances, stop issuance/backend processes and securely back up the old store.
+2. Start a fresh shell without issuer/configuration overrides. Explicitly select
+   a new path: `& ./scripts/dev-issuer.ps1 -KeyDirectory "$env:LOCALAPPDATA/MiezMerker/issuer-v2"`.
+   Retain the old directory. Record the new public fingerprint.
+3. Change the IntelliJ properties URI deliberately. Check UTC again before
+   attesting, then restart every backend instance with the same new pair.
+4. Update each existing sdkconfig pin deliberately via menuconfig; defaults do
+   not override it. Validate with the new `-KeyDirectory` and `-CheckFirmwarePin`,
+   rebuild and reflash every affected node without erasing NVS/ownership/data.
+5. Compare every running ESP fingerprint and test registration/sync. Obtain fresh
+   offline credentials: old credentials and pending artifacts signed by the old
+   issuer are rejected under the new pin. Nodes retaining the old pin reject new
+   proofs. Plan downtime and access to offline nodes; there is no automatic
+   multi-key migration. A rollback requires coordinating backend AND firmware
+   pins and must respect the reason for rotation (especially compromise).
+
+A directory change or successful sdkconfig check does not prove fleet migration.
