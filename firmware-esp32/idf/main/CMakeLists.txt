@@ -3,6 +3,15 @@ idf_component_register(SRCS "app_main.cpp" "board.cpp" "nimble_peripheral.cpp"
     REQUIRES firmware-core ble-sync offline-auth bt nvs_flash esp_timer esp_driver_gpio
         esp_driver_usb_serial_jtag bootloader_support mbedtls esp_app_format)
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
+# Independent of PROJECT_VER: this ID is local serial diagnostics only.
+add_custom_target(mm-local-build-id
+    COMMAND "${CMAKE_COMMAND}" "-DMM_SOURCE_DIR=${CMAKE_CURRENT_LIST_DIR}"
+        "-DMM_OUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/build_id.hpp"
+        -P "${CMAKE_CURRENT_LIST_DIR}/build_id.cmake"
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/build_id.hpp"
+    VERBATIM)
+add_dependencies(${COMPONENT_LIB} mm-local-build-id)
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 if(CONFIG_MM_DEV_SYNTHETIC_INPUT)
     file(READ "${CMAKE_CURRENT_LIST_DIR}/../../../protocol/fixtures/offline-credential-v1.json" MM_FIXTURE)
     string(JSON MM_ISSUER_X GET "${MM_FIXTURE}" issuer_public_key x)

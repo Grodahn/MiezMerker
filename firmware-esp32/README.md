@@ -1,5 +1,13 @@
 # ESP32-C3 SuperMini board port (#108)
 
+Serial boot logs include `firmware_git=<short-commit>[-dirty]`; the existing
+10-second `alive` line includes the same ID as `fw=...`. Each build refreshes
+this local diagnostic ID, including incremental builds after edits or checkout.
+`-dirty` covers staged and unstaged tracked changes across the repository;
+untracked files are excluded. Missing Git metadata/tools produce `unknown`.
+Unchanged IDs do not rewrite the generated header or force recompilation.
+This diagnostic is independent of the existing BLE firmware version.
+
 `idf/` is a flashable **ESP-IDF 6.1 / ESP32-C3 / 4 MB** application. Root
 CMake/CTest still builds the portable core, simulator, GATT router and adapter
 regressions without an ESP-IDF dependency. The application calls the existing
