@@ -38,7 +38,7 @@ class IdfWrapperTest(unittest.TestCase):
             "'args': sys.argv[1:], 'env': dict(os.environ)}))\n"
             "sys.exit(int(os.environ.get('WRAPPER_EXIT', '0')))\n")
 
-    def invoke(self, *options, cache=True, exit_code=0):
+    def invoke(self, *options, cache=True, exit_code=0, location=None):
         cache_bin = self.root / 'cache bin'
         cache_bin.mkdir(exist_ok=True)
         (cache_bin / 'ccache.cmd').write_text('@exit /b 0\n')
@@ -52,16 +52,20 @@ class IdfWrapperTest(unittest.TestCase):
         env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')
         if cache:
             env['PATH'] = str(cache_bin) + ';' + env['PATH']
+        change_location = f"Set-Location {quote(location)}; " if location else ''
         command = (
             "$ErrorActionPreference = 'Stop'; "
+            + change_location +
             "$before = @{}; Get-ChildItem Env: | ForEach-Object { $before[$_.Name] = $_.Value }; "
+            "$caught = $null; try { "
             f"& {quote(SCRIPT)} {' '.join(options)} -IdfArguments "
             "@('-B','build-production','-D','SDKCONFIG=sdkconfig.local-production',"
             "'-D','SDKCONFIG_DEFAULTS=sdkconfig.defaults','-D','MM_DEVELOPMENT_BUILD=OFF','app'); "
-            "$code = $LASTEXITCODE; "
+            "$code = $LASTEXITCODE } catch { $caught = $_ }; "
             "$after = @{}; Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }; "
             "foreach ($key in @($before.Keys) + @($after.Keys)) { "
             "if ($key -ne '_' -and $before[$key] -cne $after[$key]) { throw ('Environment leaked: ' + $key) } }; "
+            "if ($caught) { throw $caught }; "
             "exit $code")
         result = subprocess.run([shutil.which(SHELL), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
                                 env=env, capture_output=True, text=True)
@@ -89,6 +93,20 @@ class IdfWrapperTest(unittest.TestCase):
         result, data = self.invoke('-Ccache', cache=False)
         self.assertNotEqual(0, result.returncode)
         self.assertIn('ccache is missing', result.stderr)
+        self.assertIsNone(data)
+
+    def test_relative_cache_uses_powershell_location(self):
+        location = self.root / 'working directory'
+        location.mkdir(exist_ok=True)
+        result, data = self.invoke('-Ccache', '-CcacheDir', quote('relative cache'), location=location)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(str(location / 'relative cache'), data['env']['CCACHE_DIR'])
+
+    def test_non_filesystem_cache_fails_and_restores_environment(self):
+        result, data = self.invoke('-Ccache', '-CcacheDir', quote('Env:CCACHE_DIR'))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('CcacheDir must refer to a filesystem directory', result.stderr)
+        self.assertNotIn('Environment leaked', result.stderr)
         self.assertIsNone(data)
 
     def test_eim_cache_detection_and_explicit_directory(self):

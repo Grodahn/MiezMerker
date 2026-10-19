@@ -38,7 +38,9 @@ The 1 GiB bound can evict entries; it is not a promised hit rate.
 
 Alternatively use `-Ccache` on each wrapper invocation. It sets the four cache
 variables above for the child IDF process and restores the caller's environment
-afterward. `-CcacheDir <absolute-path>` overrides the directory. Explicit opt-in
+afterward. `-CcacheDir <path>` overrides the directory; relative filesystem paths
+resolve against PowerShell's current location, including after `Set-Location`.
+Non-filesystem providers such as `Env:` are rejected. Explicit opt-in
 without ccache fails before IDF; omit the switch for ordinary existing behavior
 (including an inherited `IDF_CCACHE_ENABLE`). No cache is reset or deleted.
 
@@ -49,13 +51,17 @@ compact runner. Discover real test/target names before choosing a selection:
 
 ```powershell
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target board-adapter-test --parallel
-python scripts/test.py firmware --test '^esp32-board-adapters$'
+cmake --build build --target board-adapter-test --config Release --parallel
+python scripts/test.py firmware --config Release --test '^esp32-board-adapters$'
 # For auth changes, also use the separate existing offline-auth host build:
 cmake -S firmware-esp32/tests -B build/offline-auth -DCMAKE_BUILD_TYPE=Release
-cmake --build build/offline-auth --parallel
-python scripts/test.py firmware --build-dir build/offline-auth --label auth
+cmake --build build/offline-auth --config Release --parallel
+python scripts/test.py firmware --build-dir build/offline-auth --config Release --label auth
 ```
+
+`--config Release` also selects the correct artifacts for Windows multi-configuration
+generators (for example Visual Studio); the configure-time build type alone does
+not select their build/test configuration.
 
 Select the actual changed contract: core, adapters, claim, offline credentials,
 crypto or security-clock consumers. Preserve their assertions and coverage;

@@ -45,8 +45,17 @@ try {
             }
             $env:PATH = $cacheCommand.DirectoryName + ';' + $env:PATH
         }
+        # .NET's current directory can differ from PowerShell's Set-Location.
+        # Resolve non-existing cache directories against the active PS location.
+        $cacheProvider = $null
+        $cacheDrive = $null
+        $cachePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(
+            $CcacheDir, [ref]$cacheProvider, [ref]$cacheDrive)
+        if ($cacheProvider.Name -ne 'FileSystem') {
+            throw 'CcacheDir must refer to a filesystem directory.'
+        }
         $env:IDF_CCACHE_ENABLE = '1'
-        $env:CCACHE_DIR = [IO.Path]::GetFullPath($CcacheDir)
+        $env:CCACHE_DIR = $cachePath
         $env:CCACHE_MAXSIZE = '1G'
         # IDF regenerates picolibc.specs; hash content rather than its fresh mtime.
         $env:CCACHE_COMPILERCHECK = 'content'
