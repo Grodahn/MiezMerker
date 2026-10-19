@@ -28,6 +28,17 @@ These stages are an **execution order, not a test-coverage reduction**.
 
 ## Preferred test commands
 
+For local Windows/ESP-IDF work, follow the bundled
+[incremental firmware workflow](docs/windows-firmware-development.md): smallest
+host tests first, opt-in `idf.ps1 -Ccache`, then necessary incremental `app`
+builds in separate dev/production directories and SDKCONFIG files. Reuse correct
+profiles; do not repeat full images, `set-target`, dependency setup or `fullclean`
+after each edit/review fix. Full local `build size` is risk-driven; the existing
+complete final-head CI image matrix and security/release gates remain mandatory.
+Cache activation must reach the agent's actual process; a remote agent does not
+inherit a laptop cache. Measure honestly and keep logs/output compact. See the
+linked document for setup, audit commands, measurements and limitations.
+
 From the repository root, prefer the compact runner for local and agent-driven
 test loops (Python 3.10+; use `python3` instead of `python` if required):
 

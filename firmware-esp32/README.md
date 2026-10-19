@@ -21,6 +21,11 @@ authenticated synchronization. No RFID reader, external RTC or Wi-Fi is initiali
 
 ## Windows build and port selection
 
+For the fast host-test → incremental `app` → final full CI loop, optional Windows
+ccache, profiling and troubleshooting, use the
+[Windows firmware development workflow](../docs/windows-firmware-development.md).
+The full-image commands below are image/hardware gates, not a per-edit loop.
+
 For persistent local issuer keys, explicit UTC attestation and a matching firmware
 pin, follow [local signed UTC onboarding](../docs/local-onboarding.md).
 
@@ -51,7 +56,6 @@ Production build (explicit configuration prevents accidentally reusing a dev cac
 ```powershell
 Push-Location firmware-esp32/idf
 idf.py --version
-idf.py -B build-production -D SDKCONFIG=sdkconfig.local-production set-target esp32c3
 idf.py -B build-production -D SDKCONFIG=sdkconfig.local-production `
   -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' -D MM_DEVELOPMENT_BUILD=OFF build size
 # Standard activated IDF workflow, after confirming the selected board:
