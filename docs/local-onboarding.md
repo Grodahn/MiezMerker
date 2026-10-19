@@ -194,6 +194,9 @@ from an encrypted, operator-only backup. If only a generated export was damaged,
 verify and back up `issuer.json`, remove only that damaged export, then rerun.
 Never delete the pair to repair an export. A remaining public defaults file also
 blocks fresh generation when the pair is missing: it may belong to an existing fleet.
+An explicit `-CheckFirmwarePin` always requires an existing configuration file,
+even when it names `sdkconfig.issuer.defaults`; it never creates the file being
+checked. Run setup without that option to recover missing exports from a valid pair.
 
 Keep an encrypted backup of the entire issuer directory. Test restoration to a
 protected directory outside Git using `-KeyDirectory` and compare the recorded

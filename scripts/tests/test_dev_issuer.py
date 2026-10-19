@@ -122,6 +122,25 @@ class DevIssuerTest(unittest.TestCase):
             config.write_text(valid + suffix)
             self.assertNotEqual(0, self.run_setup('-CheckFirmwarePin', str(config)).returncode)
 
+    def test_explicit_missing_defaults_check_fails_without_recreating_exports(self):
+        self.success(self.run_setup())
+        store = (self.directory / 'issuer.json').read_bytes()
+        properties = self.directory / 'backend-issuer.properties'
+        defaults = self.directory / 'sdkconfig.issuer.defaults'
+        expected_properties, expected_defaults = properties.read_bytes(), defaults.read_bytes()
+        properties.unlink()
+        defaults.unlink()
+        for config in (defaults, Path(self.temp.name) / 'missing-sdkconfig'):
+            result = self.run_setup('-AttestHealthyUtc', '-CheckFirmwarePin', str(config))
+            self.assertNotEqual(0, result.returncode)
+            self.assertFalse(defaults.exists(), 'Missing checked pin was recreated')
+            self.assertFalse(properties.exists(), 'Failed check recreated backend export')
+            self.assertTrue(store == (self.directory / 'issuer.json').read_bytes(), 'Store changed')
+        self.success(self.run_setup())
+        self.assertTrue(expected_properties == properties.read_bytes(), 'Recovered export differs')
+        self.assertEqual(expected_defaults, defaults.read_bytes())
+        self.assertTrue(store == (self.directory / 'issuer.json').read_bytes(), 'Recovery rotated pair')
+
     def test_wrong_curve_and_invalid_base64_are_rejected(self):
         pair = self.success(self.run_setup())
         for key in ('private', 'public'):

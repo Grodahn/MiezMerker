@@ -181,9 +181,14 @@ try {
             throw 'Existing backend properties conflict with issuer.json or are malformed. Restore from backup; no files replaced.'
         }
     }
-    foreach ($configPath in @($defaultsPath, $CheckFirmwarePin)) {
-        if (!$configPath) { continue }
-        if ($configPath -eq $defaultsPath -and !(Test-Path -LiteralPath $configPath)) { continue }
+    $configPaths = @()
+    if (Test-Path -LiteralPath $defaultsPath) { $configPaths += $defaultsPath }
+    # An explicit check is always required, even when it names a missing export.
+    if ($CheckFirmwarePin) { $configPaths += $CheckFirmwarePin }
+    foreach ($configPath in $configPaths) {
+        if (!(Test-Path -LiteralPath $configPath -PathType Leaf)) {
+            throw 'Firmware pin configuration file is missing or not a regular file. No files replaced.'
+        }
         # Count all assignments, including malformed/empty duplicate entries.
         $assignments = @(Select-String -LiteralPath $configPath -Pattern '^\s*CONFIG_MM_ISSUER_PUBLIC_KEY_HEX\s*=')
         if ($assignments.Count -ne 1 -or
