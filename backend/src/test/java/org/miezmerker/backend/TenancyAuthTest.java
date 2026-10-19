@@ -385,7 +385,7 @@ class TenancyAuthTest {
         login("admin-a@example.org", "supersecret-password-a", 200);
         var membership = memberships.findByOrganizationIdAndUserId(f.orgA().getId(), f.adminA().getId()).orElseThrow();
         membership.setRole(MembershipRole.MEMBER);
-        memberships.save(membership);
+        membership = memberships.save(membership);
         assertEquals(403, get("/api/v1/organizations/" + f.orgA().getId() + "/members").statusCode());
         assertEquals(200, get("/api/v1/organizations/" + f.orgA().getId()).statusCode());
         membership.disable();
