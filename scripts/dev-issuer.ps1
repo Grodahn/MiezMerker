@@ -126,7 +126,7 @@ try {
         if (!$env:ISSUER_PRIVATE_PKCS8_B64 -or !$env:ISSUER_PUBLIC_SPKI_B64) { throw 'Both existing issuer environment variables are required for import.' }
         $pair = [pscustomobject]@{ private = $env:ISSUER_PRIVATE_PKCS8_B64; public = $env:ISSUER_PUBLIC_SPKI_B64 }
     } else {
-        if ($env:ISSUER_PRIVATE_PKCS8_B64 -or $env:ISSUER_PUBLIC_SPKI_B64 -or (Test-Path -LiteralPath $propertiesPath)) {
+        if ($env:ISSUER_PRIVATE_PKCS8_B64 -or $env:ISSUER_PUBLIC_SPKI_B64 -or (Test-Path -LiteralPath $propertiesPath) -or (Test-Path -LiteralPath $defaultsPath)) {
             throw 'Existing issuer configuration detected. Use -ImportFromEnvironment or restore issuer.json; refusing generation.'
         }
         if ($legacyPowerShell) {
@@ -168,10 +168,28 @@ try {
     $pin = [Convert]::ToHexString($point).ToLowerInvariant()
     $fingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($point)).ToLowerInvariant()
     }
-    if ($CheckFirmwarePin) {
-        $matches = @(Select-String -LiteralPath $CheckFirmwarePin -Pattern '^CONFIG_MM_ISSUER_PUBLIC_KEY_HEX="([0-9a-fA-F]{130})"$')
-        if ($matches.Count -ne 1 -or $matches[0].Matches[0].Groups[1].Value.ToLowerInvariant() -cne $pin) {
-            throw 'Firmware issuer pin missing or mismatched. Configure the generated public pin, rebuild/reflash, and compare the ESP serial fingerprint.'
+    # Validate every persisted/ambient consumer before any write. An interrupted
+    # export may be restored explicitly, but must never silently become rotation.
+    if (($env:ISSUER_PRIVATE_PKCS8_B64 -and $env:ISSUER_PRIVATE_PKCS8_B64 -cne $pair.private) -or
+        ($env:ISSUER_PUBLIC_SPKI_B64 -and $env:ISSUER_PUBLIC_SPKI_B64 -cne $pair.public)) {
+        throw 'Inherited issuer environment differs from the local pair. Remove overrides before starting the backend.'
+    }
+    $expectedProperties = "miezmerker.issuer.private-key-pkcs8-b64=$($pair.private)`nmiezmerker.issuer.public-key-spki-b64=$($pair.public)`n"
+    if (Test-Path -LiteralPath $propertiesPath) {
+        $existingProperties = [IO.File]::ReadAllText($propertiesPath).Replace("`r`n", "`n")
+        if ($existingProperties -cne $expectedProperties) {
+            throw 'Existing backend properties conflict with issuer.json or are malformed. Restore from backup; no files replaced.'
+        }
+    }
+    foreach ($configPath in @($defaultsPath, $CheckFirmwarePin)) {
+        if (!$configPath) { continue }
+        if ($configPath -eq $defaultsPath -and !(Test-Path -LiteralPath $configPath)) { continue }
+        # Count all assignments, including malformed/empty duplicate entries.
+        $assignments = @(Select-String -LiteralPath $configPath -Pattern '^\s*CONFIG_MM_ISSUER_PUBLIC_KEY_HEX\s*=')
+        if ($assignments.Count -ne 1 -or
+            $assignments[0].Line -cnotmatch '^CONFIG_MM_ISSUER_PUBLIC_KEY_HEX="04[0-9a-fA-F]{128}"$' -or
+            $assignments[0].Line.Split('"')[1].ToLowerInvariant() -cne $pin) {
+            throw 'Firmware issuer pin missing or mismatched. Restore the intended public pin, rebuild/reflash, and compare the ESP serial fingerprint. No files replaced.'
         }
     }
     if (!(Test-Path -LiteralPath $pairPath)) {
@@ -182,14 +200,9 @@ try {
             $stream.Write($encoded, 0, $encoded.Length); $stream.Flush($true)
         } finally { $stream.Dispose() }
     }
-    [IO.File]::WriteAllText($propertiesPath, "miezmerker.issuer.private-key-pkcs8-b64=$($pair.private)`nmiezmerker.issuer.public-key-spki-b64=$($pair.public)`n")
-    [IO.File]::WriteAllText($defaultsPath, "CONFIG_MM_ISSUER_PUBLIC_KEY_HEX=`"$pin`"`n")
+    if (!(Test-Path -LiteralPath $propertiesPath)) { [IO.File]::WriteAllText($propertiesPath, $expectedProperties) }
+    if (!(Test-Path -LiteralPath $defaultsPath)) { [IO.File]::WriteAllText($defaultsPath, "CONFIG_MM_ISSUER_PUBLIC_KEY_HEX=`"$pin`"`n") }
     Protect-IssuerDirectory
-    # Avoid inherited env overrides of the generated Spring properties.
-    if (($env:ISSUER_PRIVATE_PKCS8_B64 -and $env:ISSUER_PRIVATE_PKCS8_B64 -cne $pair.private) -or
-        ($env:ISSUER_PUBLIC_SPKI_B64 -and $env:ISSUER_PUBLIC_SPKI_B64 -cne $pair.public)) {
-        throw 'Inherited issuer environment differs from the local pair. Remove overrides before starting the backend.'
-    }
     $issuerLocation = ([Uri]::new($propertiesPath)).AbsoluteUri
     if (!$env:SPRING_CONFIG_ADDITIONAL_LOCATION) {
         $env:SPRING_CONFIG_ADDITIONAL_LOCATION = $issuerLocation
