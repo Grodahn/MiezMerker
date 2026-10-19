@@ -66,6 +66,11 @@ using its status as the shared ACK baseline.
 - Store-full recovery: when `FULL`, the node keeps serving old data and
   rejects new reads; the collector must sync + ACK + compact to reclaim
   space. Silent deletion of unacked data is forbidden.
+- A sequence gap still permits compaction of the already ACKed prefix. The
+  visit remains incomplete and the suffix beyond the gap remains on the node.
+  An authorized visit with no new records also retries Compact. Its response
+  measures occupied slots (`before = freed + remaining`); Status.pending counts
+  only unACKed observations and must not be used as total storage occupancy.
 
 ## Retry / idempotency matrix
 

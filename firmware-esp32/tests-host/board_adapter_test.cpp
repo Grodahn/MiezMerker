@@ -12,6 +12,7 @@ namespace {
 // Durable cells model atomic old/new NVS blobs, including ambiguous failures.
 struct Cell : AtomicBlob {
     Bytes data;
+    unsigned writes{0};
     bool fail_before{false}, fail_after{false}, read_error{false};
     BlobResult read(Bytes& out) override {
         if (read_error) return BlobResult::error;
@@ -19,6 +20,7 @@ struct Cell : AtomicBlob {
         out = data; return BlobResult::loaded;
     }
     bool replace(const Bytes& value) override {
+        ++writes;
         if (fail_before) { fail_before = false; return false; }
         data = value;
         if (fail_after) { fail_after = false; return false; }
@@ -148,6 +150,11 @@ void interruption() {
         Boot after_prune(id, log, clock, mode, random, crypto, time); assert(after_prune.core.initialize());
         assert(after_prune.core.load_observations().back().chip_id.value == "two");
         assert(after_prune.core.ack_watermark() == 1);
+        assert(after_prune.core.observation_count() == (committed ? 1U : 2U));
+        assert(after_prune.core.compact_acked()); // Retry after reboot, even with no new ACK.
+        assert(after_prune.core.observation_count() == 1);
+        const auto writes = log.writes;
+        assert(after_prune.core.compact_acked() && log.writes == writes);
     }
 }
 void exhaustion() {
@@ -161,6 +168,33 @@ void exhaustion() {
     Boot reboot(id, log, clock, mode, random, crypto, time); assert(reboot.core.initialize());
     assert(reboot.core.observation_count() == PersistentObservations::kCapacity);
     assert(reboot.core.next_sequence() == PersistentObservations::kCapacity + 1);
+    // Fill -> sync -> prune -> reboot -> refill repeatedly. The actual NVS
+    // adapter has 128 slots (CoreConfig's 2000 is the duplicate window in ms).
+    const auto full_bytes = log.data.size();
+    for (unsigned cycle = 0; cycle < 3; ++cycle) {
+        Boot visit(id, log, clock, mode, random, crypto, time); assert(visit.core.initialize());
+        const auto last = visit.core.next_sequence() - 1;
+        assert(visit.observations.status() == StoreStatus::FULL);
+        assert(visit.core.set_ack_watermark(last));
+        // Disconnect/reboot between ACK and COMPACT.
+        Boot retry(id, log, clock, mode, random, crypto, time); assert(retry.core.initialize());
+        assert(retry.core.ack_watermark() == last);
+        assert(retry.core.compact_acked());
+        assert(log.data.size() == 26 && log.data.size() < full_bytes);
+        assert(retry.core.observation_count() == 0 && retry.observations.status() == StoreStatus::OK);
+        const auto writes = log.writes;
+        assert(retry.core.compact_acked() && retry.core.set_ack_watermark(last));
+        assert(log.writes == writes); // No write amplification on empty retries.
+        Boot refill(id, log, clock, mode, random, crypto, time); assert(refill.core.initialize());
+        for (unsigned i = 0; i < PersistentObservations::kCapacity; ++i) {
+            assert(refill.core.record_chip_read(std::to_string(i)) == RecordResult::RECORDED);
+            if (i + 1 == PersistentObservations::kCapacity * 9 / 10)
+                assert(refill.observations.status() == StoreStatus::NEARLY_FULL);
+        }
+        assert(refill.core.load_observations().front().sequence == last + 1);
+        assert(log.data.size() == full_bytes);
+        assert(refill.core.record_chip_read("extra") == RecordResult::REJECTED_FULL);
+    }
     log.data.back() ^= 1;
     Boot damaged(id, log, clock, mode, random, crypto, time); assert(!damaged.core.initialize());
 }

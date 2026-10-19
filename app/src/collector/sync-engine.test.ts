@@ -60,6 +60,7 @@ function makeMockNode(records: BleRecord[], opts: {
 } = {}) {
   let acked = opts.initialAck ?? 0n;
   let lostAck = false;
+  let log = [...records];
   let batchCalls = 0;
   let snapshots = 0;
   const opcodes: Opcode[] = [];
@@ -118,7 +119,7 @@ function makeMockNode(records: BleRecord[], opts: {
         })});
       case Opcode.StatusRequest:
         return encodeFrame({ version: 1, opcode: Opcode.StatusResponse, payload: encodeStatusResponse({
-          pending: records.length, ackWatermark: acked, storeStatus: 0, clockStatus: 2,
+          pending: log.filter(r => r.sequence > acked).length, ackWatermark: acked, storeStatus: 0, clockStatus: 2,
           epochMs: 1790899200000n, nextSequence: records.length ? records[records.length - 1].sequence + 1n : acked + 1n,
         })});
       case Opcode.NodeProofRequest: {
@@ -131,8 +132,8 @@ function makeMockNode(records: BleRecord[], opts: {
         batchCalls++;
         const req = decodeBatchRequest(f.payload);
         if (!req) return encodeFrame({ version: 1, opcode: 0xff, payload: new Uint8Array() });
-        const page = records.filter(r => r.sequence >= req.fromSequence).slice(0, req.maxRecords);
-        const more = page.length > 0 && records.some(r => r.sequence > page[page.length - 1].sequence);
+        const page = log.filter(r => r.sequence >= req.fromSequence).slice(0, req.maxRecords);
+        const more = page.length > 0 && log.some(r => r.sequence > page[page.length - 1].sequence);
         return encodeFrame({ version: 1, opcode: Opcode.BatchResponse, payload: encodeBatchResponse({
           fromSequence: req.fromSequence, more, nextCursor: page.length > 0
             ? page[page.length - 1].sequence + 1n : req.fromSequence,
@@ -156,11 +157,14 @@ function makeMockNode(records: BleRecord[], opts: {
           newWatermark: acked, error: SyncError.Ok,
         })});
       }
-      case Opcode.CompactRequest:
+      case Opcode.CompactRequest: {
+        const before = log.length;
+        if (!opts.failCompact) log = log.filter(r => r.sequence > acked);
         return encodeFrame({ version: 1, opcode: Opcode.CompactResponse, payload: encodeCompactResponse({
-          freed: Number(acked), remaining: 0, ackWatermark: acked,
+          freed: before - log.length, remaining: log.length, ackWatermark: acked,
           error: opts.failCompact ? SyncError.Internal : SyncError.Ok,
         })});
+      }
       default:
         return encodeFrame({ version: 1, opcode: 0xff, payload: new Uint8Array() });
     }
@@ -452,6 +456,55 @@ describe('SyncEngine', () => {
     expect(result.watermark).toBe(1n);
     expect(node.getAcked()).toBe(1n);
     expect(await store.sequences(NODE_ID, INCARNATION)).toEqual([1n, 3n]);
+    expect(result.nodeStorage).toEqual({ before: 2, freed: 1, remaining: 1 });
+    const retry = await engine.sync('credential', () => 1790899200);
+    expect(retry.ok).toBe(false);
+    expect(retry.nodeStorage).toEqual({ before: 1, freed: 0, remaining: 1 });
+    expect(retry.watermark).toBe(1n);
+  });
+
+  test.each([false, true])('next visit with zero new records retries interrupted compaction (committed=%s)', async committed => {
+    const node = makeMockNode([makeRecord(1, 'chip')]);
+    let interrupt = true;
+    const transport = new MockNodeTransport(async frame => {
+      if (decodeFrame(frame)?.opcode === Opcode.CompactRequest && interrupt) {
+        interrupt = false;
+        if (committed) await node.handler(frame);
+        throw new Error('BLE response lost');
+      }
+      return node.handler(frame);
+    });
+    const first = await new SyncEngine(transport, store, mockKeys, identity).sync('cred', () => 1790899200);
+    expect(first.ok).toBe(true);
+    expect(first.maintenanceWarning).toContain('Speicherbereinigung');
+    const retry = await new SyncEngine(transport, store, mockKeys, identity).sync('cred', () => 1790899200);
+    expect(retry.ok).toBe(true);
+    expect(retry.recordsReceived).toBe(0);
+    expect(retry.nodeStorage).toEqual({ before: committed ? 0 : 1, freed: committed ? 0 : 1, remaining: 0 });
+    expect(retry.maintenanceWarning).toBeUndefined();
+    expect(node.opcodes.filter(op => op === Opcode.AckRequest)).toHaveLength(1);
+    expect(await store.sequences(NODE_ID, INCARNATION)).toEqual([1n]);
+  });
+
+  test.each(['full', 'status-lost'])('maintenance warning preserves copy and measured slots after %s', async failure => {
+    const node = makeMockNode([makeRecord(1, 'chip')]);
+    let compacted = false;
+    const transport = new MockNodeTransport(async frame => {
+      const opcode = decodeFrame(frame)?.opcode;
+      if (opcode === Opcode.CompactRequest) compacted = true;
+      const response = await node.handler(frame);
+      if (opcode === Opcode.StatusRequest && compacted) {
+        if (failure === 'status-lost') throw new Error('status lost');
+        const f = decodeFrame(response)!;
+        const p = f.payload.slice(); p[12] = 2; // store_status after pending/u64 ACK
+        return encodeFrame({ ...f, payload: p });
+      }
+      return response;
+    });
+    const result = await new SyncEngine(transport, store, mockKeys, identity).sync('cred', () => 1790899200);
+    expect(result.ok).toBe(true);
+    expect(result.nodeStorage).toEqual({ before: 1, freed: 1, remaining: 0 });
+    expect(result.maintenanceWarning).toContain(failure === 'full' ? 'voll' : 'nicht vollständig bestätigt');
   });
 
   test('failed durable persistence sends no ACK or compact', async () => {

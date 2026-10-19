@@ -317,6 +317,14 @@ void sync_gating_and_transfers() {
     CHECK(core2->record_chip_read("after-gap") == miezmerker::RecordResult::RECORDED);
     CHECK(server.ack(6, now).error == SyncError::InvalidSequence);
     CHECK(server.ack_watermark() == 3);
+    CHECK(server.ack(4, now).error == SyncError::Ok);
+    const auto prefix = server.compact(now);
+    CHECK(prefix.error == SyncError::Ok && prefix.freed == 1 && prefix.remaining == 1);
+    CHECK(prefix.ack_watermark == 4 && core2->load_observations().front().sequence == 6);
+    CHECK(server.ack(4, now).error == SyncError::Ok);
+    const auto repeated = server.compact(now);
+    CHECK(repeated.error == SyncError::Ok && repeated.freed == 0 && repeated.remaining == 1);
+    CHECK(server.ack(6, now).error == SyncError::InvalidSequence);
     // Oversized credential invalidates an already authorized session.
     CHECK(!server.authorize(std::string(2049, 'x'), good_proof, now));
     CHECK(!server.authorized(now));
