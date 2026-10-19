@@ -1,0 +1,25 @@
+name: Windows IDF wrapper
+on:
+  pull_request:
+    paths: ['firmware-esp32/tools/idf.ps1', 'firmware-esp32/tools/test_idf_wrapper.py', '.github/workflows/windows-idf-tools.yml']
+  push:
+    branches: [main]
+    paths: ['firmware-esp32/tools/idf.ps1', 'firmware-esp32/tools/test_idf_wrapper.py', '.github/workflows/windows-idf-tools.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  wrapper:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PowerShell 7 wrapper contracts (fake IDF, no toolchain install)
+        shell: pwsh
+        run: python -m unittest discover -s firmware-esp32/tools -p test_idf_wrapper.py -v
+      - name: Windows PowerShell 5.1 wrapper contracts
+        shell: powershell
+        env:
+          IDF_TEST_POWERSHELL: powershell
+        run: python -m unittest discover -s firmware-esp32/tools -p test_idf_wrapper.py -v
