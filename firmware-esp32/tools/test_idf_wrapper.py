@@ -22,7 +22,8 @@ class IdfWrapperTest(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix='idf wrapper ')
         cls.addClassCleanup(cls.temp.cleanup)
-        cls.root = Path(cls.temp.name)
+        # Windows runner TEMP may use an 8.3 alias; PowerShell expands it.
+        cls.root = Path(cls.temp.name).resolve()
         cls.tools = cls.root / 'tools'
         subprocess.run([sys.executable, '-m', 'venv', '--without-pip',
                         str(cls.tools / 'python/v6.1/venv')], check=True, capture_output=True)
