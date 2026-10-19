@@ -624,7 +624,10 @@ export class SyncEngine {
             'Node-Speicher voll oder fast voll; beim nächsten Besuch erneut synchronisieren und bereinigen.']
             .filter(Boolean).join(' ');
         }
-      } catch {
+      } catch (error) {
+        // User/context cancellation is terminal, including after a durable
+        // ACK. Never turn an obsolete visit into a success or reconnect it.
+        if (error instanceof NodeOperationCancelledError) throw error;
         maintenanceWarning = [maintenanceWarning,
           'Node-Speicherbereinigung nicht vollständig bestätigt; beim nächsten Besuch erneut versuchen. Bei anhaltendem Speicherfehler ist ein Node-Neustart erforderlich.']
           .filter(Boolean).join(' ');

@@ -49,6 +49,14 @@ gap boundaries, authorization and failed commits. Compaction stays behind all
 existing authentication and persistence gates. No new deletion authority or
 security/temporal schema was added.
 
+Follow-up PR review found that the maintenance catch also swallowed terminal
+user/context cancellation during Compact or the new Status round trip. This
+could report an obsolete visit as successful. Cancellation is now rethrown to
+the existing terminal sync path, without reconnecting; durable observations and
+the confirmed ACK stay intact. Both boundaries are covered with the production
+operation guard and retained-outbox assertions. Ordinary BLE maintenance failures
+still preserve local success with a warning.
+
 Regression coverage includes firmware gap/prune/re-ACK, persisted adapter
 ACK/compaction faults before and after commit, reboot, full/near-full/refill,
 no-op writes, PWA lost responses/empty visits/status failures, retained gap

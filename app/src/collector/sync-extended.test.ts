@@ -344,6 +344,35 @@ describe('SyncEngine extended field scenarios (issue #8)', () => {
     } finally { await operation.close(); collectorDb.close(); await collectorDb.delete(); }
   });
 
+  test.each(['compact', 'status'])('context cancellation during maintenance %s is terminal after durable ACK', async stage => {
+    const collectorDb = new CollectorDatabase(`cancelled-maintenance-${Math.random()}`);
+    const collectorStore = new CollectorObservationStore(collectorDb);
+    const controller = new AbortController();
+    const node = nodeHandler([makeRecord(1)]);
+    let compacted = false;
+    const raw = new MockTransport(async frame => {
+      const opcode = decodeFrame(frame)?.opcode;
+      const response = await node.handler(frame);
+      if (opcode === Opcode.CompactRequest) {
+        compacted = true;
+        if (stage === 'compact') controller.abort();
+      } else if (opcode === Opcode.StatusRequest && compacted) controller.abort();
+      return response;
+    });
+    const operation = bindNodeOperation(raw, 'user', 'org-a', controller.signal);
+    try {
+      const result = await new SyncEngine(operation.transport, collectorStore, mockKeys, identity,
+        { maxRetries: 3, retryDelayMs: 0 }).sync('cred', () => 1790899200, 'org-a');
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('cancelled');
+      expect(result.watermark).toBe(1n);
+      expect(node.getAcked()).toBe(1n);
+      expect(node.opcodes.filter(opcode => opcode === Opcode.ChallengeRequest)).toHaveLength(1);
+      expect(await collectorStore.pendingUploads('org-a')).toHaveLength(1);
+      expect(raw.connected).toBe(false);
+    } finally { await operation.close(); collectorDb.close(); await collectorDb.delete(); }
+  });
+
   test('lost compaction response after durable ACK leaves the visit complete with a warning', async () => {
     const node = nodeHandler([makeRecord(1)]);
     const transport = new MockTransport(async frame => {
