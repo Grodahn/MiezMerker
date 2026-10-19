@@ -80,6 +80,12 @@ local demo fixture, ownership collisions, login/API access and replay safety.
 CSRF, organization switching, recipient privacy and concurrent revocation.
 `SystemRoleMaintenanceTest` belongs to `auth` and covers failure cleanup of
 operator transactions.
+`MembershipConflictHandlerTest` belongs to `admin` and `auth`: concurrent membership
+updates return a non-cacheable 409 without exposing persistence details.
+`AdminOrganizationsTest` additionally verifies stale tenant/SYSADMIN writes,
+atomic audit rollback, concurrent duplicate grants, and actual organization switches
+(including a disabled selected organization). V23 adds optimistic membership
+versions without changing existing identities, roles, statuses or associations.
 
 CTest labels are `ble`, `auth`, `storage`, `lifecycle`, and `simulator`.
 Labels overlap where appropriate. Scenario labels follow the numbered scenario

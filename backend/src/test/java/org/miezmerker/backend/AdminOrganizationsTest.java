@@ -9,6 +9,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,6 +19,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.miezmerker.backend.admin.SysadminOrganizationService;
 import org.miezmerker.backend.bootstrap.SystemRoleMaintenance;
 import org.miezmerker.backend.domain.AppUser;
 import org.miezmerker.backend.domain.Cat;
@@ -36,13 +40,20 @@ import org.miezmerker.backend.repo.NodeRepository;
 import org.miezmerker.backend.repo.OrganizationRepository;
 import org.miezmerker.backend.repo.SharePolicyRepository;
 import org.miezmerker.backend.repo.SysadminOrganizationAuditRepository;
+import org.miezmerker.backend.security.AppUserDetails;
+import org.miezmerker.backend.service.MemberService;
 import org.miezmerker.backend.service.SharePolicyService;
 import org.miezmerker.backend.support.TestDatabaseCleaner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -71,6 +82,131 @@ class AdminOrganizationsTest {
     @Autowired PasswordEncoder passwords;
     @Autowired TestDatabaseCleaner cleaner;
     @Autowired DataSource dataSource;
+
+    @Autowired SysadminOrganizationService systemOrganizations;
+    @Autowired MemberService memberService;
+    @Autowired PlatformTransactionManager transactionManager;
+
+    AppUserDetails principal(AppUser user) {
+        return new AppUserDetails(user.getId(), user.getEmail(), user.getPasswordHash(),
+                user.getStatus());
+    }
+
+    TransactionTemplate independentTransaction() {
+        var tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return tx;
+    }
+
+    @Test
+    void staleTenantUpdateCannotRestoreRevokedAdmin() throws Exception {
+        Fixture f = seed();
+        grantSysadmin(f.sysadmin());
+        var target = memberships.findByOrganizationIdAndUserId(f.orgA().getId(),
+                f.multi().getId()).orElseThrow();
+        systemOrganizations.assignAdmin(principal(f.sysadmin()), f.orgA().getId(),
+                f.multi().getEmail());
+        long before = sysadminAudit.count();
+        assertThrows(OptimisticLockingFailureException.class, () ->
+                independentTransaction().executeWithoutResult(outer -> {
+                    // Prime this transaction's persistence context before revocation.
+                    memberships.findById(target.getId()).orElseThrow();
+                    independentTransaction().executeWithoutResult(inner ->
+                            systemOrganizations.revokeAdmin(principal(f.sysadmin()),
+                                    f.orgA().getId(), f.multi().getId()));
+                    memberService.updateMember(f.adminA().getId(), f.orgA().getId(),
+                            target.getId(), null, MembershipStatus.DISABLED, null);
+                }));
+        var current = memberships.findById(target.getId()).orElseThrow();
+        assertEquals(MembershipRole.MEMBER, current.getRole());
+        assertEquals(MembershipStatus.ACTIVE, current.getStatus());
+        assertEquals(before + 1, sysadminAudit.count());
+        assertEquals(MembershipRole.ADMIN, memberships.findByOrganizationIdAndUserId(
+                f.orgB().getId(), f.multi().getId()).orElseThrow().getRole());
+    }
+
+    @Test
+    void staleSysadminPromotionCannotReactivateDisabledMembershipOrWriteAudit() throws Exception {
+        Fixture f = seed();
+        grantSysadmin(f.sysadmin());
+        var target = memberships.findByOrganizationIdAndUserId(f.orgA().getId(),
+                f.multi().getId()).orElseThrow();
+        long before = sysadminAudit.count();
+        assertThrows(OptimisticLockingFailureException.class, () ->
+                independentTransaction().executeWithoutResult(outer -> {
+                    memberships.findById(target.getId()).orElseThrow();
+                    independentTransaction().executeWithoutResult(inner ->
+                            memberService.updateMember(f.adminA().getId(), f.orgA().getId(),
+                                    target.getId(), null, MembershipStatus.DISABLED, null));
+                    systemOrganizations.assignAdmin(principal(f.sysadmin()), f.orgA().getId(),
+                            f.multi().getEmail());
+                }));
+        var current = memberships.findById(target.getId()).orElseThrow();
+        assertEquals(MembershipRole.MEMBER, current.getRole());
+        assertEquals(MembershipStatus.DISABLED, current.getStatus());
+        assertEquals(before, sysadminAudit.count(), "rolled-back promotion must leave no audit");
+    }
+
+    @Test
+    void sysadminOrganizationSwitchKeepsTenantDataScopedAndRejectsDisabledContext() throws Exception {
+        Fixture f = seed();
+        grantSysadmin(f.multi());
+        systemOrganizations.assignAdmin(principal(f.multi()), f.orgA().getId(), f.multi().getEmail());
+        cats.save(new Cat(f.orgA(), "001", "OnlyAlphaCat", null, null));
+        cats.save(new Cat(f.orgB(), "001", "OnlyBetaCat", null, null));
+        formLogin("multi@example.org", "supersecret-x");
+        for (var org : List.of(f.orgA(), f.orgB())) {
+            assertEquals(302, postForm("/admin/org", "organizationId=" + org.getId(),
+                    pageCsrf("/admin/org")).statusCode());
+            var page = get("/admin/cats");
+            assertEquals(200, page.statusCode());
+            boolean alpha = org.getId().equals(f.orgA().getId());
+            assertTrue(page.body().contains(alpha ? "OnlyAlphaCat" : "OnlyBetaCat"));
+            assertFalse(page.body().contains(alpha ? "OnlyBetaCat" : "OnlyAlphaCat"));
+        }
+        systemOrganizations.deactivateOrganization(principal(f.multi()), f.orgB().getId(), true);
+        assertEquals(403, postForm("/admin/org", "organizationId=" + f.orgB().getId(),
+                pageCsrf("/admin/organizations")).statusCode());
+        assertEquals(200, get("/admin/organizations").statusCode(),
+                "global authority is independent of the disabled tenant context");
+        assertEquals(302, postForm("/admin/org", "organizationId=" + f.orgA().getId(),
+                pageCsrf("/admin/organizations")).statusCode());
+        assertTrue(get("/admin/cats").body().contains("OnlyAlphaCat"));
+        assertFalse(get("/admin/cats").body().contains("OnlyBetaCat"));
+    }
+
+    @Test
+    void concurrentAdminAssignmentCreatesOneMembershipAndOneAudit() throws Exception {
+        Fixture f = seed();
+        grantSysadmin(f.sysadmin());
+        long before = sysadminAudit.count();
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var attempts = java.util.stream.IntStream.range(0, 2).mapToObj(i ->
+                    executor.submit(() -> {
+                        assertTrue(start.await(10, TimeUnit.SECONDS));
+                        try {
+                            systemOrganizations.assignAdmin(principal(f.sysadmin()),
+                                    f.orgA().getId(), f.outsider().getEmail());
+                            return 200;
+                        } catch (ResponseStatusException e) {
+                            return e.getStatusCode().value();
+                        }
+                    })).toList();
+            start.countDown();
+            var outcomes = List.of(attempts.get(0).get(20, TimeUnit.SECONDS),
+                    attempts.get(1).get(20, TimeUnit.SECONDS));
+            assertTrue(outcomes.contains(200), outcomes.toString());
+            assertTrue(outcomes.contains(409), outcomes.toString());
+        }
+        var assigned = memberships.findByOrganizationIdAndUserId(f.orgA().getId(),
+                f.outsider().getId()).orElseThrow();
+        assertEquals(MembershipRole.ADMIN, assigned.getRole());
+        assertEquals(MembershipStatus.ACTIVE, assigned.getStatus());
+        assertEquals(before + 1, sysadminAudit.count());
+        assertTrue(memberships.findByOrganizationIdAndUserId(f.orgB().getId(),
+                f.outsider().getId()).isEmpty());
+    }
 
     HttpClient client;
     CookieManager cookies;

@@ -10,6 +10,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
@@ -21,6 +22,12 @@ public class OrganizationMembership {
     @Id
     @UuidGenerator
     private UUID id;
+
+    // SYSADMIN and tenant member maintenance use different lock boundaries.
+    // Reject stale writes instead of restoring revoked roles or disabled access.
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "organization_id", nullable = false)
