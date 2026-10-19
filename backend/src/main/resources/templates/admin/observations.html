@@ -7,7 +7,7 @@
 <main>
 <h1>Rohbeobachtungen</h1>
 <p>Unveränderte technische Lesungen. UNKNOWN bedeutet: Beobachtungszeit unbekannt; die Empfangszeit ist separat ausgewiesen. Abgeleitete Besuche stehen auf der Besuchsseite.</p>
-<p>Alle Zeiten in UTC. Historische Futterstellen stammen aus der gespeicherten Zuordnung.</p>
+<p>Alle Zeiten in UTC. Rohdaten zeigen die eingefrorene Zuordnung. Die getrennte Zeitprojektion rekonstruiert historische Futterstellen nur bei eindeutiger Zuordnung.</p>
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}"></div>
 <div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}"></div>
 <form class="card" method="get" th:action="${route}" th:object="${filters}">
@@ -29,12 +29,30 @@
 <div th:unless="${#lists.isEmpty(rows)}" class="card table-scroll" role="region" aria-label="Rohbeobachtungen" tabindex="0">
 <style>.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1000px}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb;vertical-align:top}td small{display:block}th{background:#f9fafb}</style>
 <table><caption>Rohbeobachtungen der aktiven Organisation</caption>
-<thead><tr><th scope="col">Node / Beobachtung</th><th scope="col">Chip / Sequence</th><th scope="col">Beobachtungszeit / RTC-Rohwert</th><th scope="col">Clock-Status</th><th scope="col">Vom Backend empfangen</th><th scope="col">Historische Futterstelle / Deployment</th><th scope="col">Technische Metadaten</th></tr></thead>
+<thead><tr><th scope="col">Node / Beobachtung</th><th scope="col">Chip / Sequence</th><th scope="col">Rohdaten: Beobachtungszeit / RTC-Rohwert</th><th scope="col">Rohdaten: Clock-Status</th><th scope="col">Vom Backend empfangen</th><th scope="col">Rohdaten: historische Futterstelle / Deployment</th><th scope="col">Abgeleitete Zeitprojektion (UTC)</th><th scope="col">Technische Metadaten</th></tr></thead>
 <tbody><tr th:each="r : ${rows}"><td><span th:text="${r.node}"></span><small th:text="${r.id}"></small></td>
 <td><span th:text="${r.chip}"></span><small th:text="'Sequence: ' + ${r.sequence}"></small></td>
 <td><span th:text="${r.observed}"></span><small th:text="'RTC-Rohwert (ms): ' + ${r.rawMillis != null ? r.rawMillis : 'nicht vorhanden'}"></small></td>
 <td th:text="${r.clock}"></td><td th:text="${r.received}"></td>
 <td><span th:text="${r.site}"></span><small th:text="'Deployment: ' + ${r.deployment != null ? r.deployment : 'unbekannt'}"></small></td>
+<td th:with="p=${projections[r.id]}">
+<div th:if="${p != null}" th:with="estimated=${p.quality.name() == 'ESTIMATED'}">
+<strong th:text="${p.quality}"></strong>
+<small th:if="${p.quality.name() == 'CONFLICT'}">Zeitbelege widersprechen sich – Zeitpunkt unbekannt</small>
+<small th:if="${p.quality.name() == 'UNKNOWN'}">Zeitpunkt unbekannt – keine ausreichenden Zeitbelege</small>
+<small th:if="${estimated}">Geschätzt (ca.), nicht bestätigt</small>
+<small th:if="${p.quality.name() != 'CONFLICT' and (p.earliestUtcMs != null or p.latestUtcMs != null)}">
+Frühestens: <span th:text="${p.earliestUtcMs == null ? 'Keine belegte Untergrenze' : T(org.miezmerker.backend.admin.AdminTemporalPresentation).utc(p.earliestUtcMs, estimated, false)}"></span><br/>
+Spätestens: <span th:text="${p.latestUtcMs == null ? 'Keine belegte Obergrenze' : T(org.miezmerker.backend.admin.AdminTemporalPresentation).utc(p.latestUtcMs, estimated, true)}"></span>
+</small>
+<small th:text="${p.derivedFeedingSiteId != null and siteNames[p.derivedFeedingSiteId] != null ? (p.attributionProvenance == 'FROZEN_RAW' ? 'Futterstelle (aus Rohdaten übernommen): ' : 'Futterstelle (historisch abgeleitet): ') + siteNames[p.derivedFeedingSiteId] : 'Futterstelle nicht eindeutig bestimmbar'}"></small>
+<details><summary>Provenienz und Zeitbelege</summary>
+<small th:text="${p.algorithmVersion}"></small><small th:text="${p.reason}"></small>
+<small th:text="${p.uncertaintyPolicies}"></small><small th:text="${p.anchorIds}"></small>
+<small th:text="${p.attributionProvenance}"></small>
+<small th:if="${p.derivedDeploymentId != null}" th:text="'Abgeleitetes Deployment: ' + ${p.derivedDeploymentId}"></small>
+</details></div>
+</td>
 <td><small th:text="'Incarnation: ' + ${r.incarnation != null ? r.incarnation : '—'}"></small><small th:text="'Monotonic (ms): ' + ${r.monotonic != null ? r.monotonic : '—'}"></small><small th:text="'Boot counter: ' + ${r.boot != null ? r.boot : '—'}"></small></td></tr></tbody>
 </table></div>
 <nav aria-label="Seitennavigation">

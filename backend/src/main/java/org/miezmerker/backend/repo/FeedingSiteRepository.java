@@ -7,6 +7,7 @@ import org.miezmerker.backend.domain.FeedingSite;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FeedingSiteRepository extends JpaRepository<FeedingSite, UUID> {
+    List<FeedingSite> findByOrganizationIdAndIdIn(UUID organizationId, java.util.Collection<UUID> ids);
     List<FeedingSite> findByOrganizationId(UUID organizationId);
 
     Optional<FeedingSite> findByIdAndOrganizationId(UUID id, UUID organizationId);
