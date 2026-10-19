@@ -6,6 +6,9 @@
 #include <string_view>
 
 namespace miezmerker {
+// Shared with backend CredentialIssuerService; see docs/issue146-time-hardening.md.
+inline constexpr std::size_t kMaxCredentialBytes = 4096;
+inline constexpr std::size_t kMaxCredentialPayloadBytes = 3072;
 struct ClaimReceiptInfo {
     std::string node_id, organization_id, organization_name, public_contact;
     std::array<unsigned char, 65> public_key{};

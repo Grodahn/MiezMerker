@@ -236,10 +236,34 @@ public class CredentialIssuerService {
         // Keep the existing 4096-byte receipt transport usable when the
         // optional bowl label would push otherwise valid owner metadata over
         // budget. The first authenticated online sync delivers the full label.
-        if (receipt.length() > 4096 && displayName != null) {
+        if (!claimReceiptFits(receipt) && displayName != null) {
             receipt = sign(new JWTClaimsSet.Builder(claims).claim("display_name", null).build());
         }
+        if (!claimReceiptFits(receipt)) throw new ClaimReceiptTooLargeException();
         return receipt;
+    }
+
+    public static final int MAX_CLAIM_RECEIPT_BYTES = 4096;
+    public static final int MAX_CLAIM_PAYLOAD_BYTES = 3072;
+
+    public static final class ClaimReceiptTooLargeException extends IllegalArgumentException {
+        public ClaimReceiptTooLargeException() { super("Claim receipt exceeds firmware byte budget"); }
+    }
+
+    // Compact JWS is ASCII, but the decoded JSON budget includes UTF-8 and
+    // escaping. Check actual serialized bytes, never Java character counts.
+    public static boolean claimReceiptFits(String receipt) {
+        if (receipt.length() > MAX_CLAIM_RECEIPT_BYTES) return false;
+        String[] parts = receipt.split("\\.", -1);
+        if (parts.length != 3) return false;
+        try {
+            byte[] payload = Base64.getUrlDecoder().decode(parts[1]);
+            return Base64.getUrlDecoder().decode(parts[0]).length <= 512
+                    && payload.length <= MAX_CLAIM_PAYLOAD_BYTES
+                    // cJSON rejects NUL/its escape to avoid C-string ambiguity.
+                    && !new String(payload, java.nio.charset.StandardCharsets.UTF_8).contains("\\u0000")
+                    && Base64.getUrlDecoder().decode(parts[2]).length == 64;
+        } catch (IllegalArgumentException e) { return false; }
     }
 
     private String sign(JWTClaimsSet claims) {

@@ -6,6 +6,7 @@
 // uncertainty model, strict credential guard and single-use lifecycle.
 #include <cassert>
 #include <iostream>
+#include <functional>
 #include <limits>
 
 #include "miezmerker/memory_stores.hpp"
@@ -40,7 +41,9 @@ struct FakeEvidence : TimeEvidenceStore {
     PutResult append_anchor(const TimeAnchorV1&) override { return PutResult::IO_ERROR; }
     PutResult append_verified(const VerifiedAnchor& v) override {
         if (fail_verified) return PutResult::IO_ERROR;
+        if (during_append) during_append();
         saved.push_back(v.anchor());
+        if (after_append) after_append(saved);
         return PutResult::OK;
     }
     std::vector<BootEpochV1> boots() const override { return {}; }
@@ -51,6 +54,8 @@ struct FakeEvidence : TimeEvidenceStore {
     }
     std::vector<TimeAnchorV1> saved;
     bool fail_verified{false};
+    std::function<void()> during_append;
+    std::function<void(std::vector<TimeAnchorV1>&)> after_append;
 };
 bool fake_verify(std::string_view proof, std::span<const unsigned char, 65>,
                  TimeProofClaims& out) {
@@ -297,6 +302,102 @@ void full_lifecycle_with_fake_verifier() {
     assert(manager.state() == SecurityTimeState::UNKNOWN);
 }
 
+void persisted_anchor_integrity() {
+    using Mutation = std::function<void(std::vector<TimeAnchorV1>&)>;
+    const std::vector<Mutation> corruptions = {
+        [](auto& v) { v.clear(); },
+        [](auto& v) { v.push_back(v.front()); },
+        [](auto& v) { v.front().anchor_id.bytes[0] ^= 1; },
+        [](auto& v) { v.front().node_id.bytes[0] ^= 1; },
+        [](auto& v) { v.front().incarnation.bytes[0] ^= 1; },
+        [](auto& v) { ++v.front().boot_counter; },
+        [](auto& v) { ++v.front().uptime_ms; },
+        [](auto& v) { ++v.front().utc_ms; },
+        [](auto& v) { ++v.front().format_version; },
+        [](auto& v) { v.front().source = AnchorSource::PHONE_ESTIMATE; },
+        [](auto& v) { v.front().verified_security_time = false; },
+        [](auto& v) { ++v.front().uncertainty_minus_ms; },
+        [](auto& v) { ++v.front().uncertainty_plus_ms; },
+        [](auto& v) { ++v.front().drift_ppm_bound; },
+        [](auto& v) { v.front().proof_id_or_digest += "x"; },
+        [](auto& v) { v.front().proof += '\0'; },
+        [](auto& v) { v.front().acceptance += "x"; },
+        [](auto& v) { v.front().challenge += "x"; },
+        [](auto& v) { v.front().challenge_bytes += "x"; },
+        [](auto& v) { v.front().acceptance_bytes += "x"; },
+    };
+    auto run = [](const Mutation& mutation, bool expected) {
+        g_boot = 42;
+        ManualClock clock;
+        clock.set_monotonic_ms(1000);
+        FixedRandomSource random{21};
+        FakeCrypto crypto;
+        FakeEvidence evidence;
+        auto issuer = test_issuer();
+        NodeTimeBootstrapManager manager(clock, random, crypto, evidence, fake_verify, issuer);
+        assert(manager.on_boot(test_node(), test_incarn(), 42));
+        evidence.during_append = [&]() {
+            std::int64_t l, u;
+            assert(!manager.current_interval(l, u)); // persist before trust
+        };
+        evidence.after_append = mutation;
+        NodeTimeChallenge challenge;
+        assert(manager.create_challenge(test_pubkey(), test_privkey(), challenge));
+        g_nonce_b64 = base64url_encode(challenge.nonce);
+        g_dpf_b64 = base64url_encode(challenge.fingerprint);
+        clock.set_monotonic_ms(1300);
+        std::string acceptance;
+        assert(manager.submit_proof("valid-proof", test_pubkey(), test_privkey(), acceptance) == expected);
+        std::int64_t l, u;
+        assert(manager.current_interval(l, u) == expected);
+        assert(acceptance.empty() != expected);
+        assert((manager.last_anchor() != nullptr) == expected);
+    };
+    for (const auto& corrupt : corruptions) run(corrupt, false);
+    run([](auto&) {}, true);
+    run([](auto& v) {
+        auto old = v.front();
+        old.anchor_id.bytes[0] ^= 1;
+        --old.boot_counter;
+        old.utc_ms -= 10000;
+        v.push_back(old); // current anchor is deliberately not back()
+    }, true);
+    run([](auto& v) {
+        auto concurrent = v.front();
+        concurrent.anchor_id.bytes[1] ^= 1;
+        ++concurrent.uptime_ms;
+        v.insert(v.begin(), concurrent);
+    }, true);
+}
+
+void claim_uncertainty() {
+    constexpr std::int64_t s = 1791748800000LL;
+    assert(claim_timestamp(s, s) == static_cast<std::uint64_t>(s));
+    assert(claim_timestamp(s, s + 5000) == static_cast<std::uint64_t>(s + 2500));
+    assert(!claim_timestamp(s, s + 5001));
+    assert(!claim_timestamp(s, s + kClaimFreshnessMs));
+    assert(!claim_timestamp(0, 1));
+    assert(!claim_timestamp(-1, std::numeric_limits<std::int64_t>::max()));
+    assert(!claim_timestamp(s, s - 1));
+    SecurityClock clock;
+    clock.on_boot(test_node(), test_incarn(), 42);
+    AcceptanceInterval anchor;
+    assert(compute_acceptance_interval(s, 1000, 1000, 1300, 2, anchor));
+    assert(clock.activate(anchor, 5000));
+    std::int64_t l, u;
+    assert(clock.current_interval(1300, true, l, u) && claim_timestamp(l, u));
+    assert(clock.current_interval(301300, true, l, u) && !claim_timestamp(l, u));
+    // Broad intervals may still cover a credential: no midpoint fallback.
+    assert(!credential_covers(l / 1000 + 1, u / 1000 + 10, l, u));
+    assert(!clock.current_interval(301299, true, l, u));
+    clock.on_boot(test_node(), test_incarn(), 43);
+    assert(!clock.current_interval(1300, true, l, u));
+    // Valid but delayed proof is too imprecise for signing a claim.
+    assert(compute_acceptance_interval(s, 1000, 1000, 4001, 2, anchor));
+    assert(!claim_timestamp(anchor.lower_ms, anchor.upper_ms));
+    assert(!compute_acceptance_interval(s, 1000, 1000, 31001, 2, anchor));
+}
+
 void security_clock_states() {
     SecurityClock security;
     assert(security.state() == SecurityTimeState::UNKNOWN);
@@ -416,6 +517,8 @@ void failed_rebootstrap_preserves_trust() {
 }  // namespace
 
 int main() {
+    persisted_anchor_integrity();
+    claim_uncertainty();
     interval_tv5();
     clock_advancement_and_drift();
     credential_boundaries();

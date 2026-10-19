@@ -141,7 +141,7 @@ bool verify(std::span<const unsigned char, 65> key, std::span<const unsigned cha
 }
 Json verified_payload(std::string_view credential, std::span<const unsigned char, 65> issuer_key) {
     auto reject = [] { return Json(nullptr, cJSON_Delete); };
-    if (credential.size() > 4096) return reject();
+    if (credential.size() > kMaxCredentialBytes) return reject();
     auto first = credential.find('.');
     auto second = credential.find('.', first == std::string_view::npos ? 0 : first + 1);
     if (first == std::string_view::npos || second == std::string_view::npos
@@ -155,7 +155,7 @@ Json verified_payload(std::string_view credential, std::span<const unsigned char
     if (encode(header_bytes) != credential.substr(0, first)
         || encode(payload_bytes) != credential.substr(first + 1, second - first - 1)
         || encode(signature) != credential.substr(second + 1)) return reject();
-    if (signature.size() != 64 || header_bytes.size() > 512 || payload_bytes.size() > 3072)
+    if (signature.size() != 64 || header_bytes.size() > 512 || payload_bytes.size() > kMaxCredentialPayloadBytes)
         return reject();
     auto header = parse(header_bytes);
     int header_fields = 0;
@@ -198,7 +198,7 @@ bool OfflineAuthSession::authorize(std::string_view credential,
     bool pending = pending_;
     pending_ = false; // Every attempt consumes the nonce, including failed attempts.
     expires_ = 0;
-    if (!pending || now <= 0 || credential.size() > 4096 || proof.size() != 64) return false;
+    if (!pending || now <= 0 || credential.size() > kMaxCredentialBytes || proof.size() != 64) return false;
     auto claims = verified_payload(credential, issuer_key_);
     if (!claims) return false;
     auto c = claims.get();
@@ -255,7 +255,7 @@ bool OfflineAuthSession::authorize_with_bounds(std::string_view credential,
     expires_ = 0;
     issued_ = 0;
     if (!pending || lower_ms > upper_ms || lower_ms <= 0 || upper_ms <= 0 ||
-        credential.size() > 4096 || proof.size() != 64)
+        credential.size() > kMaxCredentialBytes || proof.size() != 64)
         return false;
     auto claims = verified_payload(credential, issuer_key_);
     if (!claims) return false;

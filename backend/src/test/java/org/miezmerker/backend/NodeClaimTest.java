@@ -151,6 +151,24 @@ class NodeClaimTest {
     }
 
     @Test
+    void escapedOwnerTextCannotCommitAnUndeliverableReceipt() throws Exception {
+        Seed s = seed();
+        s.orgA().setDisplayName(Character.toString(1).repeat(255));
+        s.orgA().setPublicContact(Character.toString(1).repeat(500));
+        organizations.saveAndFlush(s.orgA());
+        login("admin-a@example.org", "supersecret-password-a");
+        NodeKeys n = NodeKeys.fresh();
+        long ts = Instant.now().toEpochMilli();
+        String sig = NodeClaimVerifier.signClaim(n.kp().getPrivate(), n.nodeId(), n.x(), n.y(), ts);
+        assertEquals(422, post("/api/v1/nodes/claim", claimJson(n, s.orgA().getId(), ts, sig)).statusCode());
+        assertFalse(nodes.existsById(n.nodeId()));
+        s.orgA().setDisplayName("ä".repeat(255));
+        s.orgA().setPublicContact(new String(Character.toChars(0x1f63a)).repeat(250));
+        organizations.saveAndFlush(s.orgA());
+        assertEquals(200, post("/api/v1/nodes/claim", claimJson(n, s.orgA().getId(), ts, sig)).statusCode());
+    }
+
+    @Test
     void regularAdminClaimsUnclaimedNodeWithoutPhysicalRelease() throws Exception {
         Seed s = seed();
         login("admin-a@example.org", "supersecret-password-a");

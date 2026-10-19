@@ -203,12 +203,13 @@ public class NodeController {
     }
 
     private ClaimReceiptView receiptFor(NodeDevice node, Organization org) {
-        String receipt = issuer.issueClaimReceipt(node.getNodeId(), org.getId(), org.getSlug(),
-                org.getDisplayName(), org.getPublicContact(), node.getPublicKeyX(),
-                node.getPublicKeyY(), node.getFingerprint(), Instant.now(), node.getBowlNumber(), node.getDisplayName());
-        // Compact JWS is ASCII. Reject inside the claim transaction so an
-        // undeliverable ownership receipt can never commit a new claim.
-        if (receipt.length() > 4096) {
+        String receipt;
+        try {
+            receipt = issuer.issueClaimReceipt(node.getNodeId(), org.getId(), org.getSlug(),
+                    org.getDisplayName(), org.getPublicContact(), node.getPublicKeyX(),
+                    node.getPublicKeyY(), node.getFingerprint(), Instant.now(), node.getBowlNumber(), node.getDisplayName());
+        } catch (CredentialIssuerService.ClaimReceiptTooLargeException e) {
+            // Roll back ownership in the same transaction; no undeliverable claim.
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Claim receipt exceeds BLE transport budget; shorten the organization's public name or contact");
         }
