@@ -45,7 +45,7 @@
 Frühestens: <span th:text="${p.earliestUtcMs == null ? 'Keine belegte Untergrenze' : T(org.miezmerker.backend.admin.AdminTemporalPresentation).utc(p.earliestUtcMs, estimated, false)}"></span><br/>
 Spätestens: <span th:text="${p.latestUtcMs == null ? 'Keine belegte Obergrenze' : T(org.miezmerker.backend.admin.AdminTemporalPresentation).utc(p.latestUtcMs, estimated, true)}"></span>
 </small>
-<small th:text="${p.derivedFeedingSiteId != null and siteNames[p.derivedFeedingSiteId] != null ? 'Futterstelle (historisch abgeleitet): ' + siteNames[p.derivedFeedingSiteId] : 'Futterstelle nicht eindeutig bestimmbar'}"></small>
+<small th:text="${p.derivedFeedingSiteId != null and siteNames[p.derivedFeedingSiteId] != null ? (p.attributionProvenance == 'FROZEN_RAW' ? 'Futterstelle (aus Rohdaten übernommen): ' : 'Futterstelle (historisch abgeleitet): ') + siteNames[p.derivedFeedingSiteId] : 'Futterstelle nicht eindeutig bestimmbar'}"></small>
 <details><summary>Provenienz und Zeitbelege</summary>
 <small th:text="${p.algorithmVersion}"></small><small th:text="${p.reason}"></small>
 <small th:text="${p.uncertaintyPolicies}"></small><small th:text="${p.anchorIds}"></small>

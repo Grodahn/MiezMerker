@@ -352,6 +352,7 @@ class AdminObservationsVisitsTest {
         assertTrue(html.contains("PHONE_ESTIMATE"));
         assertTrue(html.contains("ENTIRE_INTERVAL_IN_HISTORICAL_DEPLOYMENT"));
         assertTrue(html.contains("Futterstelle (historisch abgeleitet): Zum schnurrenden Löffel"));
+        assertFalse(html.contains("Futterstelle (aus Rohdaten übernommen)"));
         assertFalse(html.contains(d.current().getName()));
         String visits = page("/admin/visits/temporal?chipId=PHONECHIP");
         assertTrue(visits.contains("Historische Futterstelle: Zum schnurrenden Löffel"));
@@ -480,6 +481,9 @@ class AdminObservationsVisitsTest {
         assertTrue(unknown.contains("UNKNOWN"));
         String old = table(page("/admin/observations?chipId=OLDCHIP"));
         assertTrue(old.contains("Historical Alpha"));
+        assertTrue(old.contains("FROZEN_RAW"));
+        assertTrue(old.contains("Futterstelle (aus Rohdaten übernommen): Historical Alpha"));
+        assertFalse(old.contains("Futterstelle (historisch abgeleitet)"));
         assertFalse(old.contains("Current Beta"));
         String recent = table(page("/admin/observations?chipId=NEWCHIP"));
         assertTrue(recent.contains("Current Beta"));

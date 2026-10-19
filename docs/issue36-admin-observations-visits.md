@@ -52,6 +52,8 @@ placement, so moving a Node does not reinterpret old records.
 The raw table additionally displays `boot-interval-v2` projections in a separate
 column: quality, UTC bounds (including a single open boundary), uncertainty
 policies/anchor IDs and historical attribution provenance. Phone estimates are
+explicitly distinguished from frozen raw attribution: `FROZEN_RAW` site names
+are labelled “aus Rohdaten übernommen”, not “historisch abgeleitet”. Estimates are
 explicitly approximate; displayed minute bounds round outwards. Receipt time is
 never used as an observation time. Raw values, RTC/site filters, ordering,
 pagination and visit-gap-v1 remain unchanged.
