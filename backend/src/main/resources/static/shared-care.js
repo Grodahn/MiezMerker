@@ -68,6 +68,7 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
     clear('Geteilte Betreuung wird geprüft …');
     const controller = controllerFactory(); pending = controller;
     const signal = controller.signal;
+    const acquiredPhotos = [];
     try {
       // Only server-persisted, tenant-owned observations can prove this chip.
       const observations = await api.observations(organizationId, chipId, signal);
@@ -94,16 +95,14 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
       const images = await Promise.all(items.map(profile =>
         api.photo(organizationId, {
           ownObservationRef: proof, sourceOrganizationId: profile.source.organizationId,
-        }, signal).then(url => url, () => null)));
+        }, signal).then(url => { if (url) acquiredPhotos.push(url); return url; }, () => null)));
       signal.throwIfAborted();
       if (disposed || suspended || pending !== controller) {
-        for (const url of images) {
-          if (url) { try { URL.revokeObjectURL(url); } catch { /* Already revoked. */ } }
-        }
         return;
       }
       revokePhotos();
       photoUrls = images.filter(url => url);
+      acquiredPhotos.length = 0; // Ownership transfers to the displayed page.
       root.replaceChildren();
       element('p', 'Eigene Angaben bleiben maßgeblich. Geteilte Profile sind schreibgeschützt. Fremde Besuche zählen nicht zur eigenen Aktivität.');
       if (!items.length) element('p', 'Keine freigegebene Betreuung verfügbar.');
@@ -169,6 +168,12 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
         clear('Geteilte Informationen nicht verfügbar. Verbindung, Sitzung oder Berechtigung prüfen.');
         button('Erneut prüfen', () => void load());
         restoreFocus();
+      }
+    } finally {
+      // A cancelled load can still receive URLs from an adapter ignoring
+      // abort. They never enter the DOM, but their bytes must also be released.
+      for (const url of acquiredPhotos) {
+        try { URL.revokeObjectURL(url); } catch { /* Already revoked. */ }
       }
     }
   }

@@ -12,6 +12,7 @@ vi.mock('../platform/auth', () => ({ getAuthState: () => auth,
 }));
 vi.mock('../assets', () => ({ assets: { placeholders: { cat: 'placeholder-cat.svg' } } }));
 import { CatPhoto } from './CatPhoto';
+import { markSessionExpired } from '../platform/auth';
 import type { Cat } from './common';
 
 const cat = (overrides: Partial<Cat> = {}): Cat => ({
@@ -108,7 +109,7 @@ test('remove asks for confirmation, deletes, and notifies', async () => {
   expect(await screen.findByRole('status')).toBeTruthy();
 });
 
-test('unmount revokes transient URLs; server-side validation stays authoritative for SVG', async () => {
+test('unmount revokes transient URLs; unsupported SVG previews are rejected', async () => {
   fetchMock.mockResolvedValue(photoResponse());
   const view = render(<CatPhoto organizationId="org-a" cat={cat({ hasPhoto: true, photoUpdatedAt: 'v1' })} onChanged={() => {}} />);
   await screen.findByAltText('Katzenfoto von Minka');
@@ -117,13 +118,81 @@ test('unmount revokes transient URLs; server-side validation stays authoritative
   view.unmount();
   expect(revoked).toEqual(expect.arrayContaining(urls));
 
-  // image/svg+xml passes the client file picker (image/*); the backend
-  // allowlist (JPEG/PNG, decoded content) rejects it and the UI reports it.
+  // The client also limits previews to JPEG/PNG. Server decoding remains
+  // authoritative for the bytes and independently rejects forged MIME types.
   render(<CatPhoto organizationId="org-a" cat={cat()} onChanged={() => {}} />);
   fireEvent.change(screen.getByLabelText(/Bild wählen/),
     { target: { files: [new File(['<svg/>'], 'bild.svg', { type: 'image/svg+xml' })] } });
-  await screen.findByAltText('Vorschau: neues Foto für Minka');
-  fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Foto speichern' })));
   expect(await screen.findByRole('alert')).toBeTruthy();
+  expect(screen.queryByAltText('Vorschau: neues Foto für Minka')).toBeNull();
+  expect((screen.getByRole('button', { name: 'Foto speichern' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test.each([401, 403])('upload denial %i discards private bytes and pending previews', async status => {
+  vi.mocked(markSessionExpired).mockClear();
+  fetchMock.mockResolvedValue(photoResponse());
+  render(<CatPhoto organizationId="org-a" cat={cat({ hasPhoto: true })} onChanged={() => {}} />);
+  await screen.findByAltText('Katzenfoto von Minka');
+  fireEvent.change(screen.getByLabelText(/Bild wählen/),
+    { target: { files: [new File(['png'], 'photo.png', { type: 'image/png' })] } });
+  fetchMock.mockResolvedValueOnce({ ok: false, status });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Foto speichern' })));
+  expect(screen.queryByAltText('Katzenfoto von Minka')).toBeNull();
+  expect(screen.queryByAltText(/Vorschau/)).toBeNull();
+  expect(revoked).toEqual(expect.arrayContaining(created));
+  expect(markSessionExpired).toHaveBeenCalledTimes(status === 401 ? 1 : 0);
+});
+
+test('invalid replacement and cancelled selection discard the previous preview', async () => {
+  render(<CatPhoto organizationId="org-a" cat={cat()} onChanged={() => {}} />);
+  const input = screen.getByLabelText(/Bild wählen/);
+  const valid = new File(['png'], 'photo.png', { type: 'image/png' });
+  fireEvent.change(input, { target: { files: [valid] } });
+  expect(screen.getByAltText(/Vorschau/)).toBeTruthy();
+  fireEvent.change(input, { target: { files: [new File(['html'], 'attack.html', { type: 'text/html' })] } });
+  expect(screen.queryByAltText(/Vorschau/)).toBeNull();
+  expect(revoked).toContain(created[0]);
+  fireEvent.change(input, { target: { files: [valid] } });
+  fireEvent.change(input, { target: { files: [] } });
+  expect(screen.queryByAltText(/Vorschau/)).toBeNull();
+  expect(screen.queryByText(/Ausgewählt/)).toBeNull();
+  expect((screen.getByRole('button', { name: 'Foto speichern' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('changing the cat clears its preview and ignores an upload response from the previous cat', async () => {
+  let finish!: (response: unknown) => void;
+  fetchMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const changed = vi.fn();
+  const view = render(<CatPhoto organizationId="org-a" cat={cat()} onChanged={changed} />);
+  fireEvent.change(screen.getByLabelText(/Bild wählen/),
+    { target: { files: [new File(['png'], 'photo.png', { type: 'image/png' })] } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Foto speichern' })));
+  const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+  view.rerender(<CatPhoto organizationId="org-a" cat={cat({ id: 'cat-2', name: 'Schwarzi' })} onChanged={changed} />);
+  expect(signal.aborted).toBe(true);
+  expect(revoked).toContain(created[0]);
+  expect(screen.queryByAltText(/Vorschau/)).toBeNull();
+  await act(async () => finish({ ok: true, status: 200 }));
+  expect(changed).not.toHaveBeenCalled();
+  expect(screen.queryByText('Foto gespeichert.')).toBeNull();
+});
+
+test('a batched organization switch clears private photos and previews and ignores late loads', async () => {
+  let finish!: (response: unknown) => void;
+  fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+    .mockResolvedValue(photoResponse());
+  render(<CatPhoto organizationId="org-a" cat={cat({ hasPhoto: true })} onChanged={() => {}} />);
+  fireEvent.change(screen.getByLabelText(/Bild wählen/),
+    { target: { files: [new File(['png'], 'private.png', { type: 'image/png' })] } });
+  const preview = created[0];
+  await act(async () => {
+    auth.activeOrganizationId = 'org-b'; listeners.forEach(fn => fn());
+    auth.activeOrganizationId = 'org-a'; listeners.forEach(fn => fn());
+  });
+  expect(revoked).toContain(preview);
+  expect(screen.queryByAltText(/Vorschau/)).toBeNull();
+  await screen.findByAltText('Katzenfoto von Minka');
+  const count = created.length;
+  await act(async () => finish(photoResponse('stale')));
+  expect(created).toHaveLength(count);
 });

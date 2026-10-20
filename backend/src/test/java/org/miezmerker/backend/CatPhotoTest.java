@@ -84,6 +84,7 @@ class CatPhotoTest {
     @Autowired TestDatabaseCleaner cleaner;
     @Autowired JdbcTemplate jdbc;
     @Autowired DataSource dataSource;
+    @Autowired org.miezmerker.backend.admin.SysadminOrganizationService systemOrganizations;
 
     final ObjectMapper json = new ObjectMapper();
     final String password = "cat-photo-test-password";
@@ -470,6 +471,79 @@ class CatPhotoTest {
         shares.revoke(adminB.getId(), orgB.getId(), ShareScope.CARE);
         assertEquals(404, sharedPhoto(orgA, proofA.getId(), orgB.getId()).statusCode(),
                 "revoking CARE also removes the PHOTO prerequisite");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void sysadminDeactivationBlocksPhotosAndReactivationDoesNotRestoreGrants(boolean owner) throws Exception {
+        login(adminB);
+        assertEquals(200, putPhoto(orgB, catB, jpeg(32, 32, Color.BLUE), "b.jpg", "image/jpeg").statusCode());
+        grant(orgB, adminB, ShareScope.CARE, orgA);
+        grant(orgB, adminB, ShareScope.PHOTO, orgA);
+        login(memberA);
+        assertEquals(200, sharedPhoto(orgA, proofA.getId(), orgB.getId()).statusCode());
+
+        var principal = new org.miezmerker.backend.security.AppUserDetails(sysadmin.getId(),
+                sysadmin.getEmail(), sysadmin.getPasswordHash(), sysadmin.getStatus());
+        Organization target = owner ? orgB : orgA;
+        systemOrganizations.deactivateOrganization(principal, target.getId(), true);
+        assertEquals(owner ? 404 : 403,
+                sharedPhoto(orgA, proofA.getId(), orgB.getId()).statusCode());
+        login(adminB);
+        if (owner) assertEquals(403, getPhoto(orgB, catB).statusCode());
+        systemOrganizations.reactivateOrganization(principal, target.getId(), true);
+        assertEquals(200, getPhoto(orgB, catB).statusCode(), "owner bytes are retained by soft deactivation");
+        login(memberA);
+        assertEquals(404, sharedPhoto(orgA, proofA.getId(), orgB.getId()).statusCode(),
+                "reactivation must not resurrect outgoing or recipient grants");
+    }
+
+    @Test
+    void firstUploadsSerializeUntilCommitWithoutOrphanedFiles() throws Exception {
+        var firstStored = new CountDownLatch(1);
+        var releaseCommit = new CountDownLatch(1);
+        var secondStarted = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        byte[] red = jpeg(32, 32, Color.RED);
+        byte[] blue = jpeg(32, 32, Color.BLUE);
+        try {
+            Future<?> first = pool.submit(() -> {
+                new org.springframework.transaction.support.TransactionTemplate(txManager).executeWithoutResult(tx -> {
+                    photoService.store(memberA.getId(), orgA.getId(), catA.getId(), red);
+                    firstStored.countDown();
+                    try {
+                        assertTrue(releaseCommit.await(15, java.util.concurrent.TimeUnit.SECONDS));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(e);
+                    }
+                });
+            });
+            assertTrue(firstStored.await(15, java.util.concurrent.TimeUnit.SECONDS));
+            Future<?> second = pool.submit(() -> {
+                secondStarted.countDown();
+                return photoService.store(memberA.getId(), orgA.getId(), catA.getId(), blue);
+            });
+            assertTrue(secondStarted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertThrows(java.util.concurrent.TimeoutException.class,
+                    () -> second.get(250, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    "first upload holds the stable cat lock through commit");
+            releaseCommit.countDown();
+            first.get(15, java.util.concurrent.TimeUnit.SECONDS);
+            second.get(15, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            releaseCommit.countDown();
+            pool.shutdownNow();
+        }
+        login(memberA);
+        var read = getPhoto(orgA, catA);
+        assertEquals(200, read.statusCode());
+        Color pixel = new Color(ImageIO.read(new java.io.ByteArrayInputStream(read.body())).getRGB(0, 0));
+        assertTrue(pixel.getBlue() > pixel.getRed(), "second writer replaces the first photo");
+        Set<String> keys = Set.copyOf(jdbc.queryForList("SELECT storage_key FROM cat_photos", String.class));
+        try (var files = Files.list(Path.of(storageDir))) {
+            assertEquals(keys, files.map(path -> path.getFileName().toString()).collect(java.util.stream.Collectors.toSet()));
+        }
     }
 
     @Test
