@@ -493,12 +493,12 @@ class AdminNodesTest {
         loginAdmin();
         String csrf = adminPageCsrf(detailPath(node));
         var membership = memberships.findByOrganizationIdAndUserId(f.orgA().getId(), f.adminA().getId()).orElseThrow();
-        membership.setStatusDirect(MembershipStatus.PENDING); memberships.save(membership);
+        membership.setStatusDirect(MembershipStatus.PENDING); membership = memberships.save(membership);
         assertEquals(403, get(detailPath(node)).statusCode());
         assertEquals(403, postForm(detailPath(node) + "/name", formBody(csrf, "displayName", "Hijack")).statusCode());
         assertEquals(403, postForm(detailPath(node) + "/assignment", formBody(csrf,
                 "feedingSiteId", site.getId().toString(), "expectedDeploymentId", "")).statusCode());
-        membership.setStatusDirect(MembershipStatus.ACTIVE); memberships.save(membership);
+        membership.setStatusDirect(MembershipStatus.ACTIVE); membership = memberships.save(membership);
         var user = users.findById(f.adminA().getId()).orElseThrow();
         user.setStatus(UserStatus.DISABLED); users.save(user);
         assertEquals(403, get(detailPath(node)).statusCode());

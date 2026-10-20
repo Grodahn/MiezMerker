@@ -153,9 +153,9 @@ class NodeTimeBootstrapTest {
         assertEquals(403,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
         user.setStatus(org.miezmerker.backend.domain.UserStatus.ACTIVE); users.save(user);
         var m=memberships.findByOrganizationIdAndUserId(s.orgA().getId(),user.getId()).orElseThrow();
-        m.setStatusDirect(MembershipStatus.DISABLED); memberships.save(m);
+        m.setStatusDirect(MembershipStatus.DISABLED); m = memberships.save(m);
         assertEquals(403,post(PATH,request(s,"UNCLAIMED",c)).statusCode());
-        m.setStatusDirect(MembershipStatus.ACTIVE); memberships.save(m);
+        m.setStatusDirect(MembershipStatus.ACTIVE); m = memberships.save(m);
         s.orgA().setStatus(org.miezmerker.backend.domain.OrganizationStatus.DISABLED); organizations.save(s.orgA());
         assertEquals(403,post(PATH,request(s,"UNCLAIMED",c)).statusCode()); assertEquals(0,nodes.count());
         org.mockito.Mockito.verifyNoInteractions(time);

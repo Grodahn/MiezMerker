@@ -349,10 +349,10 @@ class OfflineCredentialTest {
         String body = "{\"organizationId\":\"" + s.orgA().getId() + "\"}";
         var membership = memberships.findByOrganizationIdAndUserId(s.orgA().getId(), s.memberA().getId()).orElseThrow();
         membership.disable();
-        memberships.save(membership);
+        membership = memberships.save(membership);
         assertEquals(403, post(path, body).statusCode());
         membership.activate();
-        memberships.save(membership);
+        membership = memberships.save(membership);
         s.orgA().setStatus(org.miezmerker.backend.domain.OrganizationStatus.DISABLED);
         organizations.save(s.orgA());
         assertEquals(403, post(path, body).statusCode());

@@ -232,10 +232,10 @@ class SharedCareTest {
     @Test void disabledAndPendingMembershipUserAndOrganizationAreRejected() {
         grant(ShareScope.CARE, ShareScope.VISITS);
         for (var status : List.of(MembershipStatus.DISABLED, MembershipStatus.PENDING)) {
-            member.setStatusDirect(status); memberships.save(member);
+            member.setStatusDirect(status); member = memberships.save(member);
             denied(403, this::resolve); denied(403, () -> page(0));
         }
-        member.setStatusDirect(MembershipStatus.ACTIVE); memberships.save(member);
+        member.setStatusDirect(MembershipStatus.ACTIVE); member = memberships.save(member);
         reader.setStatus(UserStatus.DISABLED); users.save(reader); denied(403, this::resolve);
         reader.setStatus(UserStatus.ACTIVE); users.save(reader);
         a.setStatus(OrganizationStatus.DISABLED); organizations.save(a); denied(403, this::resolve);

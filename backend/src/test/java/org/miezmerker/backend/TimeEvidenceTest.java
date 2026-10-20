@@ -366,9 +366,9 @@ class TimeEvidenceTest {
     }
     @Test void disabledMembershipOrgAccountAndUnclaimedNodeFailClosed() {
         var r=request(42,1000,1300,UTC);
-        var m=memberships.findByOrganizationIdAndUserId(orgA.getId(),userA.getId()).orElseThrow(); m.disable(); memberships.save(m);
+        var m=memberships.findByOrganizationIdAndUserId(orgA.getId(),userA.getId()).orElseThrow(); m.disable(); m = memberships.save(m);
         status(403,()->evidence.ingest(userA.getId(),r)); status(403,()->page(0,10));
-        m.activate(); memberships.save(m);
+        m.activate(); m = memberships.save(m);
         jdbc.update("UPDATE organizations SET status='DISABLED' WHERE id=?",orgA.getId()); status(403,()->evidence.ingest(userA.getId(),r));
         jdbc.update("UPDATE organizations SET status='ACTIVE' WHERE id=?",orgA.getId());
         jdbc.update("UPDATE app_users SET status='DISABLED' WHERE id=?",userA.getId()); status(403,()->evidence.ingest(userA.getId(),r));

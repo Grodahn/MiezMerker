@@ -532,10 +532,10 @@ class CrossOrgSecurityAcceptanceTest {
         OrganizationMembership membership = memberships
                 .findByOrganizationIdAndUserId(orgA.getId(), memberA.getId()).orElseThrow();
         membership.setStatusDirect(MembershipStatus.DISABLED);
-        memberships.save(membership);
+        membership = memberships.save(membership);
         assertEquals(403, get(catsPath(orgA)).statusCode());
         membership.setStatusDirect(MembershipStatus.ACTIVE);
-        memberships.save(membership);
+        membership = memberships.save(membership);
         login(memberA);
         assertEquals(200, get(catsPath(orgA)).statusCode());
 
