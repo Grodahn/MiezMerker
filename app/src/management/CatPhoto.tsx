@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { assets } from '../assets';
 import { Graphic } from '../ui/Graphic';
-import { fetchCsrfToken } from '../platform/auth';
-import { contextSignal } from './context';
+import { fetchCsrfToken, markSessionExpired } from '../platform/auth';
+import { contextSignal, useManagementContext } from './context';
 import { requestOptions } from './data';
 import type { Cat } from './common';
 
@@ -20,6 +20,8 @@ export function photoUrl(organizationId: string, catId: string, version?: string
 
 async function fetchPhotoBlob(url: string, signal: AbortSignal): Promise<Blob> {
   const response = await fetch(url, { ...requestOptions(signal), credentials: 'same-origin' });
+  signal.throwIfAborted();
+  if (response.status === 401) markSessionExpired();
   if (!response.ok) throw new Error(`Foto nicht verfügbar (${response.status}).`);
   const blob = await response.blob();
   signal.throwIfAborted();
@@ -27,9 +29,16 @@ async function fetchPhotoBlob(url: string, signal: AbortSignal): Promise<Blob> {
   return blob;
 }
 
-export function CatPhoto({ organizationId, cat, onChanged }: {
+type CatPhotoProps = {
   organizationId: string; cat: Cat; onChanged: () => void;
-}) {
+};
+
+export function CatPhoto(props: CatPhotoProps) {
+  const { generation } = useManagementContext();
+  return <CatPhotoContent key={JSON.stringify([generation, props.organizationId, props.cat.id])} {...props} />;
+}
+
+function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState('');
@@ -40,6 +49,8 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
   const fileRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const pending = useRef<AbortController | null>(null);
+  const photoLoad = useRef<AbortController | null>(null);
   const version = cat.photoUpdatedAt ?? null;
 
   const revoke = useCallback((ref: React.MutableRefObject<string | null>, set: (value: string | null) => void) => {
@@ -47,12 +58,22 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
     ref.current = null; set(null);
   }, []);
 
+  function checkAccess(status: number) {
+    if (status !== 401 && status !== 403) return;
+    photoLoad.current?.abort();
+    revoke(objectUrlRef, setObjectUrl);
+    revoke(previewUrlRef, setPreviewUrl); setPreviewName('');
+    if (fileRef.current) fileRef.current.value = '';
+    if (status === 401) markSessionExpired();
+  }
+
   // Transient bytes only: every load mints a fresh blob URL and revokes the
   // previous one. The contextSignal aborts stale loads after logout or an
   // organization switch so a late response never restores a foreign-context
   // photo.
   useEffect(() => {
     const controller = contextSignal();
+    photoLoad.current = controller;
     setError('');
     if (!cat.id || !cat.hasPhoto) {
       revoke(objectUrlRef, setObjectUrl);
@@ -78,6 +99,7 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
   }, [organizationId, cat.id, cat.hasPhoto, version, revoke]);
 
   useEffect(() => () => {
+    pending.current?.abort();
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     objectUrlRef.current = null; previewUrlRef.current = null;
@@ -85,20 +107,22 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
 
   function selectFile(file: File | undefined) {
     setError(''); setMessage('');
+    revoke(previewUrlRef, setPreviewUrl); setPreviewName('');
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
+    if (file.type !== 'image/jpeg' && file.type !== 'image/png') {
+      if (fileRef.current) fileRef.current.value = '';
       setError('Bitte eine Bilddatei (JPEG oder PNG) wählen.');
       return;
     }
-    revoke(previewUrlRef, setPreviewUrl);
     const url = URL.createObjectURL(file);
     previewUrlRef.current = url; setPreviewUrl(url); setPreviewName(file.name);
   }
 
   async function save() {
     const file = fileRef.current?.files?.[0];
-    if (!file || !cat.id || busy) return;
+    if (!file || !cat.id || !previewUrl || pending.current) return;
     const controller = contextSignal();
+    pending.current = controller;
     setBusy(true); setError(''); setMessage('');
     try {
       const token = await fetchCsrfToken();
@@ -116,6 +140,7 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
       });
       controller.signal.throwIfAborted();
       if (!response.ok) {
+        checkAccess(response.status);
         throw new Error(response.status === 413 || response.status === 400
           ? 'Datei wird abgelehnt. Bitte JPEG/PNG in angemessener Größe wählen.'
           : response.status === 409
@@ -126,6 +151,8 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
       }
       // A failed upload never replaces the current photo server-side; only a
       // confirmed save clears the preview and reloads the list.
+      photoLoad.current?.abort();
+      revoke(objectUrlRef, setObjectUrl);
       revoke(previewUrlRef, setPreviewUrl); setPreviewName('');
       if (fileRef.current) fileRef.current.value = '';
       setMessage('Foto gespeichert.');
@@ -137,12 +164,14 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
     } finally {
       if (!controller.signal.aborted) setBusy(false);
       controller.abort();
+      if (pending.current === controller) pending.current = null;
     }
   }
 
   async function remove() {
-    if (!cat.id || busy) return;
+    if (!cat.id || pending.current) return;
     const controller = contextSignal();
+    pending.current = controller;
     setBusy(true); setError(''); setMessage('');
     try {
       const token = await fetchCsrfToken();
@@ -155,11 +184,14 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
       });
       controller.signal.throwIfAborted();
       if (!response.ok && response.status !== 404) {
+        checkAccess(response.status);
         throw new Error(response.status === 401 ? 'Sitzung abgelaufen. Bitte erneut anmelden.'
           : response.status === 403 ? 'Keine Berechtigung. Bitte die aktive Mitgliedschaft prüfen.'
           : 'Foto konnte nicht entfernt werden.');
       }
       setConfirmRemove(false);
+      photoLoad.current?.abort();
+      revoke(objectUrlRef, setObjectUrl);
       setMessage('Foto entfernt.');
       onChanged();
     } catch (failure) {
@@ -169,6 +201,7 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
     } finally {
       if (!controller.signal.aborted) setBusy(false);
       controller.abort();
+      if (pending.current === controller) pending.current = null;
     }
   }
 
@@ -181,7 +214,7 @@ export function CatPhoto({ organizationId, cat, onChanged }: {
       : <Graphic src={assets.placeholders.cat} alt="Kein Foto vorhanden (Platzhalter)" className="avatar cat-photo__placeholder" />}
     <div className="field">
       <label htmlFor={`cat-photo-file-${cat.id ?? 'new'}`}>Bild wählen (JPEG oder PNG)</label>
-      <input id={`cat-photo-file-${cat.id ?? 'new'}`} ref={fileRef} type="file" accept="image/jpeg,image/png"
+      <input id={`cat-photo-file-${cat.id ?? 'new'}`} ref={fileRef} type="file" accept="image/jpeg,image/png" disabled={busy}
         onChange={event => selectFile(event.currentTarget.files?.[0])} />
       {previewName && <p aria-live="polite">Ausgewählt: {previewName}. Noch nicht gespeichert.</p>}
     </div>

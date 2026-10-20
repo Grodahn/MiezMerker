@@ -61,13 +61,10 @@ public class CatPhotoService {
     private final float jpegQuality;
 
     /**
-     * Fixed-size JVM-local lock stripes serializing concurrent replace/delete
-     * of the same logical photo. The database row lock alone cannot serialize
-     * two concurrent inserts (no row exists yet); without this, one of them
-     * would fail with a constraint violation. Bounded (64 stripes) so lock
-     * state cannot grow with data. Multi-instance deployments keep the
-     * database constraint as the final guard and translate the residual race
-     * into a retryable 409 (see persistLocked).
+     * Secondary bounded JVM-local guard for file mutations. The stable Cat
+     * parent is locked first and remains locked until transaction completion:
+     * it serializes first uploads, replacements and deletes across instances,
+     * including the period before a cat_photos row exists.
      */
     private static final int LOCK_STRIPES = 64;
     private final Object[] photoLocks = new Object[LOCK_STRIPES];
@@ -186,6 +183,10 @@ public class CatPhotoService {
         CatPhotoImage.Normalized normalized = CatPhotoImage.normalize(upload,
                 maxUploadBytes, maxDimension, maxPixels, targetLongEdge,
                 jpegQuality);
+        // Held until transaction completion, across JVMs as well. Locking
+        // only cat_photos cannot serialize two first uploads (no row yet).
+        cats.lockByIdAndOrganizationId(catId, org)
+                .orElseThrow(CatPhotoService::hidden);
         synchronized (lockFor(catId)) {
             Path staged = stage(normalized.bytes());
             try {
@@ -216,7 +217,7 @@ public class CatPhotoService {
     public void delete(UUID user, UUID org, UUID catId) {
         tenants.requireActive(user, org);
         // Tenant-scoped: a cat of another organization is simply not found.
-        cats.findByIdAndOrganizationId(catId, org)
+        cats.lockByIdAndOrganizationId(catId, org)
                 .orElseThrow(CatPhotoService::hidden);
         synchronized (lockFor(catId)) {
             CatPhoto photo = photos.lockByCatIdAndOrganizationId(catId, org)
@@ -236,7 +237,7 @@ public class CatPhotoService {
     @Transactional
     public void deleteForCatRemoval(UUID user, UUID org, UUID catId) {
         tenants.requireActive(user, org);
-        cats.findByIdAndOrganizationId(catId, org)
+        cats.lockByIdAndOrganizationId(catId, org)
                 .orElseThrow(CatPhotoService::hidden);
         synchronized (lockFor(catId)) {
             photos.lockByCatIdAndOrganizationId(catId, org).ifPresent(photo -> {

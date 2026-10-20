@@ -80,8 +80,11 @@ Fremde Organisation (jede Abfrage prüft neu; CARE allein genügt nie):
   Datei-/Metadatenmutation: Ein fehlgeschlagener Upload ersetzt oder
   zerstört das aktuelle Foto nie.
 - Ersetzen schreibt die neuen Bytes unter neuem Zufallsnamen, aktualisiert
-  die Metadaten in derselben Transaktion (Zeilen-Sperre gegen parallele
-  Ersetzungen/Löschungen) und löscht die alte Datei erst nach Commit.
+  die Metadaten in derselben Transaktion und löscht die alte Datei erst nach
+  Commit. Eine mandantengebundene Schreibsperre auf der stabilen `cats`-Zeile
+  bleibt bis zum Transaktionsende bestehen: Sie serialisiert auch parallele
+  Erst-Uploads ohne vorhandene Fotozeile sowie Ersetzungen/Löschungen über
+  mehrere Backendinstanzen mit gemeinsamem Speicher hinweg.
 - Löschen entfernt die Metadaten in der Transaktion und die Datei nach
   Commit. Das Löschen einer Katze entfernt ihr Foto mit (Metadaten per
   `ON DELETE CASCADE`, Bytes explizit im gleichen Mandantenkontext).
@@ -118,9 +121,30 @@ Fremde Organisation (jede Abfrage prüft neu; CARE allein genügt nie):
   Foto wieder her. „Widerruf wirkt sofort“ gilt für alle neuen
   Backend-Lesezugriffe; bereits heruntergeladene Kopien auf fremden Geräten
   können nicht ferngelöscht werden.
+- Katzen-/Organisations-/Sitzungswechsel verwerfen auch lokale Dateiauswahl,
+  Vorschau und noch laufende Mutationen. Verspätete Antworten dürfen keinen
+  neuen Kontext aktualisieren; auch verspätete fremde Blob-URLs werden
+  freigegeben. Abgelehnte Dateiauswahl entfernt alte Vorschauen; 401/403 bei
+  Fotomutationen entfernen private Bilddaten, 401 aktiviert das bestehende
+  Sitzung-abgelaufen-Verhalten. Bereits serverseitig bestätigte Mutationen
+  werden durch clientseitigen Abbruch nicht rückgängig gemacht.
 - Admin-Hinweis: Das Multipart-Upload-Formular trägt das CSRF-Token in der
   URL (`?_csrf=…`), weil Servlet-Container Multipart-Bodys vor dem
   CSRF-Filter nicht parsen und die Seite ohne JavaScript auskommen soll.
   Das Token ist sitzungsgebunden und bleibt same-origin (kein externer
   Referer); Server-Access-Logs zeichnen standardmäßig keine Query-Strings
   aus.
+
+## Abnahme und SYSADMIN-Integration
+
+Die ursprüngliche Funktion wurde mit PR #125 integriert. `CatPhotoTest`
+prüft unabhängige Fotos bei identischem Chip, Tenant-/SYSADMIN-Grenzen,
+CARE+PHOTO, Widerruf, Dateiangriffe, EXIF-Bereinigung, Rollback und
+konkurrierende Mutationen. Die ergänzte #92-Integration deaktiviert sowohl
+Eigentümer als auch Empfänger über `SysadminOrganizationService`: neue Reads
+scheitern sofort, Reaktivierung stellt keine Freigaben wieder her. Eigene
+Fotos bleiben bei Soft-Deaktivierung erhalten. Ein explizit bis zum Commit
+gehaltener Erst-Upload prüft Sperre, nachfolgende Ersetzung und Waisenfreiheit.
+`CatPhoto.test.tsx` und `shared-presenter.test.ts` decken Vorschau-/Kontextwechsel,
+verspätete Antworten, Zugriffsverlust und Blob-Freigabe ab; `shared-care.spec.ts`
+prüft die bestehende Anzeige einschließlich Browser-/Offline-Grenzen.

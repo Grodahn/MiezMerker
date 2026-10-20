@@ -85,6 +85,7 @@ test('foreign photo URLs are revoked on reload and dispose; a late photo never r
   finish('blob:stale');
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(root.querySelector('img')).toBeNull();
+  expect(revoke).toHaveBeenCalledWith('blob:stale');
   // Nothing is written to persistent browser storage.
   expect(localStorage.length).toBe(0);
 });
