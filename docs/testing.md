@@ -303,3 +303,5 @@ Runner regression checks (no Java/Node/C++ dependencies required):
 `NodeBowlNumberTest` belongs to `node` and `schema`: deterministic pre-V21
 backfill, concurrent sequence allocation, immutable UUID, non-reuse on deletion
 and the claim-receipt byte budget.
+`ClaimReceiptBudgetTest` belongs to `node` and `auth`: serialized UTF-8/escaping
+budgets and the signed ESP32 receipt interoperability fixture (#146).

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
+#include <filesystem>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -106,6 +107,30 @@ int main(int argc, char** argv) {
     assert(!verify_claim_receipt(receipt, bad_key, now, receipt_info));
     assert(!verify_claim_receipt(jwt, key, now, receipt_info));
     assert(!verify_claim_receipt(receipt + ".", key, now, receipt_info));
+    // Exact backend-issued UTF-8/escaped JSON at the transport boundary.
+    std::ifstream budget_input(std::filesystem::path(argv[1]).parent_path() / "claim-receipt-budget-v1.json");
+    std::string budget_text((std::istreambuf_iterator<char>(budget_input)), {});
+    auto budget = cJSON_Parse(budget_text.c_str()); assert(budget);
+    std::array<unsigned char, 65> budget_key{}; budget_key[0] = 4;
+    auto bx = decode(value(budget, "issuer_x")), by = decode(value(budget, "issuer_y"));
+    assert(bx.size() == 32 && by.size() == 32);
+    std::copy(bx.begin(), bx.end(), budget_key.begin() + 1);
+    std::copy(by.begin(), by.end(), budget_key.begin() + 33);
+    const auto budget_receipt = value(budget, "receipt");
+    assert(budget_receipt.size() >= 4094 && budget_receipt.size() <= kMaxCredentialBytes);
+    assert(verify_claim_receipt(budget_receipt, budget_key, now, receipt_info));
+    assert(receipt_info.organization_name == value(budget, "name"));
+    assert(receipt_info.public_contact == value(budget, "contact"));
+    assert(verify_claim_receipt_with_bounds(budget_receipt, budget_key, now * 1000, now * 1000 + 1, receipt_info));
+    assert(!verify_claim_receipt_with_bounds(budget_receipt, budget_key, now * 1000 - 1, now * 1000, receipt_info));
+    assert(!verify_claim_receipt(budget_receipt, key, now, receipt_info));
+    auto tampered_budget = budget_receipt;
+    tampered_budget[tampered_budget.find('.') + 10] ^= 1;
+    assert(!verify_claim_receipt(tampered_budget, budget_key, now, receipt_info));
+    assert(verify_claim_receipt(value(budget, "utf8_receipt"), budget_key, now, receipt_info));
+    assert(receipt_info.organization_name.size() == 510 && receipt_info.public_contact.size() == 1000);
+    assert(!verify_claim_receipt(budget_receipt + std::string(4097 - budget_receipt.size(), 'x'), budget_key, now, receipt_info));
+    cJSON_Delete(budget);
     OfflineAuthSession wrong_issuer(org, bad_key);
     assert(wrong_issuer.begin(nonce, challenge)); assert(!wrong_issuer.authorize(jwt, proof, now));
     for (const auto& bad : {jwt + ".", std::string("malformed"), jwt.substr(0, jwt.size() - 1),
@@ -164,6 +189,19 @@ int main(int argc, char** argv) {
     assert(long_receipt.size() <= 4096);
     assert(verify_claim_receipt(long_receipt, test_key, now, receipt_info));
     assert(receipt_info.organization_name == long_name && receipt_info.public_contact == long_contact);
+    // Add JSON whitespace before signing to reach the maximum representable
+    // compact length (4095). One more decoded byte yields 4097, above 4096.
+    std::string padded = receipt_text;
+    assert(padded.size() <= 2961);
+    padded.append(2961 - padded.size(), ' ');
+    auto edge = sign(header, padded, group);
+    assert(edge.size() == 4095);
+    assert(verify_claim_receipt(edge, test_key, now, receipt_info));
+    padded += ' ';
+    auto over = sign(header, padded, group);
+    assert(over.size() == 4097);
+    assert(!verify_claim_receipt(over, test_key, now, receipt_info));
+    assert(!verify_claim_receipt_with_bounds(over, test_key, now * 1000, now * 1000, receipt_info));
     cJSON_free(receipt_text);
     cJSON_AddNumberToObject(receipt_claims, "bowl_number", 4711);
     cJSON_AddStringToObject(receipt_claims, "display_name", "der gelbe");

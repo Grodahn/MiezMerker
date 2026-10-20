@@ -63,19 +63,12 @@ bool BoardClock::credential_covers(std::int64_t iat_s, std::int64_t exp_s) const
     return node_time::credential_covers(iat_s, exp_s, lower, upper);
 }
 std::uint64_t BoardClock::epoch_ms() const {
-    // Policy-selected midpoint for claim freshness only; alpha is untrusted.
-    // Authorization uses the
-    // strict interval above, never this point. Returns 0 unless bounded
-    // trust is tight enough for the backend 5-minute freshness rule.
+    // The explicit alpha policy still uses its separate session clock. In the
+    // default policy these bounds come only from the signed security clock.
+    // Credential authorization always retains the full interval guard.
     std::int64_t lower = 0, upper = 0;
     if (!authorization_interval_ms(lower, upper)) return 0;
-    if (lower > upper) return 0;
-    const std::uint64_t width =
-        static_cast<std::uint64_t>(upper - lower);
-    if (width > node_time::kClaimFreshnessMs) return 0;
-    const auto midpoint = node_time::nominal_midpoint(lower, upper);
-    if (!midpoint || *midpoint <= 0) return 0;
-    return static_cast<std::uint64_t>(*midpoint);
+    return node_time::claim_timestamp(lower, upper).value_or(0);
 }
 std::uint32_t BoardClock::reset_reason() const { return static_cast<std::uint32_t>(esp_reset_reason()); }
 void BoardRandom::fill_random(std::span<std::uint8_t> out) { esp_fill_random(out.data(), out.size()); }

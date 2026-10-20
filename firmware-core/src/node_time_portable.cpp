@@ -317,6 +317,15 @@ std::optional<std::int64_t> nominal_midpoint(std::int64_t lower_ms, std::int64_t
     return mid;
 }
 
+std::optional<std::uint64_t> claim_timestamp(std::int64_t lower_ms, std::int64_t upper_ms) {
+    // Positive ordered bounds make the subtraction safe. Check both endpoints;
+    // point-only v1 cannot communicate a wider uncertainty to the backend.
+    if (lower_ms <= 0 || upper_ms < lower_ms ||
+        upper_ms - lower_ms > static_cast<std::int64_t>(kMaxClaimUncertaintyMs))
+        return std::nullopt;
+    return static_cast<std::uint64_t>(lower_ms + (upper_ms - lower_ms) / 2);
+}
+
 SecurityClock::SecurityClock(NodeTimeConfig config) : config_(config) {}
 
 void SecurityClock::on_boot(const NodeId& node_id, const IncarnationId& incarnation,
@@ -729,23 +738,24 @@ bool NodeTimeBootstrapManager::submit_proof(
     }
     // Durably commit before activating the security clock (fail closed on
     // ambiguous persistence outcome).
-    const PutResult stored = evidence_->append_verified(VerifiedAnchor(std::move(anchor)));
+    const PutResult stored = evidence_->append_verified(VerifiedAnchor(anchor));
     if (stored != PutResult::OK) {
         fail_preserving_trust();
         return false;
     }
-    // Reload the committed anchor for transport (byte-exact, incl. NUL) and
-    // confirm it is the anchor just committed (same id and exact proof bytes)
-    // rather than trusting store ordering blindly.
+    // Locate the unique stable identity, independent of adapter ordering, and
+    // verify every persisted field against the locally validated record.
     const auto anchors = evidence_->anchors();
-    if (anchors.empty()) {
-        fail_preserving_trust();
-        return false;
+    const TimeAnchorV1* committed = nullptr;
+    for (const auto& candidate : anchors) {
+        if (candidate.anchor_id != anchor.anchor_id) continue;
+        if (committed || candidate != anchor) {
+            fail_preserving_trust();
+            return false;
+        }
+        committed = &candidate;
     }
-    const TimeAnchorV1& committed = anchors.back();
-    if (!(committed.anchor_id == anchor_id &&
-          committed.proof.size() == jws.size() &&
-          std::equal(committed.proof.begin(), committed.proof.end(), jws.begin()))) {
+    if (!committed) {
         fail_preserving_trust();
         return false;
     }
@@ -753,10 +763,10 @@ bool NodeTimeBootstrapManager::submit_proof(
         fail_preserving_trust();
         return false;
     }
-    stored_anchor_ = committed;
+    stored_anchor_ = *committed;
     last_anchor_ = &*stored_anchor_;
     last_proof_.assign(jws.begin(), jws.end());
-    last_acceptance_json_ = committed.acceptance;
+    last_acceptance_json_ = committed->acceptance;
     acceptance_json_out = last_acceptance_json_;
     return true;
 }

@@ -1,6 +1,7 @@
 #include "miezmerker/node_identity.hpp"
 #include "miezmerker/core.hpp"
 #include "miezmerker/memory_stores.hpp"
+#include "miezmerker/node_time.hpp"
 #include <cassert>
 #include <iostream>
 #include <limits>
@@ -61,6 +62,32 @@ struct TestClaimClock final : ClaimClock {
 struct TestStorage final : Storage {
     bool open() override { return true; }
 };
+
+static void claim_signing_requires_tight_bounds() {
+    struct IntervalClock final : ClaimClock {
+        std::int64_t lower{1791748800000LL}, upper{lower + 5000};
+        std::uint64_t epoch_ms() const override {
+            return node_time::claim_timestamp(lower, upper).value_or(0);
+        }
+    } clock;
+    MemoryIdentityStore store;
+    TestRandom random;
+    FakeClaimMode mode;
+    mode.enabled = true;
+    FakeCrypto crypto;
+    NodeIdentityManager node(store, mode, random, crypto, clock);
+    assert(node.initialize());
+    ClaimAdvertisement advertisement;
+    assert(node.sign_claim(advertisement));
+    assert(advertisement.timestamp_ms == 1791748802500ULL);
+    crypto.signed_message.clear();
+    ++clock.upper;
+    assert(!node.sign_claim(advertisement));
+    assert(advertisement.timestamp_ms == 0 && crypto.signed_message.empty());
+    clock.lower = clock.upper = 0;
+    assert(!node.sign_claim(advertisement));
+    assert(crypto.signed_message.empty());
+}
 
 static void capture_uses_claimed_identity() {
     MemoryIdentityStore cell;
@@ -195,6 +222,7 @@ static void reset_rejects_repeated_entropy() {
     assert(!no_entropy.initialize() && !empty.saved);
 }
 int main() {
+    claim_signing_requires_tight_bounds();
     capture_uses_claimed_identity();
     reset_rejects_repeated_entropy();
     MemoryIdentityStore store;

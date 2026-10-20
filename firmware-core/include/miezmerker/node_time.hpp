@@ -50,6 +50,12 @@ inline constexpr std::size_t kMaxProofBytes = 2048ULL;
 // Backend freshness window for claim advertisements (5 min, #18).
 inline constexpr std::uint64_t kClaimFreshnessMs = 5ULL * 60ULL * 1000ULL;
 
+// Maximum full interval width for signing a claim point: 5 seconds (1/60
+// of the backend window), hence at most 2.5 seconds endpoint error. This is
+// an explicit v1 residual bound, not an extension of JWT validity or freshness.
+inline constexpr std::uint64_t kMaxClaimUncertaintyMs = 5000;
+std::optional<std::uint64_t> claim_timestamp(std::int64_t lower_ms, std::int64_t upper_ms);
+
 struct NodeTimeConfig {
     // Monotonic challenge-to-acceptance deadline.
     std::uint64_t challenge_lifetime_ms = kChallengeLifetimeMs;
