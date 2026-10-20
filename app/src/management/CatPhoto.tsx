@@ -50,6 +50,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
   const objectUrlRef = useRef<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
   const pending = useRef<AbortController | null>(null);
+  const photoLoad = useRef<AbortController | null>(null);
   const version = cat.photoUpdatedAt ?? null;
 
   const revoke = useCallback((ref: React.MutableRefObject<string | null>, set: (value: string | null) => void) => {
@@ -59,6 +60,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
 
   function checkAccess(status: number) {
     if (status !== 401 && status !== 403) return;
+    photoLoad.current?.abort();
     revoke(objectUrlRef, setObjectUrl);
     revoke(previewUrlRef, setPreviewUrl); setPreviewName('');
     if (fileRef.current) fileRef.current.value = '';
@@ -71,6 +73,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
   // photo.
   useEffect(() => {
     const controller = contextSignal();
+    photoLoad.current = controller;
     setError('');
     if (!cat.id || !cat.hasPhoto) {
       revoke(objectUrlRef, setObjectUrl);
@@ -148,6 +151,8 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
       }
       // A failed upload never replaces the current photo server-side; only a
       // confirmed save clears the preview and reloads the list.
+      photoLoad.current?.abort();
+      revoke(objectUrlRef, setObjectUrl);
       revoke(previewUrlRef, setPreviewUrl); setPreviewName('');
       if (fileRef.current) fileRef.current.value = '';
       setMessage('Foto gespeichert.');
@@ -185,6 +190,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
           : 'Foto konnte nicht entfernt werden.');
       }
       setConfirmRemove(false);
+      photoLoad.current?.abort();
       revoke(objectUrlRef, setObjectUrl);
       setMessage('Foto entfernt.');
       onChanged();
@@ -208,7 +214,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
       : <Graphic src={assets.placeholders.cat} alt="Kein Foto vorhanden (Platzhalter)" className="avatar cat-photo__placeholder" />}
     <div className="field">
       <label htmlFor={`cat-photo-file-${cat.id ?? 'new'}`}>Bild wählen (JPEG oder PNG)</label>
-      <input id={`cat-photo-file-${cat.id ?? 'new'}`} ref={fileRef} type="file" accept="image/jpeg,image/png"
+      <input id={`cat-photo-file-${cat.id ?? 'new'}`} ref={fileRef} type="file" accept="image/jpeg,image/png" disabled={busy}
         onChange={event => selectFile(event.currentTarget.files?.[0])} />
       {previewName && <p aria-live="polite">Ausgewählt: {previewName}. Noch nicht gespeichert.</p>}
     </div>

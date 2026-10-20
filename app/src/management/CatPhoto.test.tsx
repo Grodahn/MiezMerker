@@ -196,3 +196,31 @@ test('a batched organization switch clears private photos and previews and ignor
   await act(async () => finish(photoResponse('stale')));
   expect(created).toHaveLength(count);
 });
+
+test.each([
+  ['upload', 200], ['upload', 401], ['upload', 403], ['delete', 204],
+] as const)('%s response %i prevents a late image body from restoring the old photo', async (operation, status) => {
+  let finishBody!: (blob: Blob) => void;
+  fetchMock.mockResolvedValueOnce({ ok: true, status: 200,
+    blob: () => new Promise<Blob>(resolve => { finishBody = resolve; }) });
+  render(<CatPhoto organizationId="org-a" cat={cat({ hasPhoto: true })} onChanged={() => {}} />);
+  await waitFor(() => expect(finishBody).toBeTypeOf('function'));
+  const loadSignal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+  fetchMock.mockResolvedValueOnce({ ok: status < 400, status });
+  if (operation === 'upload') {
+    fireEvent.change(screen.getByLabelText(/Bild wählen/),
+      { target: { files: [new File(['png'], 'replacement.png', { type: 'image/png' })] } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Foto speichern' })));
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: 'Foto entfernen' }));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Ja, entfernen' })));
+  }
+  expect(loadSignal.aborted).toBe(true);
+  const count = created.length;
+  // Simulate a transport that still delivers the body after abort, while the
+  // parent list refresh fails and therefore leaves hasPhoto unchanged.
+  await act(async () => finishBody(new Blob(['old photo'], { type: 'image/jpeg' })));
+  expect(created).toHaveLength(count);
+  expect(screen.queryByAltText('Katzenfoto von Minka')).toBeNull();
+  expect(screen.queryByAltText(/Vorschau/)).toBeNull();
+});
