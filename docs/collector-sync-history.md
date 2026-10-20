@@ -52,7 +52,11 @@ A matching event ID/payload is DUPLICATE_IDENTICAL without changing receipt time
 attribution; any changed field conflicts. Node-row locking serializes ordinary
 retries with deployment edits. A cross-node event-ID collision returns conflict.
 Responses must echo ID and recognized status before local deletion. Network errors,
-401, 403 and conflicts retain the original row, never reassign it. After a known
+401, 403 and conflicts retain the original row, never reassign it. A 401 fails the
+drain until re-login; permanent per-event 4xx rejections do not block valid siblings
+but keep the overall result visibly incomplete. Transient HTTP/network failures
+stop the drain for a later retry. Local expiry is rechecked after CSRF acquisition,
+so a row that expires while waiting is deleted without transmission. After a known
 account ban local rows are purged; otherwise inaccessible rows expire after 30 days.
 Local maintenance runs on app start, auth/storage events and hourly even while
 logged out. A closed PWA cleans on reopening, before delivery. Server rejection

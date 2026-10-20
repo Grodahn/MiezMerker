@@ -37,17 +37,33 @@ export class SyncEventOutbox {
     try {
       const rows = await this.db.syncEvents.where('[ownerUserId+organizationId]').equals([userId!, organizationId]).toArray();
       let uploaded = 0;
+      let rejected = false;
       for (const row of rows) {
         if (!active()) break;
         const csrf = await fetchCsrfToken();
         if (!active()) break;
+        // The snapshot may outlive retention while earlier rows/CSRF wait for HTTP.
+        // Never send an expired event just because it was eligible when the drain began.
+        if (row.expiresAt <= Date.now()) {
+          await this.db.syncEvents.delete(row.eventId);
+          continue;
+        }
         const { expiresAt: _localExpiry, ...body } = row;
         const { data, error, response } = await api.POST('/api/v1/collector-sync-events', {
           body, headers: { 'X-XSRF-TOKEN': csrf },
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
         });
         if (!active()) break;
-        if (response.status === 401) { markSessionExpired(); break; }
+        if (response.status === 401) {
+          markSessionExpired();
+          throw new Error('Sitzung abgelaufen. Ausleseereignisse bleiben für die erneute Anmeldung gespeichert.');
+        }
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          // One moved/deleted Node, expired report or identity conflict must not
+          // strand valid siblings. Keep the rejected original bound until expiry.
+          rejected = true;
+          continue;
+        }
         if (error || !data || data.eventId !== row.eventId ||
             !['CREATED', 'DUPLICATE_IDENTICAL'].includes(data.status ?? '')) {
           throw new Error('Ausleseereignis noch nicht bestätigt; bleibt bis zum Ablauf identitätsgebunden gespeichert.');
@@ -55,6 +71,7 @@ export class SyncEventOutbox {
         await this.db.syncEvents.delete(row.eventId);
         uploaded++;
       }
+      if (rejected) throw new Error('Ausleseereignis noch nicht bestätigt; gültige weitere Ereignisse wurden separat übertragen.');
       return uploaded;
     } finally { unsubscribe(); }
   }
