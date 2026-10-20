@@ -1,3 +1,4 @@
+import { SyncEventOutbox } from './sync-event-outbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CollectorDatabase, requestPersistentStorage } from '../platform/offline-store';
 import { getAuthState, subscribeAuth } from '../platform/auth';
@@ -312,7 +313,13 @@ export function CollectorShell(props: {
           assertActive: () => { if (controller.signal.aborted || !contextStillActive()) throw new Error('Upload nach Kontextwechsel abgebrochen.'); },
         });
         let result;
-        try { result = await uploader.upload(state.activeOrganizationId as string); }
+        let eventError = '';
+        try {
+          try { await new SyncEventOutbox(db).upload(state.activeOrganizationId as string); }
+          catch { eventError = ' Ausleseereignisse noch nicht bestätigt; erneuter Upload folgt.'; }
+          result = await uploader.upload(state.activeOrganizationId as string);
+          if (eventError) result = { ...result, state: 'failed' as const, message: result.message + eventError };
+        }
         finally { unsubscribe(); }
         const stats = await store.organizationUploadStats(state.activeOrganizationId as string);
         if (contextStillActive()) setUploadView({ backendState: result.state, backendMessage: result.message,

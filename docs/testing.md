@@ -311,3 +311,7 @@ backfill, concurrent sequence allocation, immutable UUID, non-reuse on deletion
 and the claim-receipt byte budget.
 `ClaimReceiptBudgetTest` belongs to `node` and `auth`: serialized UTF-8/escaping
 budgets and the signed ESP32 receipt interoperability fixture (#146).
+
+`CollectorSyncEventTest` belongs to `node`, `auth`, and `ingest`: collector-only
+success reports, owner/tenant/admin gates, historical deployment uncertainty,
+current recipient authorization, idempotency/concurrent retries and retention.

@@ -1,8 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-const { requestDevice, runBatch, resolveContexts, upload, cachedCredential, session, listeners, authorized, browser, storageOpen, stats } = vi.hoisted(() => ({
-  requestDevice: vi.fn(), runBatch: vi.fn(), resolveContexts: vi.fn(), upload: vi.fn(),
+const { requestDevice, runBatch, resolveContexts, upload, eventUpload, cachedCredential, session, listeners, authorized, browser, storageOpen, stats } = vi.hoisted(() => ({
+  requestDevice: vi.fn(), runBatch: vi.fn(), resolveContexts: vi.fn(), upload: vi.fn(), eventUpload: vi.fn(),
   cachedCredential: vi.fn(),
   session: { user: { userId: 'user', email: 'field@example.org', memberships: [] }, activeOrganizationId: 'org' },
   listeners: new Set<() => void>(),
@@ -30,6 +30,7 @@ vi.mock('../platform/offline-store', () => ({
 vi.mock('../platform/offline-identity', () => ({
   OfflineIdentityDatabase: class { close() {} }, OfflineIdentity: class { credential = cachedCredential; },
 }));
+vi.mock('./sync-event-outbox', () => ({ SyncEventOutbox: class { upload = eventUpload; } }));
 vi.mock('./backend-upload', () => ({ BackendUploader: class { upload = upload; } }));
 vi.mock('./observation-store', () => ({ CollectorObservationStore: class { async open() {} async organizationUploadStats() { return { ...stats }; } } }));
 vi.mock('./batch-sync', async importOriginal => ({
@@ -58,6 +59,7 @@ beforeEach(() => {
   session.activeOrganizationId = 'org'; requestDevice.mockReset(); runBatch.mockReset(); upload.mockReset();
   resolveContexts.mockReset(); resolveContexts.mockResolvedValue(new Map());
   cachedCredential.mockReset(); cachedCredential.mockResolvedValue('credential');
+  eventUpload.mockReset().mockResolvedValue(0);
   upload.mockResolvedValue({ state: 'complete', message: '', uploaded: 0, duplicates: 0 });
   authorized.value = [];
   browser.capability = 'supported'; browser.devices = 'supported'; storageOpen.mockReset(); storageOpen.mockResolvedValue(undefined);
@@ -622,4 +624,13 @@ test('session loss clears completed results and prevents further starts', async 
     expect(screen.getByRole('button', { name: 'Näpfe auslesen' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByText('Bitte anmelden und Organisation wählen').closest('details')).toBeNull();
   } finally { session.user = previous; }
+});
+
+test('event upload failure remains visible and does not block independent observation upload', async () => {
+  eventUpload.mockRejectedValue(new Error('unavailable'));
+  upload.mockResolvedValue({ state: 'complete', message: 'Observations confirmed', uploaded: 1, duplicates: 0 });
+  render(<CollectorShell />);
+  fireEvent.click(screen.getByText('Technische Infos zur Entwicklung'));
+  expect((await screen.findAllByText(/Observations confirmed.*Ausleseereignisse noch nicht bestätigt/)).length).toBeGreaterThanOrEqual(1);
+  expect(upload).toHaveBeenCalledWith('org');
 });

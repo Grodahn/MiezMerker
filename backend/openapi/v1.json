@@ -246,6 +246,87 @@
         },
         "type": "object"
       },
+      "CollectorSyncEvent": {
+        "properties": {
+          "eventId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "incarnation": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nodeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "timeQuality": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CollectorSyncEventReceipt": {
+        "properties": {
+          "eventId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CollectorSyncRecipient": {
+        "properties": {
+          "earliestPossibleAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "latestPossibleAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CollectorSyncRecipients": {
+        "properties": {
+          "ordering": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/CollectorSyncRecipient"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "CreateCatRequest": {
         "properties": {
           "chipId": {
@@ -2196,6 +2277,37 @@
         ]
       }
     },
+    "/api/v1/collector-sync-events": {
+      "post": {
+        "operationId": "reportCollectorSync",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectorSyncEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectorSyncEventReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Idempotent authorized collector-reported Node sync; no physical attendance proof",
+        "tags": [
+          "collector-sync-event-controller"
+        ]
+      }
+    },
     "/api/v1/credentials/issuer": {
       "get": {
         "operationId": "getCredentialIssuer",
@@ -3878,6 +3990,58 @@
         "summary": "Compact feeding-site cat/chip activity (ACTIVE membership)",
         "tags": [
           "feeding-site-controller"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/feeding-sites/{siteId}/sync-recipients": {
+      "get": {
+        "description": "Collector reports only. Conservative time windows, never verified attendance; overlapping windows have no definite chronological order. No SYSADMIN bypass.",
+        "operationId": "listCollectorSyncRecipients",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "siteId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectorSyncRecipients"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "ADMIN only: last 1..20 distinct currently authorized users for missing-cat notices",
+        "tags": [
+          "collector-sync-event-controller"
         ]
       }
     },
