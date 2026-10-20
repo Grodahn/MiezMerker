@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { StoredSyncEvent } from '../collector/sync-event';
 import type { StoredTimeEvidence } from '../collector/time-evidence';
 
 // Local transport envelope; this is not an HTTP DTO. Payload is opaque BLE data.
@@ -17,6 +18,7 @@ export interface Outbox {
   pending(organizationId: string): Promise<PendingUpload[]>;
 }
 export class CollectorDatabase extends Dexie {
+  syncEvents!: Table<StoredSyncEvent, string>;
   timeEvidence!: Table<StoredTimeEvidence, string>;
   uploads!: Table<PendingUpload, string>;
   observations!: Table<StoredObservation, [string, string, string]>;
@@ -45,6 +47,8 @@ export class CollectorDatabase extends Dexie {
         });
       }
     });
+    // Additive migration: never adopt or rewrite existing observation/evidence rows.
+    this.version(5).stores({ syncEvents: 'eventId, [ownerUserId+organizationId], expiresAt' });
   }
 }
 

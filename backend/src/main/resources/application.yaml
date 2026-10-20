@@ -67,6 +67,10 @@ miezmerker:
     org-slug: ${BOOTSTRAP_ORG_SLUG:versuch}
     org-name: ${BOOTSTRAP_ORG_NAME:Versuchsorganisation}
     org-contact: ${BOOTSTRAP_ORG_CONTACT:}
+  sync-events:
+    # Missing-cat recipient selection only. Shorter periods are supported (1..30).
+    retention-days: ${SYNC_EVENT_RETENTION_DAYS:30}
+    purge-delay-ms: ${SYNC_EVENT_PURGE_DELAY_MS:3600000}
   media:
     # Self-hosted cat photo storage (#95): plain filesystem directory holding
     # random, non-guessable JPEG files. Must live on persistent storage and be

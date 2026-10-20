@@ -68,6 +68,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/collector-sync-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Idempotent authorized collector-reported Node sync; no physical attendance proof */
+        post: operations["reportCollectorSync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/credentials/issuer": {
         parameters: {
             query?: never;
@@ -595,6 +612,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organizationId}/feeding-sites/{siteId}/sync-recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ADMIN only: last 1..20 distinct currently authorized users for missing-cat notices
+         * @description Collector reports only. Conservative time windows, never verified attendance; overlapping windows have no definite chronological order. No SYSADMIN bypass.
+         */
+        get: operations["listCollectorSyncRecipients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organizationId}/members": {
         parameters: {
             query?: never;
@@ -939,6 +976,40 @@ export interface components {
         CloseDeploymentRequest: {
             /** Format: date-time */
             validUntil?: string;
+        };
+        CollectorSyncEvent: {
+            /** Format: uuid */
+            eventId?: string;
+            /** Format: uuid */
+            incarnation?: string;
+            /** Format: uuid */
+            nodeId?: string;
+            /** Format: int64 */
+            occurredAt?: number;
+            /** Format: uuid */
+            organizationId?: string;
+            /** Format: uuid */
+            ownerUserId?: string;
+            timeQuality?: string;
+        };
+        CollectorSyncEventReceipt: {
+            /** Format: uuid */
+            eventId?: string;
+            resolution?: string;
+            status?: string;
+        };
+        CollectorSyncRecipient: {
+            /** Format: date-time */
+            earliestPossibleAt?: string;
+            /** Format: date-time */
+            latestPossibleAt?: string;
+            /** Format: uuid */
+            userId?: string;
+        };
+        CollectorSyncRecipients: {
+            ordering?: string;
+            provenance?: string;
+            recipients?: components["schemas"]["CollectorSyncRecipient"][];
         };
         CreateCatRequest: {
             chipId: string;
@@ -1626,6 +1697,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionView"];
+                };
+            };
+        };
+    };
+    reportCollectorSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectorSyncEvent"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectorSyncEventReceipt"];
                 };
             };
         };
@@ -2667,6 +2762,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedingSiteCatActivityView"][];
+                };
+            };
+        };
+    };
+    listCollectorSyncRecipients: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+                siteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectorSyncRecipients"];
                 };
             };
         };

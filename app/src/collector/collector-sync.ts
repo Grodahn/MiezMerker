@@ -12,6 +12,8 @@
 // Node→PWA and PWA→Backend remain independent state machines. A successful
 // Node sync never depends on backend/network availability.
 
+import { SyncEventOutbox } from './sync-event-outbox';
+import { syncTimeQuality } from './sync-event';
 import { getAuthState } from '../platform/auth';
 import { OfflineIdentity, OfflineIdentityDatabase } from '../platform/offline-identity';
 import { WebCryptoDeviceKeys } from '../platform/device-keys';
@@ -125,6 +127,8 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     return view;
   }
 
+  const startedOnline = navigator.onLine;
+  const startedUtc = Date.now(), startedMonotonic = performance.now();
   const collectorDb = new CollectorDatabase();
   const observations = new CollectorObservationStore(collectorDb, auth.user.userId);
   let operation: ReturnType<typeof bindNodeOperation> | undefined;
@@ -193,8 +197,8 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     const engineResult = await runEngineWithDiscovery(
       transport, observations, deviceKeys, credential, organizationId, trustedNowS,
       (phase, received) => emit({
-        nodeState: toNodeState(phase),
-        nodeMessage: phaseMessage(phase, received),
+        nodeState: phase === 'complete' ? 'persisting' : toNodeState(phase),
+        nodeMessage: phase === 'complete' ? 'Speichere Ausleseereignis …' : phaseMessage(phase, received),
         recordsReceived: received,
       }),
       (owner) => emit({ owner }),
@@ -221,6 +225,22 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       return view;
     }
 
+    operation.assertActive();
+    const occurredAt = Date.now();
+    try {
+      await new SyncEventOutbox(collectorDb).record({
+        eventId: crypto.randomUUID(), ownerUserId: auth.user.userId, organizationId,
+        nodeId: engineResult.nodeId, incarnation: engineResult.incarnation, occurredAt,
+        timeQuality: syncTimeQuality(startedUtc, occurredAt, performance.now() - startedMonotonic, startedOnline && navigator.onLine),
+      }, operation.assertActive);
+    } catch (error) {
+      operation.assertActive();
+      emit({ nodeState: 'failed', fertig: false,
+        nodeMessage: 'Node-Daten sicher übernommen und quittiert. Ausleseereignis konnte nicht dauerhaft erfasst werden. Kein erneuter ACK.',
+        recordsReceived: engineResult.received, watermark: engineResult.watermark });
+      return view;
+    }
+    operation.assertActive();
     const stats = await observations.uploadStats(engineResult.nodeId)
       .catch(() => ({ pending: engineResult.received, failed: 0, uploaded: 0, total: engineResult.received }));
     try {

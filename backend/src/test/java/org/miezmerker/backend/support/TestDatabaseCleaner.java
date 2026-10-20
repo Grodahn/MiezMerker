@@ -83,6 +83,7 @@ public class TestDatabaseCleaner {
     @Transactional
     public void clean() {
         jdbc.update("DELETE FROM demo_fixture_records WHERE record_key <> 'lock'");
+        jdbc.update("DELETE FROM collector_sync_events");
         derivedVisits.deleteAllInBatch();
         jdbc.update("DELETE FROM time_anchors");
         jdbc.update("DELETE FROM phone_time_anchors");
