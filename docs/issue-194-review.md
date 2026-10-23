@@ -55,6 +55,18 @@ Hardware acceptance: **UNVERIFIED**. No physical firmware/protocol changes.
 The realistic identity-error text fixture is in [error-codes.md](error-codes.md);
 the browser blocker flow also captures an automated error-code screenshot.
 
+## Follow-up review and integration
+
+- Preserve the original diagnostic code when initial time capture fails after a
+  committed claim. Unknown exceptions receive the safe snapshot-phase fallback;
+  registration stays committed and the time capture remains pending.
+- Replace unstructured cancellation exception text in batch results with a safe
+  cancellation message. Structured local diagnostic errors retain their code.
+- Integrate merged #197: use its shared clock policy and detailed mismatch
+  recovery text together with the stable clock code; retain the generated Admin
+  catalog proxy and both catalog/clock CI gates. Completion validation must use
+  this combined source state, including default alpha and explicit signed PWA.
+
 Efficiency: initial Windows wildcard/path and test-selector mistakes and encoding/temp-directory
 issues were corrected; use scoped rg globs, explicit UTF-8 and the working
 test environment. No test expectation or required gate was removed or relaxed.
