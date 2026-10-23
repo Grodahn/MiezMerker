@@ -1,3 +1,4 @@
+import { safeFailure } from '../diagnostics/errors';
 // Sequential multi-node batch synchronization (issue #76).
 //
 // One user-initiated sync operation synchronizes all previously
@@ -167,14 +168,15 @@ function classifyThrown(error: unknown, signalAborted: boolean): { kind: BatchNo
   if (signalAborted || isCancelledError(error)) {
     return { kind: 'cancelled', message: error instanceof Error ? error.message : 'Sammel-Sync abgebrochen.' };
   }
-  const text = error instanceof Error ? error.message : String(error);
+  const sourceText = error instanceof Error ? error.message : '';
+  const text = safeFailure(error, 'Sync fehlgeschlagen. Bitte erneut versuchen.');
   const name = error && typeof error === 'object' && 'name' in error ? String((error as { name: unknown }).name) : '';
   const kind = error && typeof error === 'object' && 'kind' in error ? error.kind : undefined;
   if (kind === 'trusted-time') return { kind: 'failed', message: text };
-  if (kind === 'timeout' || name === 'NetworkError' || /zeitüberschritten|Timeout|Verbindung|disconnected|nicht erreichbar|Kein Node gefunden/i.test(text)) {
+  if (kind === 'timeout' || name === 'NetworkError' || /zeitüberschritten|Timeout|Verbindung|disconnected|nicht erreichbar|Kein Node gefunden/i.test(sourceText)) {
     return { kind: 'unreachable', message: text };
   }
-  if (/Credential|Autorisierung|Mitgliedschaft|anmelden/i.test(text)) {
+  if (/Credential|Autorisierung|Mitgliedschaft|anmelden/i.test(sourceText)) {
     return { kind: 'unauthorized', message: text };
   }
   return { kind: 'failed', message: text || 'Sync fehlgeschlagen.' };

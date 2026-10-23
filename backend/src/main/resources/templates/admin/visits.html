@@ -10,7 +10,7 @@
 <p>Vom Backend abgeleitete Besuche, getrennt von Rohbeobachtungen. Zeit und Futterstelle werden aus den gespeicherten DerivedVisits angezeigt; ein Chip ohne zugeordnete Katze ist gültig.</p>
 <p>Anzeige in Ihrer lokalen Zeitzone, ohne JavaScript in UTC. Zeitraumfilter verwenden UTC. Historische Futterstellen stammen aus der gespeicherten Zuordnung.</p>
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}"></div>
-<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}"></div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error + ' [' + @diagnostics.form() + ']'}"></div>
 <form class="card" method="get" th:action="${route}" th:object="${filters}">
 <div class="grid">
 <div><label for="from">Von (UTC, einschließlich)</label><input id="from" type="datetime-local" step="0.001" th:field="*{from}"/></div>

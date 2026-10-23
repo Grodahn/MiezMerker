@@ -1,3 +1,4 @@
+import { DiagnosticError, errorCodes } from '../diagnostics/errors';
 // #16: session state for the same-origin PWA. Server-side session + CSRF token.
 import { api } from '../api/client';
 import type { components } from '../api/generated';
@@ -139,7 +140,7 @@ function fenceAccountChange(previousUser: SessionUser | null, nextUserId: string
 }
 
 export function selectOrganization(organizationId: string): void {
-  if (!activeOrganizationIds().includes(organizationId)) throw new Error('Organisation nicht verfügbar');
+  if (!activeOrganizationIds().includes(organizationId)) throw new DiagnosticError(errorCodes.AUTH_DENIED, 'Organisation nicht verfügbar');
   state = { ...state, activeOrganizationId: organizationId };
   persistOrganization();
   emit();
@@ -147,7 +148,7 @@ export function selectOrganization(organizationId: string): void {
 
 export async function fetchCsrfToken(): Promise<string> {
   const { data, error } = await api.GET('/api/v1/auth/csrf', { signal: AbortSignal.timeout(10_000) });
-  if (error || !data || !data.token) throw new Error('CSRF token unavailable');
+  if (error || !data || !data.token) throw new DiagnosticError(errorCodes.AUTH_SESSION, 'CSRF token unavailable');
   state = { ...state, csrfToken: data.token };
   emit();
   return data.token;
@@ -202,7 +203,7 @@ export async function fetchSession(): Promise<SessionUser | null> {
           state = { ...state, sessionChecked: true, sessionVerified: false };
           emit();
         }
-        throw new Error('Sitzung konnte nicht geladen werden');
+        throw new DiagnosticError(errorCodes.AUTH_SESSION, 'Sitzung konnte nicht geladen werden');
       }
       // #31: preserve the restored snapshot so offline-sync eligibility can
       // survive a backend session expiration; only logout clears it.
@@ -269,7 +270,7 @@ export async function login(email: string, password: string): Promise<SessionUse
       body: { email, password },
       headers: { 'X-XSRF-TOKEN': token },
     });
-    if (error || !completeSession(data) || !data) throw new Error('Login fehlgeschlagen');
+    if (error || !completeSession(data) || !data) throw new DiagnosticError(errorCodes.AUTH_LOGIN, 'Login fehlgeschlagen');
     const user: SessionUser = {
       userId: data.userId,
       email: data.email,
@@ -277,7 +278,7 @@ export async function login(email: string, password: string): Promise<SessionUse
       memberships: data.memberships ?? [],
     };
     const replaced = await withAuthorizationLock(() => {
-      if (epoch !== authenticationEpoch()) throw new Error('Anmeldung durch neueren Status ersetzt');
+      if (epoch !== authenticationEpoch()) throw new DiagnosticError(errorCodes.AUTH_CHANGED, 'Anmeldung durch neueren Status ersetzt');
       const previous = fenceAccountChange(previousUser, user.userId);
       publishAuthorization(user.userId, false, user.memberships.filter(m => m.status === 'ACTIVE').map(m => m.organizationId!));
       try { localStorage.removeItem('miezmerker-revoked-account'); } catch { /* Optional UX marker. */ }
@@ -311,7 +312,7 @@ export async function logout(): Promise<void> {
       const { response } = await api.POST('/api/v1/auth/logout', {
         signal: AbortSignal.timeout(10_000), headers: { 'X-XSRF-TOKEN': token },
       });
-      if (!response.ok && response.status !== 401) throw new Error('Abmelden fehlgeschlagen');
+      if (!response.ok && response.status !== 401) throw new DiagnosticError(errorCodes.AUTH_SESSION, 'Abmelden fehlgeschlagen');
     } finally {
       state = { ...state, csrfToken: null };
       emit();

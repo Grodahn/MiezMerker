@@ -65,3 +65,15 @@ test.each([false,true])('alpha preflight still verifies Node claim signature (ta
     expect(ble.write).toHaveBeenCalledTimes(2);
   } finally { vi.unstubAllEnvs(); }
 });
+
+test('malformed identity advertisement after Alpha time preflight gets the specific support code', async () => {
+  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'FIELD_ALPHA_PHONE_CLOCK');
+  try {
+    hello.mockResolvedValue({ nodeId: NODE, claimState: 0, caps: 0x80 });
+    const ble = await transport();
+    ble.read.mockResolvedValueOnce(encodeFrame({ version: 1, opcode: Opcode.AlphaPhoneClockResponse, payload: new Uint8Array([0]) }))
+      .mockResolvedValueOnce(encodeFrame({ version: 1, opcode: Opcode.ClaimAdvertisementResponse, payload: new Uint8Array() }));
+    await expect(verifyRegistrationCandidate(ble, NODE, 'org')).rejects.toMatchObject({ code: 'MM-CLAIM-004' });
+    expect(ble.disconnect).toHaveBeenCalled();
+  } finally { vi.unstubAllEnvs(); }
+});

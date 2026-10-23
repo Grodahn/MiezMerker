@@ -8,7 +8,7 @@
 <dt>Letzte verlässliche Sichtung (UTC)</dt><dd th:text="${cat.sighting ?: 'unbekannt – keine verlässliche Uhrzeit'}">Zeit</dd><dt>Letzter Server-Empfang (UTC)</dt><dd th:text="${cat.received ?: 'unbekannt'}">Empfang</dd><dt>Beobachtungen</dt><dd th:text="${cat.count}">0</dd></dl>
 <p th:if="${cat.uncertain > 0}">Uhrzeit unbekannt/ungültig bei <span th:text="${cat.uncertain}">0</span> Beobachtungen. UNKNOWN wird nicht als präzise Sichtung ausgegeben.</p></div>
 <section class="card" aria-label="Katzenfoto"><h2>Foto</h2>
-<p th:if="${photoError != null}" role="alert" th:text="${photoError}">Fehler</p>
+<p th:if="${photoError != null}" role="alert" th:text="${photoError + ' [' + @diagnostics.photo() + ']'}">Fehler</p>
 <p th:if="${photoSaved != null}" role="status" th:text="${photoSaved}">Gespeichert</p>
 <div th:if="${hasPhoto}"><img th:src="@{/api/v1/organizations/{org}/cats/{cat}/photo(org=${activeOrg.id}, cat=${cat.id})}" alt="Katzenfoto" style="display:block;max-width:28rem;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:.75rem"/></div>
 <p th:unless="${hasPhoto}">Kein Foto vorhanden.</p>

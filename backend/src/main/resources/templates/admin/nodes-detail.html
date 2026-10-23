@@ -17,7 +17,7 @@ small.muted{display:block;opacity:.75;font-size:.85rem}
 <h1 th:text="${displayOrFallback}">Napf</h1>
 <p th:if="${activeOrg != null}">Aktive Organisation: <strong th:text="${activeOrg.displayName}">Org</strong></p>
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
-<div th:if="${errors != null and !#lists.isEmpty(errors)}" class="alert alert-error" role="alert">
+<div th:if="${errors != null and !#lists.isEmpty(errors)}" class="alert alert-error" role="alert"><code th:text="${' [' + @diagnostics.form() + ']'}"></code>
 <p>Bitte Eingaben prüfen:</p>
 <ul><li th:each="e : ${errors}" th:text="${e}">Fehler</li></ul>
 </div>

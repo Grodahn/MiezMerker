@@ -1,3 +1,4 @@
+import { errorCodes } from '../diagnostics/errors';
 import { api } from '../api/client';
 import { fetchCsrfToken, getAuthState } from '../platform/auth';
 import { toBase64Url } from '../platform/device-keys';
@@ -7,7 +8,7 @@ import { assertAdminMayClaim, ClaimError } from './claim-node';
 import { decodeFrame, encodeFrame, encodeClaimReceipt, Opcode } from './ble-codec';
 
 export class TimeBootstrapUnavailableError extends ClaimError {
-  constructor(message: string) { super('trusted-time', message); this.name = 'TimeBootstrapUnavailableError'; }
+  constructor(message: string) { super('trusted-time', message, errorCodes.CLOCK_BOOTSTRAP); this.name = 'TimeBootstrapUnavailableError'; }
 }
 
 // Shared purpose-scoped bridge to ADR 0017. The phone forwards signed bytes; only
@@ -36,19 +37,20 @@ export async function bootstrapNodeTime(transport: NodeTransport, nodeId: string
     if (!frame || frame.version !== 1 || frame.opcode !== opcode + 1) {
       throw new ClaimError('trusted-time', opcode === Opcode.RegistrationTimeProofRequest
         ? 'Signierter UTC-Proof vom Napf abgelehnt: Issuer-Pin mit lokalem Setup und ESP-Log vergleichen; danach mit neuer Challenge erneut versuchen. Ungültige, abgelaufene oder wiederverwendete Proofs bleiben gesperrt.'
-        : 'Vertrauenswürdige UTC-Zeit fehlt. Firmware mit signiertem Zeit-Bootstrap und passendem Issuer-Schlüssel erforderlich; issuer_pin im ESP-Log prüfen.');
+        : 'Vertrauenswürdige UTC-Zeit fehlt. Firmware mit signiertem Zeit-Bootstrap und passendem Issuer-Schlüssel erforderlich; issuer_pin im ESP-Log prüfen.',
+        opcode === Opcode.RegistrationTimeProofRequest ? errorCodes.CLOCK_REJECTED : errorCodes.CLOCK_CHALLENGE);
     }
     return frame.payload;
   };
   const bytes = await exchange(Opcode.RegistrationTimeChallengeRequest);
-  if (bytes.length !== 239) throw new ClaimError('trusted-time', 'Ungültige Zeit-Challenge des Napfs.');
+  if (bytes.length !== 239) throw new ClaimError('trusted-time', 'Ungültige Zeit-Challenge des Napfs.', errorCodes.CLOCK_CHALLENGE);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const uuid = (offset: number) => {
     const hex = Array.from(bytes.slice(offset, offset + 16), b => b.toString(16).padStart(2, '0')).join('');
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   };
   if (view.getUint16(0, true) !== 1 || uuid(2) !== nodeId.toLowerCase() || (incarnation && uuid(18) !== incarnation.toLowerCase()) || view.getUint32(34, true) === 0 || bytes[78] !== 4) {
-    throw new ClaimError('trusted-time', 'Zeit-Challenge gehört nicht zum ausgewählten Napf.');
+    throw new ClaimError('trusted-time', 'Zeit-Challenge gehört nicht zum ausgewählten Napf.', errorCodes.CLOCK_CHALLENGE);
   }
   const uptime = view.getBigUint64(70, true);
   const challenge = {
@@ -67,7 +69,7 @@ export async function bootstrapNodeTime(transport: NodeTransport, nodeId: string
     headers: csrf ? { 'X-XSRF-TOKEN': csrf } : {}, signal: AbortSignal.timeout(10_000),
   }).catch(error => {
     assertActive();
-    const detail = error instanceof Error ? error.message : 'Keine Antwort.';
+    const detail = 'Keine bestätigte Antwort.';
     throw new TimeBootstrapUnavailableError(`Backend-Zeitservice nicht erreichbar. Signierter Zeit-Bootstrap noch nicht bestätigt. Internet und Backend prüfen. ${detail}`);
   });
   assertActive();
@@ -80,10 +82,10 @@ export async function bootstrapNodeTime(transport: NodeTransport, nodeId: string
           ? 'Zeit-Bootstrap gesperrt: Backend-UTC nicht als gesund bestätigt. Serveruhr/NTP prüfen und die lokale UTC-Attestation ausdrücklich setzen.'
           : 'Zeit-Bootstrap nicht verfügbar. Backend benötigt einen konfigurierten Issuer-Schlüssel und eine bestätigte gesunde UTC-Zeit.');
     if (response?.status === 429) throw new TimeBootstrapUnavailableError('Zeitservice ausgelastet. Bitte kurz warten und erneut versuchen.');
-    throw new ClaimError('trusted-time', 'Signierter Zeit-Bootstrap abgelehnt. Aktive Mitgliedschaft, Internet und Napf-Zuordnung prüfen.');
+    throw new ClaimError('trusted-time', 'Signierter Zeit-Bootstrap abgelehnt. Aktive Mitgliedschaft, Internet und Napf-Zuordnung prüfen.', errorCodes.CLOCK_REJECTED);
   }
   const result = await exchange(Opcode.RegistrationTimeProofRequest, encodeClaimReceipt(data.proof));
-  if (result.length !== 1 || result[0] !== 0) throw new ClaimError('trusted-time', 'Napf hat die signierte Zeit nicht bestätigt.');
+  if (result.length !== 1 || result[0] !== 0) throw new ClaimError('trusted-time', 'Napf hat die signierte Zeit nicht bestätigt.', errorCodes.CLOCK_CONFIRMATION);
   // Scheduling hint only: include the full round trip plus server/sampling/
   // drift uncertainty. Strict firmware verification remains authoritative,
   // even if the phone's timer is inaccurate.

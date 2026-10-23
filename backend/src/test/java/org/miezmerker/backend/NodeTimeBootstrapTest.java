@@ -249,11 +249,16 @@ class NodeTimeBootstrapTest {
         var unavailable=post(PATH,request(s,"UNCLAIMED",c));
         assertEquals(503,unavailable.statusCode());
         assertEquals("issuer-key-missing",unavailable.headers().firstValue("X-MM-Time-Bootstrap").orElseThrow());
-        assertEquals("",unavailable.body());
+        var diagnosticBody=mapper.readTree(unavailable.body());
+        assertEquals("MM-API-009",diagnosticBody.path("code").asText());
+        assertEquals("Service Unavailable",diagnosticBody.path("message").asText());
+        assertFalse(unavailable.body().contains("issuer-key-missing"));
+        assertFalse(unavailable.body().contains(c.devicePublicKeyFingerprint()));
         claimed(s,n);
         login("member-a@example.org","supersecret-password-m");
         var generic=post(PATH,request(s,"CLAIMED",c));
         assertEquals(503,generic.statusCode());
+        assertEquals(unavailable.body(),generic.body());
         assertTrue(generic.headers().firstValue("X-MM-Time-Bootstrap").isEmpty());
         org.mockito.Mockito.verifyNoInteractions(time);
     }

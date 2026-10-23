@@ -1,3 +1,4 @@
+import { errorCodes, withCode, httpErrorCode, messageCode, apiErrorCode } from '../diagnostics/errors';
 // Backend upload state machine (issue #8, ingest API from #9).
 //
 // Node→PWA and PWA→Backend are independent state machines. A successful Node
@@ -102,11 +103,11 @@ export class BackendUploader {
         message: lastMessage || `Backend-Upload fehlgeschlagen (${outstanding} Records ausstehend). Vor-Ort-Sync bleibt gültig.` };
     }
     if (outstanding > 0 && lastMessage) {
-      return { state: 'failed', uploaded, duplicates, conflicts, failed, message: lastMessage };
+      return { state: 'failed', uploaded, duplicates, conflicts, failed, message: withCode(lastMessage || 'Backend-Upload nicht bestätigt.', conflicts ? errorCodes.UPLOAD_CONFLICT : errorCodes.UPLOAD_FAILED) };
     }
     if (outstanding > 0) {
       return { state: 'failed', uploaded, duplicates, conflicts, failed,
-        message: `Teilweise hochgeladen (${uploaded + duplicates}), ${outstanding} ausstehend. Vor-Ort-Sync bleibt gültig.` };
+        message: withCode(`Teilweise hochgeladen (${uploaded + duplicates}), ${outstanding} ausstehend. Vor-Ort-Sync bleibt gültig.`, conflicts ? errorCodes.UPLOAD_CONFLICT : errorCodes.UPLOAD_FAILED) };
     }
     return { state: 'complete', uploaded, duplicates, conflicts, failed,
       message: `Backend-Upload erfolgreich (${uploaded + duplicates} Records, ${evidence.uploaded} Zeit-/Bootbelege bestätigt). Zeitrekonstruktion wird separat geprüft.` };
@@ -149,11 +150,11 @@ export class BackendUploader {
               if (status === 401) markSessionExpired();
               if (status === 403 && row.kind === 1 && httpResponse?.headers?.get('X-MM-Time-Evidence') === 'PRE_CLAIM_CONTINUITY_UNVERIFIED') {
                 failed++;
-                message = 'Zeitbeleg vor Registrierung noch nicht prüfbar. Der Server kann die Zeit vor der Orga-Zuordnung dieses Napfs noch nicht sicher bestätigen. Beleg bleibt dauerhaft gespeichert und unbestätigt. Erneutes Anmelden löst diesen Fall nicht.';
+                message = withCode('Zeitbeleg vor Registrierung noch nicht prüfbar. Der Server kann die Zeit vor der Orga-Zuordnung dieses Napfs noch nicht sicher bestätigen. Beleg bleibt dauerhaft gespeichert und unbestätigt. Erneutes Anmelden löst diesen Fall nicht.', errorCodes.UPLOAD_PRECLAIM);
                 break;
               }
               if (status && status >= 400 && status < 500 && status !== 429) {
-                failed++; message = `Zeitbeleg-Upload abgelehnt (HTTP ${status}); Belege bleiben dauerhaft gespeichert.`; break;
+                failed++; message = withCode(`Zeitbeleg-Upload abgelehnt (HTTP ${status}); Belege bleiben dauerhaft gespeichert.`, apiErrorCode(status, error)); break;
               }
               throw new Error('Backend bestätigt Zeitbelege noch nicht.');
             }
@@ -171,7 +172,7 @@ export class BackendUploader {
               await new Promise(resolve => setTimeout(resolve, (this.options.retryDelayMs ?? 800) * (attempt + 1)));
               continue;
             }
-            failed++; message = `${error instanceof Error ? error.message : 'Zeitbeleg-Upload unterbrochen.'} Dauerhafte Belege bleiben für den nächsten Versuch erhalten.`;
+            failed++; message = withCode('Zeitbeleg-Upload unterbrochen. Dauerhafte Belege bleiben für den nächsten Versuch erhalten.', errorCodes.UPLOAD_EVIDENCE);
             break;
           }
         }
@@ -225,7 +226,7 @@ export class BackendUploader {
           // 4xx (except 429) is a definitive rejection — retrying cannot help
           // (e.g. membership/device disabled, tenant conflict). Fail fast.
           if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
-            const message = `Backend-Upload abgelehnt (HTTP ${status}). Vor-Ort-Sync bleibt gültig.`;
+            const message = withCode(`Backend-Upload abgelehnt (HTTP ${status}). Vor-Ort-Sync bleibt gültig.`, apiErrorCode(status, error));
             for (const item of batch) {
               await this.store.markUploadResult(
                 { nodeId: item.nodeId, incarnation: item.incarnation, sequence: item.sequence },
@@ -233,7 +234,7 @@ export class BackendUploader {
             }
             return { uploaded: 0, duplicates: 0, conflicts: 0, failed: batch.length, message };
           }
-          throw new Error(`Backend-Upload abgelehnt (HTTP ${status ?? '?'}).`);
+          throw new Error(withCode(`Backend-Upload abgelehnt (HTTP ${status ?? '?'}).`, httpErrorCode(status ?? 500)));
         }
         let uploaded = 0;
         let duplicates = 0;
@@ -275,7 +276,7 @@ export class BackendUploader {
     // Network/backend failure: leave every record in the outbox for retry.
     // Records stay pending (not parked as failed) so the next online retry
     // picks them up; the error is returned, not persisted per record.
-    const detail = `${lastError instanceof Error ? lastError.message : 'Backend nicht erreichbar.'} Vor-Ort-Sync bleibt gültig.`;
+    const detail = `${lastError instanceof Error && messageCode(lastError.message) ? lastError.message : 'Backend nicht erreichbar.'} Vor-Ort-Sync bleibt gültig.`;
     try {
       await this.store.markPending(batch.map(item => ({
         nodeId: item.nodeId, incarnation: item.incarnation, sequence: item.sequence,
@@ -283,6 +284,6 @@ export class BackendUploader {
     } catch {
       // Best effort; records were already pending.
     }
-    return { uploaded: 0, duplicates: 0, conflicts: 0, failed: batch.length, message: detail };
+    return { uploaded: 0, duplicates: 0, conflicts: 0, failed: batch.length, message: withCode(detail, errorCodes.UPLOAD_FAILED) };
   }
 }

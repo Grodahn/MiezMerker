@@ -1,3 +1,4 @@
+import { errorCodes } from '../diagnostics/errors';
 // #31: login-only view. Reuses the current login behavior (same auth API,
 // same organization restore logic in auth.ts). Rendered without navigation or
 // protected contents until authorization is established.
@@ -42,7 +43,7 @@ export function LoginView({ online }: { online: boolean }) {
       <h1>Anmelden</h1>
       <p className="login-intro">Keiner wird vergessen.</p>
       {!online && <Status {...statusMessages.offline}/>}
-      {getAuthState().revocationMessage && <Status kind="error" title="Zugang deaktiviert" message={getAuthState().revocationMessage}/>}
+      {getAuthState().revocationMessage && <Status kind="error" code={errorCodes.AUTH_DENIED} title="Zugang deaktiviert" message={getAuthState().revocationMessage}/>}
       <form aria-label="Anmelden" onSubmit={event => void submit(event)}>
         <label>E-Mail<input type="email" name="email" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={email}
           aria-describedby={error ? feedbackId : undefined} readOnly={busy}
@@ -54,7 +55,7 @@ export function LoginView({ online }: { online: boolean }) {
       </form>
       {busy && <Status kind="loading" title="Anmeldung wird geprüft …"
         longWaitMessage="Das dauert länger. Bitte die Verbindung prüfen und einen Moment warten."/>}
-      {error && <div id={feedbackId}><Status kind="error" title="Anmeldung nicht möglich" message={error}/></div>}
+      {error && <div id={feedbackId}><Status kind="error" code={errorCodes.AUTH_LOGIN} title="Anmeldung nicht möglich" message={error}/></div>}
     </div>
   </section>;
 }

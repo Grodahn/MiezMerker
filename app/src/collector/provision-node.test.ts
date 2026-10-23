@@ -1,3 +1,4 @@
+import { BluetoothTransportError } from '../platform/web-bluetooth';
 // @vitest-environment node
 import 'fake-indexeddb/auto';
 import claimVector from '../../../protocol/fixtures/claim-advertisement-v1.hex?raw';
@@ -75,7 +76,7 @@ class ClaimTransport {
       case Opcode.ClaimReceiptRequest:
         const db = new CollectorDatabase();
         expect((await db.nodeMeta.get(NODE))?.claimReceipt).toBe('signed-receipt'); db.close();
-        if (this.dropReceipt) { this.dropReceipt = false; throw new Error('BLE disconnected'); }
+        if (this.dropReceipt) { this.dropReceipt = false; throw new BluetoothTransportError('disconnected', 'BLE disconnected'); }
         if (this.rejectReceiptOnce) { this.rejectReceiptOnce = false; opcode = Opcode.Error; payload = new Uint8Array(); break; }
         this.claimed = true; opcode = Opcode.ClaimReceiptResponse; payload = new Uint8Array([0]); break;
       default: throw new Error('Protected request during claim');

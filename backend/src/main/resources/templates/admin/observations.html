@@ -9,7 +9,7 @@
 <p>Unveränderte technische Lesungen. UNKNOWN bedeutet: Beobachtungszeit unbekannt; die Empfangszeit ist separat ausgewiesen. Abgeleitete Besuche stehen auf der Besuchsseite.</p>
 <p>Alle Zeiten in UTC. Rohdaten zeigen die eingefrorene Zuordnung. Die getrennte Zeitprojektion rekonstruiert historische Futterstellen nur bei eindeutiger Zuordnung.</p>
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}"></div>
-<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}"></div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error + ' [' + @diagnostics.form() + ']'}"></div>
 <form class="card" method="get" th:action="${route}" th:object="${filters}">
 <div class="grid">
 <div><label for="from">Von (UTC, einschließlich)</label><input id="from" type="datetime-local" step="0.001" th:field="*{from}"/></div>

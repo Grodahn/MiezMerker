@@ -36,7 +36,9 @@ class FoundationTest {
         assertEquals("UP", mapper.readTree(health.body()).get("status").asText());
         assertEquals("v1", mapper.readTree(get("/api/v1/version").body()).get("apiVersion").asText());
         // Business endpoints require authentication (401), never leak tenant data.
-        assertEquals(401, get("/api/v1/organizations").statusCode());
+        var denied = get("/api/v1/organizations");
+        assertEquals(401, denied.statusCode());
+        assertEquals("MM-BACKEND-401", mapper.readTree(denied.body()).get("code").asText());
         // State-changing requests without a CSRF token are never processed as login:
         // the response is 401/403 (never 200) and no session is established.
         var post = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/auth/login"))
@@ -46,6 +48,7 @@ class FoundationTest {
                 .build(), HttpResponse.BodyHandlers.ofString());
         assertTrue(post.statusCode() == 401 || post.statusCode() == 403,
                 "expected CSRF/auth rejection, got " + post.statusCode());
+        assertEquals("MM-BACKEND-" + post.statusCode(), mapper.readTree(post.body()).get("code").asText());
         assertEquals(401, get("/api/v1/auth/session").statusCode());
     }
 

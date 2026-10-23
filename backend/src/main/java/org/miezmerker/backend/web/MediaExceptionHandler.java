@@ -13,11 +13,12 @@ import org.springframework.web.server.ResponseStatusException;
  * controlled 413 itself; anything larger still fails closed here with the
  * same status and no internal details.
  */
+@org.springframework.core.annotation.Order(0)
 @RestControllerAdvice
 public class MediaExceptionHandler {
     @ExceptionHandler(MultipartException.class)
-    public void oversized(MultipartException e) {
-        throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
-                "photo exceeds the configured maximum upload size");
+    public org.springframework.http.ResponseEntity<org.miezmerker.backend.diagnostics.ApiError> oversized(MultipartException e) {
+        return org.springframework.http.ResponseEntity.status(413).header("Cache-Control", "no-store")
+                .body(org.miezmerker.backend.diagnostics.ApiError.forStatus(413));
     }
 }

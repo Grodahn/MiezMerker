@@ -1,3 +1,4 @@
+import { errorCodes, withCode } from '../diagnostics/errors';
 // Collector synchronization orchestrator (issue #8).
 //
 // Keeps at least these concerns separated:
@@ -123,7 +124,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
   const auth = getAuthState();
   const organizationId = auth.activeOrganizationId;
   if (!auth.user || !organizationId) {
-    emit({ nodeState: 'failed', nodeMessage: 'Bitte anmelden und Organisation wählen.' });
+    emit({ nodeState: 'failed', nodeMessage: withCode('Bitte anmelden und Organisation wählen.', errorCodes.AUTH_SESSION) });
     return view;
   }
 
@@ -236,7 +237,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     } catch (error) {
       operation.assertActive();
       emit({ nodeState: 'failed', fertig: false,
-        nodeMessage: 'Node-Daten sicher übernommen und quittiert. Ausleseereignis konnte nicht dauerhaft erfasst werden. Kein erneuter ACK.',
+        nodeMessage: withCode('Node-Daten sicher übernommen und quittiert. Ausleseereignis konnte nicht dauerhaft erfasst werden. Kein erneuter ACK.', errorCodes.STORAGE_EVENT),
         recordsReceived: engineResult.received, watermark: engineResult.watermark });
       return view;
     }
@@ -378,7 +379,7 @@ export async function runEngineWithDiscovery(
     if (meta?.organizationId === organizationId && meta?.publicKeyX && meta?.publicKeyY) {
       pinned = { nodeId: hello.nodeId, publicKeyX: meta.publicKeyX, publicKeyY: meta.publicKeyY };
     } else {
-      return { ok: false, message: 'Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', owner: hello.owner,
+      return { ok: false, message: withCode('Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', errorCodes.NODE_KEY), owner: hello.owner,
         unclaimed: false, foreign: false, nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
     }
   }

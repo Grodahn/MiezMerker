@@ -79,6 +79,8 @@ jobs:
           TEST_DB_USER: miezmerker
           TEST_DB_PASSWORD: miezmerker
         run: ./mvnw -B -ntp test
+      - name: Check stable diagnostic catalog adapters
+        run: python3 scripts/generate-error-codes.py --check
       - working-directory: app
         run: npm ci
       - name: Check backend spec and generated TypeScript client for drift

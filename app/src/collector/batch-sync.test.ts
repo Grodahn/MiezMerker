@@ -186,10 +186,12 @@ describe('batch orchestration (issue #76)', () => {
 
   test('transport creation failure surfaces as unreachable, not success', async () => {
     const results = await runBatchSync([input('gone')], {
-      createTransport: () => { throw new Error('GATT connect failed'); },
+      createTransport: () => { throw new Error('GATT connect failed; private token/chip'); },
     });
     expect(results[0].kind).toBe('unreachable');
     expect(results[0].nodeId).toBeNull();
+    expect(results[0].message).toContain('MM-UI-001');
+    expect(results[0].message).not.toContain('private token/chip');
   });
 
   test('GATT disconnect cleanup runs even when the node operation throws', async () => {
