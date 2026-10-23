@@ -235,7 +235,7 @@ test('a claim response received after switching organization is saved but never 
 
 
 test('alpha workshop claim needs no signed UTC bootstrap and preserves backend reservation/receipt', async () => {
-  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY','FIELD_ALPHA_PHONE_CLOCK');
+  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', undefined);
   try {
     const transport=new ClaimTransport(); transport.alphaClock=true; transport.trustedTime=false;
     await provisionNode(transport,NODE,'org-a');

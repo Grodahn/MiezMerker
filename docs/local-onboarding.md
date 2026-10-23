@@ -1,4 +1,9 @@
-# Local signed UTC onboarding and issuer setup (#157, #159)
+# Explicit signed UTC onboarding and issuer setup (#157, #159)
+
+For normal checkout/dev field tests use [the default alpha path](issue195-default-clock-policy.md).
+The procedure below is the deliberate signed-time variant; issuer setup/pinning
+is shared by both policies. Start the PWA with `VITE_MM_SECURITY_CLOCK_POLICY=SIGNED_BACKEND_TIME`
+or `npm run build:signed-time`, and set backend `MM_SECURITY_CLOCK_POLICY=SIGNED_BACKEND_TIME`.
 
 Use Windows PowerShell **5.1** or PowerShell **7.2+** (`pwsh`), your existing IntelliJ JDK/Spring Boot,
 PostgreSQL and ESP-IDF 6.1 installation. No OpenSSL or Python crypto package is
@@ -115,7 +120,7 @@ Pop-Location
 & ./scripts/dev-issuer.ps1 -CheckFirmwarePin firmware-esp32/idf/sdkconfig.local-onboarding
 ```
 
-For the existing development-button profile, add `sdkconfig.dev` to the defaults
+For the existing development-button profile, add `sdkconfig.dev;sdkconfig.signed-time` to the defaults
 list and use `MM_DEVELOPMENT_BUILD=ON`; see the board README. The helper
 `firmware-esp32/tools/idf.ps1 -IdfArguments @(...)` supports the same arguments
 without an activated terminal. The default `sdkconfig.defaults` already targets

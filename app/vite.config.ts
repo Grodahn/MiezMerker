@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pwaBrandAssets } from './src/assets/pwa.ts';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
+import { buildClockPolicy } from './scripts/security-clock-policy.mjs';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -11,6 +12,8 @@ const backend = { target: process.env.MIEZMERKER_BACKEND_URL ?? 'http://127.0.0.
 const proxy = { '/api': backend, '^/admin(?:/|\\?|$)': backend,
   '^/(?:admin-(?:shared-care|temporal-times)\\.js|shared-care\\.(?:js|css))$': backend };
 export default defineConfig(({ mode }) => {
+  const policy = buildClockPolicy(mode, loadEnv(mode, process.cwd(), 'VITE_').VITE_MM_SECURITY_CLOCK_POLICY);
+  console.info(`PWA security_clock_policy=${policy} mode=${mode} (compiled into bundle)`);
   // HTTPS is opt-in for physical Android/Web Bluetooth testing. Never require
   // local certificates for standard dev, production builds or CI.
   let https: { key: Buffer; cert: Buffer } | undefined;
@@ -24,6 +27,10 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    define: {
+      'import.meta.env.VITE_MM_SECURITY_CLOCK_POLICY': JSON.stringify(policy),
+      'import.meta.env.VITE_MM_BUILD_ID': JSON.stringify(new Date().toISOString()),
+    },
     build: { assetsInlineLimit: 0 }, // Replaceable artwork stays external and precached, including small SVGs.
     plugins: [react(), VitePWA({
       // Enable the manifest and dev service worker for Android HTTPS installation tests.

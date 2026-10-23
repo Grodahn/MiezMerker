@@ -28,7 +28,8 @@ config MM_FIELD_ALPHA_PHONE_CLOCK
         Explicit field-alpha risk: a former credential/key holder can backdate
         the phone to bypass expiry, including reads, ACK and COMPACT. Does not
         change the issuer pin, credential/PoP/org checks or observation clock.
-        Disabled by default; signed backend UTC remains the secure policy.
+        Enabled by sdkconfig.dev for local field tests. Signed backend UTC is
+        the hardened release policy; profile/cache conflicts fail the build.
 config MM_ISSUER_PUBLIC_KEY_HEX
     string "Independently pinned backend P-256 public key (130 hex characters)"
     default ""

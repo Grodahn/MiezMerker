@@ -315,3 +315,7 @@ budgets and the signed ESP32 receipt interoperability fixture (#146).
 `CollectorSyncEventTest` belongs to `node`, `auth`, and `ingest`: collector-only
 success reports, owner/tenant/admin gates, historical deployment uncertainty,
 current recipient authorization, idempotency/concurrent retries and retention.
+
+`SecurityClockPolicyTest` belongs to `node` and `auth`: default alpha, explicit signed
+configuration and fail-closed release/invalid policy. `NodeClaimTest` explicitly
+checks alpha receipt issuance with UTC-bootstrap health disabled (#195).

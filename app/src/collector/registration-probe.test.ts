@@ -53,7 +53,7 @@ test.each(['MEMBER', 'SYSADMIN'])('%s alone cannot probe claim material', async 
 
 
 test.each([false,true])('alpha preflight still verifies Node claim signature (tampered=%s)', async tamper => {
-  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY','FIELD_ALPHA_PHONE_CLOCK');
+  vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', undefined);
   try {
     hello.mockResolvedValue({ nodeId: NODE, claimState: 0, caps: 0x80 });
     const ble=await transport(tamper);

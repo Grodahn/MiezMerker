@@ -4,6 +4,7 @@ build/
 target/
 node_modules/
 dist/
+/app/dist-signed/
 playwright-report/
 test-results/
 *.log

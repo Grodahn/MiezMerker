@@ -585,3 +585,5 @@ pending (see collector documentation).
 Outstanding: #19 (email invitations), physical BLE validation, and hardware
 adapters. No shared organization secret is distributed; immediate offline
 revocation is deliberately unsupported (ADR-0012).
+
+Local checkout / field testing: [default alpha onboarding and signed release opt-in](docs/issue195-default-clock-policy.md).
