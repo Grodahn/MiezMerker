@@ -55,6 +55,8 @@ class NodeClaimTest {
     @Autowired PasswordEncoder passwords;
     @Autowired TestDatabaseCleaner cleaner;
     @Autowired CredentialIssuerService issuer;
+    @Autowired org.miezmerker.backend.crypto.BootstrapTimeSource bootstrapClock;
+    @Autowired org.miezmerker.backend.crypto.SecurityClockPolicy clockPolicy;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
@@ -170,6 +172,10 @@ class NodeClaimTest {
 
     @Test
     void regularAdminClaimsUnclaimedNodeWithoutPhysicalRelease() throws Exception {
+        assertEquals(org.miezmerker.backend.crypto.SecurityClockPolicy.Mode.FIELD_ALPHA_PHONE_CLOCK, clockPolicy.mode());
+        // No signed UTC proof/health prerequisite for a legitimate alpha claim.
+        bootstrapClock.reportHealthy(false);
+        assertThrows(IllegalStateException.class, () -> bootstrapClock.issuanceMillis());
         Seed s = seed();
         login("admin-a@example.org", "supersecret-password-a");
         NodeKeys n = NodeKeys.fresh();

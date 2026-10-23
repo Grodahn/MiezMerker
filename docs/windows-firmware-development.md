@@ -98,8 +98,10 @@ seed unset values; they do not erase stale dev settings. The existing
 `MM_DEVELOPMENT_BUILD=OFF` guard must remain FATAL for development inputs in
 production. Never copy objects/build directories between profiles. A compiler
 cache may be shared because compiler/configuration inputs are hashed; generated
-objects and sdkconfig files may not. The optional field-alpha policy has its own
-directory/configuration and remains a separate CI variant.
+objects and sdkconfig files may not. The dev profile now defaults to alpha (#195). A signed dev opt-in appends
+`sdkconfig.signed-time` and uses its own directory/configuration. The field-alpha
+variant without dev inputs needs explicit `MM_ALLOW_FIELD_ALPHA=ON`. See
+[the profile/cache contract](issue195-default-clock-policy.md).
 
 Use `build size` in place of `app` for a justified local image gate: configuration,
 partition, bootloader/toolchain changes, size risk, or preparing a hardware image.
@@ -160,7 +162,7 @@ profile arguments. Preserve errors/exit codes and inspect the first failing phas
 ## Final gate
 
 On the exact final PR head, require the existing complete GitHub CI: full
-production, dev **and field-alpha** `build size`, partition/size checks, config
+production, dev, field-alpha **and signed-dev** `build size`, partition/size checks, config
 assertions, dev-only mock-symbol exclusion, intentional release-guard rejection,
 host/offline credential/claim/security-clock coverage, PostgreSQL and browser E2E.
 No `app`-only replacement, skipped gate, weaker profile, or CI change is authorized

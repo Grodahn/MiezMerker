@@ -1,5 +1,6 @@
 import { DiagnosticError, errorCodes } from '../diagnostics/errors';
 import type { NodeTransport } from '../platform/node-transport';
+import { securityClockPolicy } from '../platform/security-clock-policy';
 import { CAP_FIELD_ALPHA_PHONE_CLOCK, decodeFrame, encodeFrame, Opcode } from './ble-codec';
 import type { StoredTimeEvidence } from './time-evidence';
 
@@ -43,18 +44,19 @@ export async function collectPhoneTime(transport: NodeTransport, nodeId: string,
   };
 }
 
-// Independent from PHONE_ESTIMATE evidence. Both builds must explicitly opt in;
-// a capability never silently weakens a production PWA's security policy.
+// Independent from PHONE_ESTIMATE evidence. Never fall back across policies.
 export function usesAlphaPhoneClock(caps: number): boolean {
-  const alpha = import.meta.env.VITE_MM_SECURITY_CLOCK_POLICY === 'FIELD_ALPHA_PHONE_CLOCK';
+  const policy = securityClockPolicy();
+  const alpha = policy === 'FIELD_ALPHA_PHONE_CLOCK';
   if (Boolean(caps & CAP_FIELD_ALPHA_PHONE_CLOCK) !== alpha) {
-    throw new DiagnosticError(errorCodes.CLOCK_POLICY, 'Sicherheitszeit-Policy stimmt nicht überein. FIELD_ALPHA_PHONE_CLOCK muss in PWA und Firmware ausdrücklich aktiviert sein.');
+    const firmware = caps & CAP_FIELD_ALPHA_PHONE_CLOCK ? 'FIELD_ALPHA_PHONE_CLOCK' : 'SIGNED_BACKEND_TIME';
+    throw new DiagnosticError(errorCodes.CLOCK_POLICY, `Sicherheitszeit-Policy stimmt nicht überein: PWA=${policy}, Firmware=${firmware}. Passendes Profil bauen/flashen; PWA neu starten und Service-Worker-Update übernehmen.`);
   }
   return alpha;
 }
 
 export async function supplyAlphaPhoneClock(transport: NodeTransport, assertActive: () => void = () => {}): Promise<void> {
-  if (import.meta.env.VITE_MM_SECURITY_CLOCK_POLICY !== 'FIELD_ALPHA_PHONE_CLOCK') throw new DiagnosticError(errorCodes.CLOCK_POLICY, 'FIELD_ALPHA_PHONE_CLOCK deaktiviert.');
+  if (securityClockPolicy() !== 'FIELD_ALPHA_PHONE_CLOCK') throw new DiagnosticError(errorCodes.CLOCK_POLICY, 'FIELD_ALPHA_PHONE_CLOCK deaktiviert.');
   assertActive();
   const utc = Date.now();
   if (!Number.isSafeInteger(utc) || utc <= 0) throw new DiagnosticError(errorCodes.CLOCK_SNAPSHOT, 'Handyzeit nicht darstellbar.');

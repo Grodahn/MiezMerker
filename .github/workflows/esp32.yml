@@ -14,7 +14,7 @@ jobs:
     container: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
     strategy:
       matrix:
-        variant: [production, dev, field-alpha]
+        variant: [production, dev, field-alpha, signed-dev]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Persistent compiler cache (#144): the pinned IDF container already
@@ -45,7 +45,7 @@ jobs:
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: .ccache-esp32c3-${{ matrix.variant }}
-          key: esp32c3-ccache-v1-${{ matrix.variant }}-${{ hashFiles('.github/workflows/esp32.yml', 'firmware-esp32/idf/sdkconfig.defaults', 'firmware-esp32/idf/sdkconfig.dev', 'firmware-esp32/idf/sdkconfig.field-alpha', 'firmware-esp32/idf/CMakeLists.txt', 'firmware-esp32/idf/dependencies.lock', 'firmware-esp32/idf/partitions.csv') }}
+          key: esp32c3-ccache-v1-${{ matrix.variant }}-${{ hashFiles('.github/workflows/esp32.yml', 'firmware-esp32/idf/sdkconfig.defaults', 'firmware-esp32/idf/sdkconfig.dev', 'firmware-esp32/idf/sdkconfig.field-alpha', 'firmware-esp32/idf/sdkconfig.signed-time', 'firmware-esp32/idf/clock_policy.cmake', 'firmware-esp32/idf/CMakeLists.txt', 'firmware-esp32/idf/dependencies.lock', 'firmware-esp32/idf/partitions.csv') }}
           restore-keys: |
             esp32c3-ccache-v1-${{ matrix.variant }}-
       - name: Build and check image/partition sizes (no hardware)
@@ -67,22 +67,24 @@ jobs:
           python -m unittest discover -s firmware-esp32/tools -p 'test_*.py'
           defaults=sdkconfig.defaults
           development=OFF
+          alpha_acceptance=OFF
           if [ "$VARIANT" = dev ]; then defaults="$defaults;sdkconfig.dev"; development=ON; fi
-          if [ "$VARIANT" = field-alpha ]; then defaults="$defaults;sdkconfig.field-alpha"; fi
+          if [ "$VARIANT" = field-alpha ]; then defaults="$defaults;sdkconfig.field-alpha"; alpha_acceptance=ON; fi
+          if [ "$VARIANT" = signed-dev ]; then defaults="$defaults;sdkconfig.dev;sdkconfig.signed-time"; development=ON; fi
           idf.py -C firmware-esp32/idf -B "$GITHUB_WORKSPACE/firmware-esp32/idf/build-ci-$VARIANT" \
             -D "SDKCONFIG=sdkconfig.local-ci-$VARIANT" \
-            -D "SDKCONFIG_DEFAULTS=$defaults" -D "MM_DEVELOPMENT_BUILD=$development" build size
+            -D "SDKCONFIG_DEFAULTS=$defaults" -D "MM_DEVELOPMENT_BUILD=$development" -D "MM_ALLOW_FIELD_ALPHA=$alpha_acceptance" build size
           python - "$VARIANT" <<'PY'
           import json, pathlib, subprocess, sys
           variant = sys.argv[1]
           config = json.loads(pathlib.Path(f'firmware-esp32/idf/build-ci-{variant}/config/sdkconfig.json').read_text())
           assert config['IDF_TARGET'] == 'esp32c3'
-          assert bool(config.get('MM_FIELD_ALPHA_PHONE_CLOCK')) == (variant == 'field-alpha')
-          assert bool(config.get('MM_DEV_SYNTHETIC_INPUT')) == (variant == 'dev')
-          assert bool(config.get('MM_DEV_GPIO_RFID')) == (variant == 'dev')
+          assert bool(config.get('MM_FIELD_ALPHA_PHONE_CLOCK')) == (variant in ('dev', 'field-alpha'))
+          assert bool(config.get('MM_DEV_SYNTHETIC_INPUT')) == (variant in ('dev', 'signed-dev'))
+          assert bool(config.get('MM_DEV_GPIO_RFID')) == (variant in ('dev', 'signed-dev'))
           elf = f'firmware-esp32/idf/build-ci-{variant}/miezmerker-node.elf'
           symbols = subprocess.check_output(['riscv32-esp-elf-nm', '-C', elf], text=True)
-          assert ('DevButtonReader::poll' in symbols) == (variant == 'dev')
+          assert ('DevButtonReader::poll' in symbols) == (variant in ('dev', 'signed-dev'))
           if variant == 'dev':
               result = subprocess.run(['idf.py', '-C', 'firmware-esp32/idf',
                   '-B', str(pathlib.Path('firmware-esp32/idf/build-ci-release-reject').resolve()),
@@ -94,6 +96,9 @@ jobs:
               assert result.returncode != 0 and 'Development inputs forbidden in release' in result.stdout
               print('PASS release profile rejects development sdkconfig')
           PY
+          if [ "$VARIANT" = dev ]; then
+            python firmware-esp32/tools/check_clock_profiles.py sdkconfig.local-ci-dev
+          fi
           echo "--- ccache statistics ($VARIANT) ---"
           ccache --show-stats || true
           echo "cache directory size:"

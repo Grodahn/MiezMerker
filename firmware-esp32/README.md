@@ -1,3 +1,8 @@
+> Local dev / field tests now default to **FIELD_ALPHA_PHONE_CLOCK** (#195).
+> Follow [checkout → claim](../docs/issue195-default-clock-policy.md) for the
+> standard path, old SDKCONFIG recovery, risk and explicit signed UTC opt-in.
+> Production profiles below remain signed; pair them with a signed PWA build.
+
 # ESP32-C3 SuperMini board port (#108)
 
 Serial boot logs include `firmware_git=<short-commit>[-dirty]`; the existing
@@ -162,9 +167,9 @@ additionally require the pinned `kid=miezmerker-issuer-v1`,
 Any ready UNCLAIMED board can be registered by an active organization ADMIN
 through the PWA's **Napf registrieren** action (#154), in production and DEV.
 No BOOT press, power-on gesture, QR code or special role is required.
-Registration forwards a device-signed time challenge and backend-signed proof
-when trusted UTC is missing. Initial receipt commit requires independently
-pinned ES256 verification, strict bounded-time validity and UUID/key binding.
+In signed mode registration forwards a device-signed time challenge and backend-signed
+proof when trusted UTC is missing; dev alpha supplies untrusted session phone time. Initial receipt commit requires independently
+pinned ES256 verification, policy-specific iat/exp validity and UUID/key binding.
 Same-owner delivery remains idempotent. Reconnect/Challenge constructs the
 authorizer from the committed owner. All claim characteristics are registered.
 

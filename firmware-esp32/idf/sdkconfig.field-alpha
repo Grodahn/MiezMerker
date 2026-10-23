@@ -1,2 +1,2 @@
-# Explicit issue #171 field-alpha security tradeoff; never a default.
+# Field-alpha profile without development input devices; requires explicit release gate.
 CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK=y

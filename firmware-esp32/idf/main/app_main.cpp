@@ -138,7 +138,7 @@ extern "C" void app_main() {
     SessionPhoneClock alpha_clock(clock);
     clock.attach_alpha_phone_clock(&alpha_clock);
     router.set_alpha_phone_clock(&alpha_clock);
-    ESP_LOGW(tag, "FIELD_ALPHA_PHONE_CLOCK: untrusted session phone time; clock manipulation bypasses credential expiry including ACK/COMPACT");
+    ESP_LOGW(tag, "security_clock_policy=FIELD_ALPHA_PHONE_CLOCK: untrusted session phone time; clock manipulation bypasses credential expiry including ACK/COMPACT");
 #else
     ESP_LOGI(tag, "security_clock_policy=SIGNED_BACKEND_TIME");
 #endif
