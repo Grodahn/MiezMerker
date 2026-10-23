@@ -17,7 +17,7 @@ es wird kein Name aus der E-Mail abgeleitet oder gespeichert.</p>
      will be added here as a POST form. No invite flow is implemented in #34. -->
 
 <div th:if="${success != null}" class="alert alert-info" th:text="${success}">Erfolg</div>
-<div th:if="${error != null}" class="alert alert-error" th:text="${error}">Fehler</div>
+<div th:if="${error != null}" class="alert alert-error" th:text="${error + ' [' + @diagnostics.form() + ']'}">Fehler</div>
 
 <div th:if="${#lists.isEmpty(members)}" class="card">
 <p><strong>Keine Mitglieder sichtbar.</strong></p>

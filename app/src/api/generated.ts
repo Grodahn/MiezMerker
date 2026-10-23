@@ -1083,6 +1083,13 @@ export interface components {
             lastSeenAt?: string;
             revokedAt?: string;
         };
+        DiagnosticError: {
+            code: string;
+            error: string;
+            message: string;
+            /** Format: int32 */
+            status: number;
+        };
         /** @description One chip's activity at its frozen feeding site */
         FeedingSiteCatActivityView: {
             /**
@@ -1611,7 +1618,17 @@ export interface components {
             startAtMillis?: string;
         };
     };
-    responses: never;
+    responses: {
+        /** @description Safe diagnostic error. HTTP status and authorization boundaries are unchanged. */
+        DiagnosticError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DiagnosticError"];
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -1637,6 +1654,7 @@ export interface operations {
                     "application/json": components["schemas"]["CsrfView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     login: {
@@ -1661,6 +1679,7 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     logout: {
@@ -1679,6 +1698,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getSession: {
@@ -1699,6 +1719,7 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     reportCollectorSync: {
@@ -1723,6 +1744,7 @@ export interface operations {
                     "application/json": components["schemas"]["CollectorSyncEventReceipt"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getCredentialIssuer: {
@@ -1743,6 +1765,7 @@ export interface operations {
                     "application/json": components["schemas"]["IssuerView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listDevices: {
@@ -1763,6 +1786,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeviceView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     registerDevice: {
@@ -1787,6 +1811,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeviceView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     issueOfflineCredential: {
@@ -1813,6 +1838,7 @@ export interface operations {
                     "application/json": components["schemas"]["CredentialView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     revokeDevice: {
@@ -1835,6 +1861,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeviceView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getHealth: {
@@ -1855,6 +1882,7 @@ export interface operations {
                     "application/json": components["schemas"]["HealthResponse"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listNodes: {
@@ -1877,6 +1905,7 @@ export interface operations {
                     "application/json": components["schemas"]["NodeView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     ingestNodeBootEvidence: {
@@ -1901,6 +1930,7 @@ export interface operations {
                     "application/json": components["schemas"]["BootReceipt"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     claimNode: {
@@ -1925,6 +1955,7 @@ export interface operations {
                     "application/json": components["schemas"]["ClaimReceiptView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     ingestPhoneTimeEvidence: {
@@ -1949,6 +1980,7 @@ export interface operations {
                     "application/json": components["schemas"]["Receipt"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     issueNodeTimeProof: {
@@ -1973,6 +2005,7 @@ export interface operations {
                     "application/json": components["schemas"]["NodeTimeProofView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     ingestNodeTimeEvidence: {
@@ -1997,6 +2030,7 @@ export interface operations {
                     "application/json": components["schemas"]["Receipt"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getNode: {
@@ -2019,6 +2053,7 @@ export interface operations {
                     "application/json": components["schemas"]["NodeView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     updateNode: {
@@ -2045,6 +2080,7 @@ export interface operations {
                     "application/json": components["schemas"]["NodeView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getNodeOwner: {
@@ -2067,6 +2103,7 @@ export interface operations {
                     "application/json": components["schemas"]["NodeOwnerView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listNodeTemporalProjections: {
@@ -2093,6 +2130,7 @@ export interface operations {
                     "application/json": components["schemas"]["Page"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listObservations: {
@@ -2123,6 +2161,7 @@ export interface operations {
                     "application/json": components["schemas"]["RawObservationView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     ingestObservations: {
@@ -2147,6 +2186,7 @@ export interface operations {
                     "application/json": components["schemas"]["IngestBatchResponse"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getObservation: {
@@ -2169,6 +2209,7 @@ export interface operations {
                     "application/json": components["schemas"]["RawObservationView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listMyOrganizations: {
@@ -2189,6 +2230,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrganizationView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     createOrganization: {
@@ -2213,6 +2255,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrganizationView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listDiscoverableOrganizations: {
@@ -2233,6 +2276,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrganizationDirectoryEntry"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getOrganization: {
@@ -2255,6 +2299,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrganizationView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listCats: {
@@ -2277,6 +2322,7 @@ export interface operations {
                     "application/json": components["schemas"]["CatView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     createCat: {
@@ -2303,6 +2349,7 @@ export interface operations {
                     "application/json": components["schemas"]["CatView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getCat: {
@@ -2326,6 +2373,7 @@ export interface operations {
                     "application/json": components["schemas"]["CatView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     deleteCat: {
@@ -2347,6 +2395,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     updateCat: {
@@ -2374,6 +2423,7 @@ export interface operations {
                     "application/json": components["schemas"]["CatView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getCatPhoto: {
@@ -2399,6 +2449,7 @@ export interface operations {
                     "image/jpeg": string;
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     putCatPhoto: {
@@ -2429,6 +2480,7 @@ export interface operations {
                     "application/json": components["schemas"]["CatPhotoMeta"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     deleteCatPhoto: {
@@ -2450,6 +2502,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listChipActivity: {
@@ -2472,6 +2525,7 @@ export interface operations {
                     "application/json": components["schemas"]["ChipActivityView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listDeployments: {
@@ -2496,6 +2550,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeploymentView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     createDeployment: {
@@ -2522,6 +2577,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeploymentView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     moveDeployment: {
@@ -2548,6 +2604,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeploymentView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getDeployment: {
@@ -2571,6 +2628,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeploymentView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     deleteDeployment: {
@@ -2592,6 +2650,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     closeDeployment: {
@@ -2619,6 +2678,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeploymentView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listFeedingSites: {
@@ -2641,6 +2701,7 @@ export interface operations {
                     "application/json": components["schemas"]["FeedingSiteView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     createFeedingSite: {
@@ -2667,6 +2728,7 @@ export interface operations {
                     "application/json": components["schemas"]["FeedingSiteView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getFeedingSite: {
@@ -2690,6 +2752,7 @@ export interface operations {
                     "application/json": components["schemas"]["FeedingSiteView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     deleteFeedingSite: {
@@ -2711,6 +2774,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     updateFeedingSite: {
@@ -2738,6 +2802,7 @@ export interface operations {
                     "application/json": components["schemas"]["FeedingSiteView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listFeedingSiteCatActivity: {
@@ -2764,6 +2829,7 @@ export interface operations {
                     "application/json": components["schemas"]["FeedingSiteCatActivityView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listCollectorSyncRecipients: {
@@ -2789,6 +2855,7 @@ export interface operations {
                     "application/json": components["schemas"]["CollectorSyncRecipients"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listMembers: {
@@ -2811,6 +2878,7 @@ export interface operations {
                     "application/json": components["schemas"]["MemberView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     createMember: {
@@ -2837,6 +2905,7 @@ export interface operations {
                     "application/json": components["schemas"]["MemberView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     updateMember: {
@@ -2864,6 +2933,7 @@ export interface operations {
                     "application/json": components["schemas"]["MemberView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listNodeObservations: {
@@ -2890,6 +2960,7 @@ export interface operations {
                     "application/json": components["schemas"]["RawObservationView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listSharePolicies: {
@@ -2912,6 +2983,7 @@ export interface operations {
                     "application/json": components["schemas"]["PolicyView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     upsertSharePolicy: {
@@ -2939,6 +3011,7 @@ export interface operations {
                     "application/json": components["schemas"]["PolicyView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     revokeSharePolicy: {
@@ -2962,6 +3035,7 @@ export interface operations {
                     "application/json": components["schemas"]["RevokeSharePolicyResponse"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getSharedCarePhoto: {
@@ -2988,6 +3062,7 @@ export interface operations {
                     "image/jpeg": string;
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     resolveSharedCare: {
@@ -3014,6 +3089,7 @@ export interface operations {
                     "application/json": components["schemas"]["SharedCareProfilePage"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listSharedCareVisits: {
@@ -3040,6 +3116,7 @@ export interface operations {
                     "application/json": components["schemas"]["SharedCareVisitPage"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     updateOrganizationVisibility: {
@@ -3066,6 +3143,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrganizationView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listVisits: {
@@ -3096,6 +3174,7 @@ export interface operations {
                     "application/json": components["schemas"]["VisitView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     latestVisitsPerFeedingSite: {
@@ -3120,6 +3199,7 @@ export interface operations {
                     "application/json": components["schemas"]["LatestSiteVisitView"][];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     recomputeVisits: {
@@ -3146,6 +3226,7 @@ export interface operations {
                     "application/json": components["schemas"]["RecomputeVisitsResponse"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     listTemporalVisits: {
@@ -3172,6 +3253,7 @@ export interface operations {
                     "*/*": components["schemas"]["TemporalVisitPage"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getVisit: {
@@ -3195,6 +3277,7 @@ export interface operations {
                     "application/json": components["schemas"]["VisitView"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
     getVersion: {
@@ -3215,6 +3298,7 @@ export interface operations {
                     "application/json": components["schemas"]["VersionResponse"];
                 };
             };
+            default: components["responses"]["DiagnosticError"];
         };
     };
 }

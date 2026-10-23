@@ -1,3 +1,4 @@
+import { errorCodes, safeFailure } from '../diagnostics/errors';
 import { useEffect, useRef, useState } from 'react';
 import { Status } from '../ui/Status';
 import { errorStatus, statusMessages } from '../ui/status-messages';
@@ -43,7 +44,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     // resumable name/deployment state (offline name saving stays possible).
     const state = await fetchNodeSetupState(organizationId, nodeId).catch((e: unknown) => {
       if (current !== revision.current) return null;
-      setLoadError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Laden fehlgeschlagen.');
+      setLoadError(e instanceof SetupError ? e.message : safeFailure(e, 'Laden fehlgeschlagen.'));
       return null;
     });
     if (current !== revision.current) return;
@@ -70,7 +71,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     } catch (e) {
       if (current !== revision.current) return;
       setSites([]);
-      setSitesError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Futterstellen konnten nicht geladen werden.');
+      setSitesError(e instanceof SetupError ? e.message : safeFailure(e, 'Futterstellen konnten nicht geladen werden.'));
     } finally {
       if (current === revision.current) setLoading(false);
     }
@@ -118,10 +119,10 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
           props.onComplete?.();
         }
       } catch (e) {
-        setNameError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Status-Refresh fehlgeschlagen.');
+        setNameError(e instanceof SetupError ? e.message : safeFailure(e, 'Status-Refresh fehlgeschlagen.'));
       }
     } catch (e) {
-      setNameError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Speichern fehlgeschlagen.');
+      setNameError(e instanceof SetupError ? e.message : safeFailure(e, 'Speichern fehlgeschlagen.'));
     } finally {
       setNameBusy(false);
     }
@@ -160,10 +161,10 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
           props.onComplete?.();
         }
       } catch (e) {
-        setDeployError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Status-Refresh fehlgeschlagen.');
+        setDeployError(e instanceof SetupError ? e.message : safeFailure(e, 'Status-Refresh fehlgeschlagen.'));
       }
     } catch (e) {
-      setDeployError(e instanceof SetupError ? e.message : e instanceof Error ? e.message : 'Zuordnung fehlgeschlagen.');
+      setDeployError(e instanceof SetupError ? e.message : safeFailure(e, 'Zuordnung fehlgeschlagen.'));
     } finally {
       setDeployBusy(false);
     }
@@ -187,7 +188,7 @@ export function NodeSetupWizard(props: { organizationId: string; nodeId: string;
     {!props.guided && <p>Node <code>{nodeId}</code></p>}
     {claimed
       ? <Status kind="success" title="Napf registriert!" message="Der Napf wurde sicher registriert."/>
-      : <Status kind="error" title="Napf noch nicht registriert" message="Node ist noch nicht als CLAIMED bestätigt. Bitte zuerst claimen; diese Einrichtung wiederholt kein Claiming."/>}
+      : <Status kind="error" code={errorCodes.SYNC_UNCLAIMED} title="Napf noch nicht registriert" message="Node ist noch nicht als CLAIMED bestätigt. Bitte zuerst claimen; diese Einrichtung wiederholt kein Claiming."/>}
     {!complete && claimed && <Status kind="info" title="Einrichtung noch offen" message="Dieser Napf wurde registriert, aber noch nicht vollständig eingerichtet."/>}
     {complete
       ? <Status kind="success" title="Einrichtung abgeschlossen!" message={`${savedName ? `Napf „${savedName}“` : 'Napf'}${deployment ? ' ist einer Futterstelle zugeordnet.' : '.'}`}/>

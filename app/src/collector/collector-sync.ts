@@ -1,3 +1,4 @@
+import { errorCodes, withCode, safeFailure } from '../diagnostics/errors';
 // Collector synchronization orchestrator (issue #8).
 //
 // Keeps at least these concerns separated:
@@ -123,7 +124,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
   const auth = getAuthState();
   const organizationId = auth.activeOrganizationId;
   if (!auth.user || !organizationId) {
-    emit({ nodeState: 'failed', nodeMessage: 'Bitte anmelden und Organisation wählen.' });
+    emit({ nodeState: 'failed', nodeMessage: withCode('Bitte anmelden und Organisation wählen.', errorCodes.AUTH_SESSION) });
     return view;
   }
 
@@ -137,7 +138,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     try {
       transport = await createTransport();
     } catch (e) {
-      emit({ nodeState: 'failed', nodeMessage: e instanceof Error ? e.message : 'Kein Node ausgewählt.' });
+      emit({ nodeState: 'failed', nodeMessage: safeFailure(e, 'Kein Node ausgewählt.', errorCodes.BLE_CONNECTION) });
       return view;
     }
     operation = bindNodeOperation(transport, auth.user.userId, organizationId, callbacks.signal);
@@ -180,7 +181,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       emit({ credentialState: resolved.renewed ? 'Offline-Credential erneuert.' : 'Offline-Credential gültig.' });
     } catch (e) {
       const message = e instanceof CredentialError ? e.message
-        : e instanceof Error ? e.message : 'Credential-Fehler.';
+        : safeFailure(e, 'Credential-Fehler.', errorCodes.AUTH_CREDENTIAL);
       emit({ nodeState: 'failed', nodeMessage: message, credentialState: message });
       return view;
     } finally {
@@ -236,7 +237,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     } catch (error) {
       operation.assertActive();
       emit({ nodeState: 'failed', fertig: false,
-        nodeMessage: 'Node-Daten sicher übernommen und quittiert. Ausleseereignis konnte nicht dauerhaft erfasst werden. Kein erneuter ACK.',
+        nodeMessage: withCode('Node-Daten sicher übernommen und quittiert. Ausleseereignis konnte nicht dauerhaft erfasst werden. Kein erneuter ACK.', errorCodes.STORAGE_EVENT),
         recordsReceived: engineResult.received, watermark: engineResult.watermark });
       return view;
     }
@@ -378,7 +379,7 @@ export async function runEngineWithDiscovery(
     if (meta?.organizationId === organizationId && meta?.publicKeyX && meta?.publicKeyY) {
       pinned = { nodeId: hello.nodeId, publicKeyX: meta.publicKeyX, publicKeyY: meta.publicKeyY };
     } else {
-      return { ok: false, message: 'Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', owner: hello.owner,
+      return { ok: false, message: withCode('Node-Identität offline unbekannt. Bitte einmal online synchronisieren.', errorCodes.NODE_KEY), owner: hello.owner,
         unclaimed: false, foreign: false, nodeId: hello.nodeId, incarnation: hello.incarnation, received: 0, watermark: '0' };
     }
   }

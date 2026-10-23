@@ -1,3 +1,4 @@
+import { errorCodes } from '../diagnostics/errors';
 // Batch result presentation for issue #76.
 //
 // Uses the shared Status components (#65) and the centralized asset registry
@@ -139,13 +140,13 @@ export function BatchNodeCard({ result, context, contextLoading, isAdmin, claimB
     </Status>;
   }
   if (result.kind === 'foreign') {
-    return <Status kind="error" title={status.title} scope="Vor-Ort-Sync"
+    return <Status kind="error" code={errorCodes.AUTH_DENIED} title={status.title} scope="Vor-Ort-Sync"
       message={`${result.message} Keine Beobachtungen abgerufen.`}/>;
   }
   if (result.kind === 'cancelled' || result.kind === 'skipped') {
     return <Status kind="info" title={status.title} scope="Vor-Ort-Sync" message={result.message}/>;
   }
-  return <Status kind="error" title={status.title} scope="Vor-Ort-Sync" message={result.message || 'Vorgang nicht abgeschlossen.'}>
+  return <Status kind="error" code={result.kind === 'unauthorized' ? errorCodes.AUTH_DENIED : result.kind === 'unreachable' ? errorCodes.BLE_CONNECTION : errorCodes.UI_UNKNOWN} title={status.title} scope="Vor-Ort-Sync" message={result.message || 'Vorgang nicht abgeschlossen.'}>
     <p>Browser-Gerät: „{result.browserLabel}“ (unverifizierter Hinweis){result.nodeId ? <> · Node: <code>{result.nodeId}</code></> : null}</p>
     {result.kind === 'unauthorized' && <p>Bitte mit Internet im Konto anmelden und Offline-Berechtigung erneuern, dann erneut versuchen.</p>}
     {result.kind === 'unreachable' && <p>{serviceDiscoveryFailure ? serviceDiscoveryRecovery : 'Bitte Napf einschalten, Smartphone näher heranhalten und Bluetooth prüfen. Bereits gespeicherte Records werden idempotent wiederholt.'}</p>}

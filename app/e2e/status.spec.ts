@@ -43,6 +43,8 @@ test('Bluetooth blocker is visible with diagnostics closed', async ({ page }) =>
   await page.addInitScript(() => Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: undefined }));
   await page.goto('/sync');
   await expect(page.getByRole('alert')).toContainText('Bluetooth wird nicht unterstützt');
+  await expect(page.getByRole('alert')).toContainText('[MM-BLE-004]');
+  await page.screenshot({ path: test.info().outputPath('bluetooth-error-code.png') });
   await expect(page.getByRole('button', { name: 'Näpfe auslesen' })).toBeDisabled();
   await expect(page.locator('.sync-technical')).not.toHaveAttribute('open');
 });

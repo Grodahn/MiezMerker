@@ -41,6 +41,7 @@ public class AdminTemporalVisitsController {
                         page.items().stream().map(i -> i.feedingSiteId()).toList()));
             }
             catch(ResponseStatusException e) {
+                model.addAttribute("errorCode", org.miezmerker.backend.diagnostics.ApiError.forStatus(e.getStatusCode().value()).code());
                 if(e.getStatusCode()==HttpStatus.BAD_REQUEST) model.addAttribute("error","Bitte Chip-ID und Seitenauswahl prüfen.");
                 else if(e.getStatusCode()==HttpStatus.CONFLICT) model.addAttribute("error","Neue Beobachtungen eingegangen. Bitte die Seite erneut laden.");
                 else if(e.getStatusCode()==HttpStatus.SERVICE_UNAVAILABLE) model.addAttribute("error","Der Zeitverlauf kann derzeit nicht vollständig berechnet werden. Bitte die Verwaltung kontaktieren.");

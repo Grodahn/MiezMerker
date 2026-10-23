@@ -23,10 +23,12 @@ public class NodeTimeController {
     private final NodeTimeRateLimiter limits;
     public NodeTimeController(NodeTimeService service, NodeTimeRateLimiter limits) { this.service=service; this.limits=limits; }
     @ExceptionHandler(NodeTimeService.Unavailable.class)
-    public ResponseEntity<Void> unavailable(NodeTimeService.Unavailable error) {
+    public ResponseEntity<org.miezmerker.backend.diagnostics.ApiError> unavailable(NodeTimeService.Unavailable error) {
         var response = ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Cache-Control", "no-store");
         if (error.diagnostic() != null) response.header("X-MM-Time-Bootstrap", error.diagnostic());
-        return response.build();
+        var errorBody = org.miezmerker.backend.diagnostics.ApiError.forStatus(503);
+        return response.body(new org.miezmerker.backend.diagnostics.ApiError(503, errorBody.error(),
+                org.miezmerker.backend.diagnostics.ErrorCodes.API_NODETIMECONTROLLER_ISSUE_503, errorBody.message()));
     }
     @PostMapping(consumes="application/json",produces="application/json")
     @Operation(operationId="issueNodeTimeProof",summary="Issue challenge-bound UTC proof; ACTIVE owner member or pre-claim ADMIN",

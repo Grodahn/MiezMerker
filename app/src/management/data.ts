@@ -1,11 +1,12 @@
+import { DiagnosticError, apiErrorCode, errorCodes, safeFailure } from '../diagnostics/errors';
 import { useEffect, useRef, useState } from 'react';
 import { contextSignal } from './context';
 import { fetchCsrfToken, markSessionExpired } from '../platform/auth';
 
 export function errorMessage(failure: unknown): string {
-  return failure instanceof Error ? failure.message : 'Daten konnten nicht geladen werden.';
+  return safeFailure(failure, 'Daten konnten nicht geladen werden.');
 }
-export function result<T>({ data, response }: { data?: T; response: Response }): T {
+export function result<T>({ data, response, error }: { data?: T; response: Response; error?: unknown }): T {
   if (!response.ok) {
     // #31: an expired/missing backend session must immediately hide protected
     // organization data. Central transition forces the app-shell gate back to
@@ -20,9 +21,9 @@ export function result<T>({ data, response }: { data?: T; response: Response }):
       404: 'Eintrag in dieser Organisation nicht verfügbar.',
       409: 'Konflikt: Chip bereits vorhanden oder zeitliche Zuordnung überlappt. Bitte neu laden.',
     };
-    throw new Error(messages[response.status] ?? 'Server nicht erreichbar. Bitte erneut versuchen.');
+    throw new DiagnosticError(apiErrorCode(response.status, error), messages[response.status] ?? 'Server nicht erreichbar. Bitte erneut versuchen.');
   }
-  if (data === undefined) throw new Error('Serverantwort unvollständig. Bitte erneut versuchen.');
+  if (data === undefined) throw new DiagnosticError(errorCodes.HTTP_UNKNOWN, 'Serverantwort unvollständig. Bitte erneut versuchen.');
   return data;
 }
 export function requestOptions(signal: AbortSignal) {

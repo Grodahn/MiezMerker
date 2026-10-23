@@ -1,3 +1,4 @@
+import { errorCodes } from './error-codes.generated.js';
 // Shared read-only presenter for the field PWA and server-rendered Admin.
 // Foreign projections exist only in this live DOM/request scope, never in storage.
 export function mountSharedCare(root, { organizationId, chipId, api, controllerFactory = () => new AbortController(), pageSize = 5, onReturn }) {
@@ -165,7 +166,7 @@ export function mountSharedCare(root, { organizationId, chipId, api, controllerF
       restoreFocus();
     } catch {
       if (!signal.aborted && pending === controller && !disposed) {
-        clear('Geteilte Informationen nicht verfügbar. Verbindung, Sitzung oder Berechtigung prüfen.');
+        clear('Geteilte Informationen nicht verfügbar. Verbindung, Sitzung oder Berechtigung prüfen. [' + errorCodes.ADMIN_ASYNC + ']');
         button('Erneut prüfen', () => void load());
         restoreFocus();
       }

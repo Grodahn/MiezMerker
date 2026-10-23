@@ -1,3 +1,4 @@
+import { errorCodes, withCode } from '../diagnostics/errors';
 // Field-PWA initial bowl setup after cryptographic claiming (issue #53).
 //
 // Claiming (provision-node.ts, #18) and business setup are separate phases.
@@ -31,7 +32,12 @@ export class SetupError extends Error {
     readonly kind: SetupFailureKind,
     message: string,
   ) {
-    super(message);
+    super(withCode(message, {
+      'forbidden-role': errorCodes.AUTH_DENIED, unauthorized: errorCodes.AUTH_CHANGED,
+      offline: errorCodes.CLAIM_OFFLINE, validation: errorCodes.ADMIN_FORM,
+      'conflict-existing': errorCodes.HTTP_CONFLICT, foreign: errorCodes.AUTH_DENIED,
+      backend: errorCodes.HTTP_UNKNOWN,
+    }[kind]));
     this.name = 'SetupError';
   }
 }
@@ -173,7 +179,7 @@ export async function fetchNodeSetupState(
     }
     const node = nodeData;
     if (node.organizationId && node.organizationId !== organizationId) {
-      throw new SetupError('foreign', `Node ${nodeId} gehört einer anderen Organisation.`);
+      throw new SetupError('foreign', 'Node in dieser Organisation nicht verfügbar.');
     }
     const depRes = await api.GET('/api/v1/organizations/{organizationId}/deployments', {
       signal,

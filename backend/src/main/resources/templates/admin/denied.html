@@ -29,6 +29,6 @@
 <p th:if="${userLabel == null}"><a th:href="@{/admin/login}">Zum Admin-Login</a></p>
 <p th:if="${userLabel != null}"><a th:href="@{/admin/login}">Erneut anmelden</a> · <a th:href="@{/admin/}">Übersicht versuchen</a></p>
 </div>
-</main>
+<p><code th:text="${' [' + @diagnostics.denied() + ']'}"></code></p></main>
 </body>
 </html>

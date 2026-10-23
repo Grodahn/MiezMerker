@@ -1,3 +1,4 @@
+import { errorCodes } from './diagnostics/errors';
 import { useEffect, useSyncExternalStore } from 'react';
 import { CollectorShell } from './collector/CollectorShell';
 import { LoginView } from './platform/LoginView';
@@ -21,7 +22,7 @@ function feedingSitesTitle(path: string): string | undefined {
 }
 function AllowedShell({ path, authenticated, online }: { path: string; authenticated: boolean; online: boolean }) {
   return <ApplicationShell path={path} authenticated={authenticated}>
-    {authenticated && getAuthState().revocationMessage && <Status kind="error" title="Zugriff entzogen" message={getAuthState().revocationMessage}/>}
+    {authenticated && getAuthState().revocationMessage && <Status kind="error" code={errorCodes.AUTH_DENIED} title="Zugriff entzogen" message={getAuthState().revocationMessage}/>}
     <div hidden={authenticated}>{!authenticated && <>
       <Status kind="offline" title="Offline-Betrieb" message="Verwaltung ist ohne gültige Online-Sitzung gesperrt. Der Vor-Ort-Sync bleibt mit gültigem Offline-Credential verfügbar."/>
       {online && <LoginView online={online}/>}

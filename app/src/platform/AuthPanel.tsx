@@ -1,3 +1,4 @@
+import { safeFailure, errorCodes } from '../diagnostics/errors';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AppIcon } from '../ui/Graphic';
 import { Status } from '../ui/Status';
@@ -33,7 +34,7 @@ export function AuthPanel() {
     setBusy(true);
     setError('');
     try { await login(email, password); setPassword(''); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : 'Login fehlgeschlagen'); }
+    catch (failure) { setError(safeFailure(failure, 'Login fehlgeschlagen', errorCodes.AUTH_LOGIN)); }
     finally { setBusy(false); }
   }
 
@@ -41,7 +42,7 @@ export function AuthPanel() {
     setBusy(true);
     setError('');
     try { await logout(); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : 'Abmelden fehlgeschlagen'); }
+    catch (failure) { setError(safeFailure(failure, 'Abmelden fehlgeschlagen', errorCodes.AUTH_SESSION)); }
     finally { setBusy(false); }
   }
 

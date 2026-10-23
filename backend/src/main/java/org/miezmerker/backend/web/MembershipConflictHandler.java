@@ -9,14 +9,22 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /** A conflicting transaction has rolled back before this response is rendered. */
+@org.springframework.core.annotation.Order(0)
 @RestControllerAdvice(assignableTypes = {MemberController.class, AdminMembersController.class,
         AdminOrganizationsController.class})
 public class MembershipConflictHandler {
     @ExceptionHandler(OptimisticLockingFailureException.class)
-    public ResponseEntity<String> conflict() {
+    public ResponseEntity<?> conflict(jakarta.servlet.http.HttpServletRequest request) {
+        if (request.getRequestURI().startsWith(request.getContextPath() + "/api/")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).header("Cache-Control", "no-store")
+                    .body(new org.miezmerker.backend.diagnostics.ApiError(409, "Conflict",
+                            org.miezmerker.backend.diagnostics.ErrorCodes.ADMIN_CONFLICT,
+                            "Die Mitgliedschaft wurde gleichzeitig geändert. Bitte die Seite neu laden."));
+        }
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .header("Cache-Control", "no-store")
                 .body("Die Mitgliedschaft wurde gleichzeitig geändert. Bitte die Seite neu laden "
-                        + "und die aktuellen Berechtigungen vor dem erneuten Speichern prüfen.");
+                        + "und die aktuellen Berechtigungen vor dem erneuten Speichern prüfen. ["
+                        + org.miezmerker.backend.diagnostics.ErrorCodes.ADMIN_CONFLICT + "]");
     }
 }

@@ -1,5 +1,17 @@
 {
   "components": {
+    "responses": {
+      "DiagnosticError": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DiagnosticError"
+            }
+          }
+        },
+        "description": "Safe diagnostic error. HTTP status and authorization boundaries are unchanged."
+      }
+    },
     "schemas": {
       "Boot": {
         "additionalProperties": false,
@@ -557,6 +569,31 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "DiagnosticError": {
+        "properties": {
+          "code": {
+            "pattern": "^MM-[A-Z]+-[0-9]{3}$",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "error",
+          "message",
+          "status"
+        ],
         "type": "object"
       },
       "FeedingSiteCatActivityView": {
@@ -2203,6 +2240,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Expose the CSRF token for SPA login flows",
@@ -2234,6 +2274,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Email/password login, establishes a server-side session",
@@ -2248,6 +2291,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Invalidate the current server-side session",
@@ -2269,6 +2315,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Current session with user and memberships",
@@ -2300,6 +2349,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Idempotent authorized collector-reported Node sync; no physical attendance proof",
@@ -2321,6 +2373,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Backend trust anchor for offline node verification (public key only)",
@@ -2345,6 +2400,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List my AppDevices",
@@ -2374,6 +2432,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Register the current user's AppDevice public key (P-256)",
@@ -2416,6 +2477,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Issue a signed, time-limited, organization-bound offline credential for my AppDevice (blocked when membership/device is not ACTIVE)",
@@ -2448,6 +2512,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Revoke my AppDevice; it receives no further credentials",
@@ -2469,6 +2536,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Application liveness (database initialized at startup)",
@@ -2504,6 +2574,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List nodes of an organization (requires ACTIVE membership)",
@@ -2535,6 +2608,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Persist owner-uploaded boot diagnostics; does not certify UTC",
@@ -2566,6 +2642,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + signed node identity)",
@@ -2597,6 +2676,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Owner-reported observation-time estimate; never security-trusted UTC",
@@ -2628,6 +2710,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Issue challenge-bound UTC proof; ACTIVE owner member or pre-claim ADMIN",
@@ -2659,6 +2744,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Persist exact verified Node acceptance independently of raw ACK",
@@ -2691,6 +2779,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Node details; only members of the owning organization (foreign orgs use the public /owner endpoint)",
@@ -2731,6 +2822,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE member updates node metadata (firmware/protocol version, status note, bowl display name)",
@@ -2763,6 +2857,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Public claimed-node hint; owner metadata only for active discoverable organizations",
@@ -2824,6 +2921,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Owner-only immutable observation UTC intervals ordered by sequence",
@@ -2932,6 +3032,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List raw observations with organization, node, site, chip and time filters",
@@ -2963,6 +3066,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Idempotent batch ingest of raw observations (ACTIVE membership; per-item results)",
@@ -2995,6 +3101,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Raw observation details; never readable across organizations",
@@ -3019,6 +3128,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Active organizations of the authenticated user's ACTIVE memberships",
@@ -3048,6 +3160,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Create an organization; caller becomes ACTIVE ADMIN (test-phase provisioning)",
@@ -3072,6 +3187,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Authenticated directory of discoverable, ACTIVE organizations",
@@ -3104,6 +3222,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Organization details; requires ACTIVE membership (tenant isolation)",
@@ -3139,6 +3260,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List cats of an organization (requires ACTIVE membership)",
@@ -3179,6 +3303,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE member creates a cat in their own organization",
@@ -3213,6 +3340,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN deletes a cat of their own organization",
@@ -3252,6 +3382,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Cat details; never readable across organizations",
@@ -3301,6 +3434,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE member updates a cat of their own organization",
@@ -3335,6 +3471,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Remove the organization's own cat photo",
@@ -3383,6 +3522,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Read the organization's own cat photo (requires ACTIVE membership)",
@@ -3440,6 +3582,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Upload or replace the organization's own cat photo",
@@ -3475,6 +3620,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE member lists observed chips, reliable last sightings, clock issues and frozen historical feeding sites; server receipt time is separate",
@@ -3519,6 +3667,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List deployments of an organization, optionally filtered by node",
@@ -3559,6 +3710,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE ADMIN assigns a node to a feeding site for a validity range",
@@ -3601,6 +3755,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE ADMIN atomically closes the open assignment and creates a new one; frozen observation and visit attribution is unchanged",
@@ -3635,6 +3792,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE ADMIN deletes a deployment (stored observation attributions are kept)",
@@ -3674,6 +3834,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Deployment details; never readable across organizations",
@@ -3723,6 +3886,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE ADMIN closes or reopens a deployment by setting validUntil",
@@ -3758,6 +3924,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List feeding sites of an organization (requires ACTIVE membership)",
@@ -3798,6 +3967,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE member creates a feeding site in their own organization",
@@ -3832,6 +4004,9 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN deletes a feeding site (blocked while deployments reference it)",
@@ -3871,6 +4046,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Feeding site details; never readable across organizations",
@@ -3920,6 +4098,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ACTIVE member updates a feeding site of their own organization",
@@ -3985,6 +4166,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Compact feeding-site cat/chip activity (ACTIVE membership)",
@@ -4037,6 +4221,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN only: last 1..20 distinct currently authorized users for missing-cat notices",
@@ -4072,6 +4259,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN lists members of their own organization",
@@ -4112,6 +4302,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN creates a user and/or ACTIVE membership (test-phase bootstrap, no mail)",
@@ -4163,6 +4356,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN changes role, activates/disables a membership, or maintains the global display name (blank clears; global across all organizations)",
@@ -4227,6 +4423,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List one node's observations within an explicit organization context",
@@ -4262,6 +4461,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN lists the outgoing sharing policies of the active organization",
@@ -4308,6 +4510,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN revokes one outgoing policy; effective on the next resolution",
@@ -4362,6 +4567,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN creates or replaces one outgoing policy; scope in path, audience in body",
@@ -4405,6 +4613,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Read an explicitly shared foreign cat photo with fresh observation proof (requires CARE plus PHOTO)",
@@ -4447,6 +4658,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Resolve CARE projections using owned persisted observations",
@@ -4489,6 +4703,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Page explicitly shared visit summaries with fresh observation proof",
@@ -4531,6 +4748,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Owner ADMIN changes discoverability; hiding invalidates outgoing grants immediately",
@@ -4630,6 +4850,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "List derived visits of an organization (requires ACTIVE membership)",
@@ -4673,6 +4896,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Latest reliable visit per feeding site for one chip; frozen historical site attribution, never current deployments",
@@ -4714,6 +4940,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "ADMIN rebuilds visits from stored raw observations (no raw re-ingest, raw rows unchanged)",
@@ -4774,6 +5003,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Owner-only interval visits and uncertain observations; rebuilt from immutable evidence",
@@ -4815,6 +5047,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Visit details; never readable across organizations",
@@ -4836,6 +5071,9 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
           }
         },
         "summary": "Build and HTTP API version",

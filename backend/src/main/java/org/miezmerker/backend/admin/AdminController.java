@@ -63,7 +63,7 @@ public class AdminController {
             model.addAttribute("loginInfo", "Erfolgreich abgemeldet.");
         }
         if (expired != null) {
-            model.addAttribute("loginInfo", "Sitzung abgelaufen. Bitte erneut anmelden.");
+            model.addAttribute("loginInfo", "Sitzung abgelaufen. Bitte erneut anmelden. [" + org.miezmerker.backend.diagnostics.ErrorCodes.AUTH_SESSION + "]");
         }
         return "admin/login";
     }

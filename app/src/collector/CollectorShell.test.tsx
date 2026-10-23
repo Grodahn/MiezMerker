@@ -111,7 +111,8 @@ test.each(['MEMBER', 'SYSADMIN'])('%s has no organization ADMIN claim path', asy
 
 test('missing security prerequisites never display registration confirmation', async () => {
   adminMembership();
-  vi.mocked(verifyRegistrationCandidate).mockRejectedValue(new Error('Vertrauenswürdige UTC fehlt.'));
+  const { ClaimError } = await import('./claim-node');
+  vi.mocked(verifyRegistrationCandidate).mockRejectedValue(new ClaimError('trusted-time', 'Vertrauenswürdige UTC fehlt.'));
   await selectUnclaimed();
   await screen.findByText('Vertrauenswürdige UTC fehlt.');
   expect(screen.queryByText('Napf verbunden. Signierter Identitätsnachweis wird geprüft …')).toBeNull();

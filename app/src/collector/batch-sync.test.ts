@@ -28,6 +28,15 @@ function successView(nodeId: string, records = 3) {
 }
 
 describe('batch orchestration (issue #76)', () => {
+  test('unstructured cancellation details are not displayed', async () => {
+    const results = await runBatchSync([input('a')], {
+      createTransport: () => ({ connect: async () => {}, disconnect: async () => {}, read: async () => new Uint8Array(), write: async () => {} }),
+      runSingleNode: async () => { throw new DOMException('private token/chip', 'AbortError'); },
+    });
+    expect(results[0].kind).toBe('cancelled');
+    expect(results[0].message).toBe('Sammel-Sync abgebrochen.');
+    expect(results[0].message).not.toContain('private token/chip');
+  });
   test('backend bootstrap timeout is not a BLE reachability failure and the next node continues', async () => {
     let calls = 0;
     const results = await runBatchSync([input('time-service-failure'), input('healthy')], {
@@ -186,10 +195,12 @@ describe('batch orchestration (issue #76)', () => {
 
   test('transport creation failure surfaces as unreachable, not success', async () => {
     const results = await runBatchSync([input('gone')], {
-      createTransport: () => { throw new Error('GATT connect failed'); },
+      createTransport: () => { throw new Error('GATT connect failed; private token/chip'); },
     });
     expect(results[0].kind).toBe('unreachable');
     expect(results[0].nodeId).toBeNull();
+    expect(results[0].message).toContain('MM-UI-001');
+    expect(results[0].message).not.toContain('private token/chip');
   });
 
   test('GATT disconnect cleanup runs even when the node operation throws', async () => {

@@ -1,3 +1,4 @@
+import { errorCodes, withCode, DiagnosticError, safeFailure } from '../diagnostics/errors';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { assets } from '../assets';
 import { Graphic } from '../ui/Graphic';
@@ -22,10 +23,10 @@ async function fetchPhotoBlob(url: string, signal: AbortSignal): Promise<Blob> {
   const response = await fetch(url, { ...requestOptions(signal), credentials: 'same-origin' });
   signal.throwIfAborted();
   if (response.status === 401) markSessionExpired();
-  if (!response.ok) throw new Error(`Foto nicht verfügbar (${response.status}).`);
+  if (!response.ok) throw new DiagnosticError(errorCodes.PHOTO_FAILED, `Foto nicht verfügbar (${response.status}).`);
   const blob = await response.blob();
   signal.throwIfAborted();
-  if (!blob.type.startsWith('image/')) throw new Error('Foto nicht verfügbar.');
+  if (!blob.type.startsWith('image/')) throw new DiagnosticError(errorCodes.PHOTO_FAILED, 'Foto nicht verfügbar.');
   return blob;
 }
 
@@ -141,7 +142,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
       controller.signal.throwIfAborted();
       if (!response.ok) {
         checkAccess(response.status);
-        throw new Error(response.status === 413 || response.status === 400
+        throw new DiagnosticError(errorCodes.PHOTO_FAILED, response.status === 413 || response.status === 400
           ? 'Datei wird abgelehnt. Bitte JPEG/PNG in angemessener Größe wählen.'
           : response.status === 409
           ? 'Foto hat sich gerade geändert. Bitte erneut versuchen.'
@@ -160,7 +161,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
     } catch (failure) {
       if (!controller.signal.aborted) setError(failure instanceof TypeError
         ? 'Keine Verbindung zum Server. Bitte erneut versuchen.'
-        : failure instanceof Error ? failure.message : 'Foto konnte nicht gespeichert werden.');
+        : safeFailure(failure, 'Foto konnte nicht gespeichert werden.', errorCodes.PHOTO_FAILED));
     } finally {
       if (!controller.signal.aborted) setBusy(false);
       controller.abort();
@@ -185,7 +186,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
       controller.signal.throwIfAborted();
       if (!response.ok && response.status !== 404) {
         checkAccess(response.status);
-        throw new Error(response.status === 401 ? 'Sitzung abgelaufen. Bitte erneut anmelden.'
+        throw new DiagnosticError(errorCodes.PHOTO_FAILED, response.status === 401 ? 'Sitzung abgelaufen. Bitte erneut anmelden.'
           : response.status === 403 ? 'Keine Berechtigung. Bitte die aktive Mitgliedschaft prüfen.'
           : 'Foto konnte nicht entfernt werden.');
       }
@@ -197,7 +198,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
     } catch (failure) {
       if (!controller.signal.aborted) setError(failure instanceof TypeError
         ? 'Keine Verbindung zum Server. Bitte erneut versuchen.'
-        : failure instanceof Error ? failure.message : 'Foto konnte nicht entfernt werden.');
+        : safeFailure(failure, 'Foto konnte nicht entfernt werden.', errorCodes.PHOTO_FAILED));
     } finally {
       if (!controller.signal.aborted) setBusy(false);
       controller.abort();
@@ -227,7 +228,7 @@ function CatPhotoContent({ organizationId, cat, onChanged }: CatPhotoProps) {
         <button type="button" disabled={busy} onClick={() => setConfirmRemove(false)}>Abbrechen</button>
       </>}
     </div>
-    {error && <p role="alert" className="error">{error}</p>}
+    {error && <p role="alert" className="error">{withCode(error, errorCodes.PHOTO_FAILED)}</p>}
     {message && <p role="status">{message}</p>}
   </section>;
 }

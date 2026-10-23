@@ -12,7 +12,7 @@ SYSADMIN ersetzt keine Orgaadmin-Mitgliedschaft und eröffnet keinen Zugang zu K
 Näpfen, Rohbeobachtungen oder Besuchen.</p>
 
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
-<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}">Fehler</div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error + ' [' + @diagnostics.form() + ']'}">Fehler</div>
 
 <section class="card">
 <h2>Organisation anlegen</h2>

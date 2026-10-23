@@ -1,3 +1,4 @@
+import { errorCodes, DiagnosticError } from '../diagnostics/errors';
 // Authorization/session handshake orchestration (issue #8).
 //
 // Uses the existing AppDevice/offline credential implementation from #17:
@@ -20,12 +21,12 @@ export type CredentialFailureKind =
   | 'missing-credential'
   | 'expired-offline';
 
-export class CredentialError extends Error {
+export class CredentialError extends DiagnosticError {
   constructor(
     readonly kind: CredentialFailureKind,
     message: string,
   ) {
-    super(message);
+    super(kind === 'no-session' ? errorCodes.AUTH_SESSION : kind === 'no-membership' ? errorCodes.AUTH_DENIED : errorCodes.AUTH_CREDENTIAL, message);
     this.name = 'CredentialError';
   }
 }
@@ -85,7 +86,7 @@ export async function resolveCredential(
       return { credential: renewed, userId: user.userId, organizationId, renewed: true };
     } catch (error) {
       throw new CredentialError('missing-credential',
-        `Offline-Credential konnte nicht erneuert werden (${error instanceof Error ? error.message : 'Backend nicht erreichbar'}). ` +
+        `Offline-Credential konnte nicht erneuert werden (Backend nicht erreichbar). ` +
         'Ohne gültiges Credential kann der Node-Sync nicht starten.');
     }
   }

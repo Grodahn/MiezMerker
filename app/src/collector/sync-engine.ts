@@ -1,3 +1,5 @@
+import { DiagnosticError, errorCodes, firmwareErrorCode, safeFailure } from '../diagnostics/errors';
+import { syncFailureCodes, withCode, messageCode, type ErrorCode } from '../diagnostics/errors';
 // BLE sync v1 durable client-side sync engine (issue #6).
 //
 // PWA-side mirror of the firmware SyncServer. Owns the connection lifecycle,
@@ -10,7 +12,7 @@
 import Dexie, { type Table } from 'dexie';
 import {
   type BleRecord, type OwnerInfo, type StatusResponse,
-  decodeAckResponse, decodeAuthResponse, decodeBatchResponse, decodeCompactResponse,
+  decodeAckResponse, decodeAuthResponse, decodeBatchResponse, decodeCompactResponse, decodeErrorPayload,
   decodeFrame, decodeHelloPublic, decodeNodeProofResponse, decodeOwnerResponse,
   decodeStatusResponse, encodeFrame, encodeAckRequest, encodeAuthRequest,
   encodeBatchRequest, encodeHelloRequest, encodeNodeProofRequest,
@@ -182,14 +184,15 @@ export type SyncFailureKind =
   | 'cancelled'
   | 'trusted-time';
 
-export class SyncFailedError extends Error {
+export class SyncFailedError extends DiagnosticError {
   constructor(
     readonly kind: SyncFailureKind,
     message: string,
     readonly owner: OwnerInfo | null = null,
     readonly cause?: unknown,
+    readonly code: ErrorCode = messageCode(message) ?? syncFailureCodes[kind],
   ) {
-    super(message);
+    super(code, message);
     this.name = 'SyncFailedError';
   }
 }
@@ -253,7 +256,7 @@ export class SyncEngine {
       try {
         return await this.syncOnce(credential, trustedNowS, organizationId);
       } catch (e) {
-        lastError = e instanceof Error ? e.message : String(e);
+        lastError = e instanceof SyncFailedError || e instanceof DiagnosticError || e instanceof NodeOperationCancelledError ? e.message : withCode('Synchronisierung nicht bestätigt. Bitte erneut versuchen.', this.phase === 'acknowledging' ? errorCodes.SYNC_ACK : this.phase === 'persisting' ? errorCodes.STORAGE_WRITE : errorCodes.BLE_PROTOCOL);
         lastKind = e instanceof NodeOperationCancelledError ? 'cancelled' : e instanceof SyncFailedError ? e.kind : null;
         this.phase = 'failed';
         // Never retry states that cannot succeed without user action:
@@ -282,7 +285,7 @@ export class SyncEngine {
       await this.transport.connect();
     } catch (e) {
       if (e instanceof NodeOperationCancelledError) throw e;
-      throw new SyncFailedError('connection', e instanceof Error ? e.message : 'BLE-Verbindung fehlgeschlagen.', null, e);
+      throw new SyncFailedError('connection', safeFailure(e, 'BLE-Verbindung fehlgeschlagen.', errorCodes.BLE_CONNECTION), null, e);
     }
     try {
       // Public hello.
@@ -333,7 +336,7 @@ export class SyncEngine {
 
       let alphaClock = false;
       try { alphaClock = usesAlphaPhoneClock(hello.caps); }
-      catch (error) { throw new SyncFailedError('trusted-time', (error as Error).message, this.owner); }
+      catch (error) { throw new SyncFailedError('trusted-time', safeFailure(error, 'Sicherheitszeit konnte nicht bestätigt werden.', errorCodes.CLOCK_POLICY), this.owner); }
       if (alphaClock) {
         await supplyAlphaPhoneClock(this.transport, this.options.assertActive);
         this.timeMessage = 'FIELD_ALPHA_PHONE_CLOCK: unbestätigte Handyzeit für Berechtigungsablauf verwendet; durch Uhrmanipulation umgehbar.';
@@ -418,7 +421,7 @@ export class SyncEngine {
         const message = code === SyncError.ForbiddenForeign
           ? 'Node gehört einer anderen Organisation. Nur öffentliche Owner-Metadaten werden angezeigt.'
           : 'Autorisierung abgelehnt oder Credential abgelaufen.';
-        throw new SyncFailedError(kind, message, this.owner);
+        throw new SyncFailedError(kind, message, this.owner, undefined, auth?.error ? firmwareErrorCode(auth.error) : undefined);
       }
       // Trust comes from the cached backend identity, never the BLE peer's key.
       const nodeAuth = await beginNodeAuthentication(this.identity);
@@ -429,7 +432,7 @@ export class SyncEngine {
       const signature = proofFrame?.opcode === Opcode.NodeProofResponse
         ? decodeNodeProofResponse(proofFrame.payload) : null;
       if (!signature || !await nodeAuth.verify(signature)) {
-        throw new SyncFailedError('unauthorized', 'Node-Authentizität konnte nicht bestätigt werden (Fake-Node möglich).', this.owner);
+        throw new SyncFailedError('unauthorized', 'Node-Authentizität konnte nicht bestätigt werden (Fake-Node möglich).', this.owner, undefined, errorCodes.NODE_IDENTITY);
       }
       this.phase = 'authorized';
       // Current authorized backend metadata only. No offline metadata replay.
@@ -442,7 +445,7 @@ export class SyncEngine {
           payload: encodeMetadata(hello.nodeId, organizationId, metadata.bowlNumber, metadata.displayName),
         }), true));
         if (response?.opcode !== Opcode.MetadataResponse || response.payload.length !== 1 || response.payload[0] !== 0) {
-          this.metadataWarning = 'Napfname konnte nicht aktualisiert werden; beim nächsten Online-Sync erneut versuchen.';
+          this.metadataWarning = withCode('Napfname konnte nicht aktualisiert werden; beim nächsten Online-Sync erneut versuchen.', errorCodes.SYNC_METADATA);
         } else {
           this.metadataWarning = undefined;
         }
@@ -554,7 +557,7 @@ export class SyncEngine {
             await this.store.putObservations(batch.records, organizationId);
           } catch (e) {
             throw new SyncFailedError('storage',
-              e instanceof Error ? e.message : 'Lokale Speicherung fehlgeschlagen.', this.owner, e);
+              'Lokale Speicherung fehlgeschlagen.', this.owner, e);
           }
           for (const record of batch.records) {
             this.receivedEvents.add(`${record.nodeId}/${record.incarnation}/${record.sequence}`);
@@ -580,11 +583,11 @@ export class SyncEngine {
         }));
         const ackFrame = decodeFrame(ackResp);
         if (!ackFrame || ackFrame.opcode !== Opcode.AckResponse) {
-          throw new Error('ack failed');
+          throw new DiagnosticError(errorCodes.SYNC_ACK, 'Übernahme am Napf nicht bestätigt.');
         }
         const ack = decodeAckResponse(ackFrame.payload);
         if (!ack || ack.error !== SyncError.Ok || ack.newWatermark !== watermark) {
-          throw new Error('ack rejected or mismatched');
+          throw new DiagnosticError(errorCodes.SYNC_ACK, 'Übernahme am Napf nicht bestätigt.');
         }
       }
       this.session.watermark = watermark.toString();
@@ -621,7 +624,7 @@ export class SyncEngine {
         if (!status || status.ackWatermark !== watermark) throw new Error('storage status unavailable');
         if (status.storeStatus !== 0) {
           maintenanceWarning = [maintenanceWarning,
-            'Node-Speicher voll oder fast voll; beim nächsten Besuch erneut synchronisieren und bereinigen.']
+            withCode('Node-Speicher voll oder fast voll; beim nächsten Besuch erneut synchronisieren und bereinigen.', errorCodes.SYNC_NODE_FULL)]
             .filter(Boolean).join(' ');
         }
       } catch (error) {
@@ -629,7 +632,7 @@ export class SyncEngine {
         // ACK. Never turn an obsolete visit into a success or reconnect it.
         if (error instanceof NodeOperationCancelledError) throw error;
         maintenanceWarning = [maintenanceWarning,
-          'Node-Speicherbereinigung nicht vollständig bestätigt; beim nächsten Besuch erneut versuchen. Bei anhaltendem Speicherfehler ist ein Node-Neustart erforderlich.']
+          withCode('Node-Speicherbereinigung nicht vollständig bestätigt; beim nächsten Besuch erneut versuchen. Bei anhaltendem Speicherfehler ist ein Node-Neustart erforderlich.', errorCodes.SYNC_COMPACT)]
           .filter(Boolean).join(' ');
       }
 
@@ -637,7 +640,7 @@ export class SyncEngine {
       // Compaction never covers the unacknowledged suffix beyond that gap.
       this.phase = incomplete ? 'failed' : 'complete';
       return { ok: !incomplete,
-        error: incomplete ? 'incomplete: sequence gap remains: Sequenzlücke blockiert ACK (spätere Records bleiben unquittiert auf dem Node).' : undefined,
+        error: incomplete ? withCode('incomplete: sequence gap remains: Sequenzlücke blockiert ACK (spätere Records bleiben unquittiert auf dem Node).', errorCodes.SYNC_GAP) : undefined,
         recordsReceived: this.received, watermark, maintenanceWarning, nodeStorage, timeMessage: this.timeMessage, evidenceStored: this.evidenceStored };
     } finally {
       await this.transport.disconnect();
@@ -652,7 +655,7 @@ export class SyncEngine {
     } catch (e) {
       if (e instanceof NodeOperationCancelledError) throw e;
       throw new SyncFailedError('connection',
-        e instanceof Error ? e.message : 'BLE-Verbindung abgebrochen.', this.owner, e);
+        safeFailure(e, 'BLE-Verbindung abgebrochen.', errorCodes.BLE_CONNECTION), this.owner, e);
     }
     const decoded = decodeFrame(response);
     if (!decoded) throw new SyncFailedError('protocol', 'Ungültige Node-Antwort.', this.owner);
@@ -661,7 +664,7 @@ export class SyncEngine {
         `Inkompatible Protokoll-Version in Node-Antwort (v${decoded.version}).`, this.owner);
     }
     if (decoded.opcode === Opcode.Error && !allowError) {
-      throw new SyncFailedError('protocol', 'Node meldet Protokollfehler.', this.owner);
+      throw new SyncFailedError('protocol', 'Node meldet Protokollfehler.', this.owner, undefined, firmwareErrorCode(decodeErrorPayload(decoded.payload)?.code ?? -1));
     }
     return response;
   }

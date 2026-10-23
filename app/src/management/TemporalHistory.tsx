@@ -1,3 +1,4 @@
+import { DiagnosticError, errorCodes } from '../diagnostics/errors';
 import { useCallback, useState } from 'react';
 import { api } from '../api/client';
 import type { components } from '../api/generated';
@@ -55,7 +56,7 @@ export function TemporalHistory({ organizationId, chipId, sites }: { organizatio
   const history = useLoad(useCallback(async (signal: AbortSignal) => {
     const response = await api.GET('/api/v1/organizations/{organizationId}/visits/temporal', { ...requestOptions(signal),
       params: { path: { organizationId }, query: { chipId, limit: 20, offset } } });
-    if (response.response.status === 503) throw new Error('Der Zeitverlauf kann derzeit nicht vollständig berechnet werden. Bitte die Verwaltung kontaktieren.');
+    if (response.response.status === 503) throw new DiagnosticError(errorCodes.HTTP_UNAVAILABLE, 'Der Zeitverlauf kann derzeit nicht vollständig berechnet werden. Bitte die Verwaltung kontaktieren.');
     return result(response);
   }, [organizationId, chipId, offset]));
   return <section className="detail" aria-label="Rekonstruierter Verlauf"><h2>Zeitfenster und Beobachtungen</h2>
