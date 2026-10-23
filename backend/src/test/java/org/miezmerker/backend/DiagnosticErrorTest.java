@@ -40,6 +40,9 @@ class DiagnosticErrorTest {
         @GetMapping("/api/test/denied/{id}") void denied() {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "private tenant and chip value");
         }
+        @GetMapping("/api/test/number") void number(@org.springframework.web.bind.annotation.RequestParam int value) {}
+        @org.springframework.web.bind.annotation.PostMapping("/api/test/json")
+        void json(@org.springframework.web.bind.annotation.RequestBody java.util.Map<String, Object> body) {}
         @GetMapping("/api/test/invalid") void invalid() {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "private request payload");
         }
@@ -65,6 +68,16 @@ class DiagnosticErrorTest {
     final org.springframework.test.web.servlet.MockMvc mvc = MockMvcBuilders.standaloneSetup(new Failures(), new NodeController())
             .setControllerAdvice(new DiagnosticExceptionHandler()).build();
 
+
+    @Test void frameworkInputErrorsKeepTheirExistingBadRequestStatus() throws Exception {
+        mvc.perform(get("/api/test/number").param("value", "private-invalid-value"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("MM-BACKEND-400"))
+                .andExpect(content().string(not(containsString("private-invalid-value"))));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/test/json")
+                        .contentType("application/json").content("private-invalid-json"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("MM-BACKEND-400"))
+                .andExpect(content().string(not(containsString("private-invalid-json"))));
+    }
     @Test void tenantDenialsAreNeutralAndKeepStatus() throws Exception {
         for (int i = 0; i < 2; i++) {
             mvc.perform(get("/api/test/denied/" + UUID.randomUUID()))

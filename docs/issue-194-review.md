@@ -30,6 +30,8 @@ A code is a stable case ID, not a per-incident correlation ID.
 - Cover failure notices rendered as info; preserve normal cancellation/waiting
   semantics and avoid codes on unqualified success messages. COMPACT/metadata
   warnings retain their own code alongside an already successful local copy.
+- Preserve Spring framework status/header resolution (including invalid numeric
+  query parameters and malformed JSON), replacing only its public error body.
 - Keep specific membership/media/time advice ahead of the general safe handler;
   cover servlet fallback HTML and authentication/CSRF failures as well as MVC.
 - Include the generated static catalog in Vite Admin proxy routing and browser
@@ -43,9 +45,9 @@ A code is a stable case ID, not a per-incident correlation ID.
 Focused checks cover catalog uniqueness/stability, registration identity,
 secure/Alpha time, BLE status mapping, storage/ACK, upload/outbox, API errors,
 neutral tenant denials, unknown details and admin rendering. Completion selects
-all frontend consumers and backend auth/admin/ingest/system domains (auth also
-covers node/time/tenant boundaries); build/typecheck, generated OpenAPI drift and
-browser flows follow. Existing full final-head CI remains required, including
+all frontend consumers and the complete backend suite: the global MVC error
+adapter also reaches controllers outside auth/admin/ingest/system. Build/typecheck,
+generated OpenAPI drift and browser flows follow. Existing full final-head CI remains required, including
 PostgreSQL, end-to-end and firmware/security matrices. Actual executed outcomes
 and final SHA are recorded in the PR; this file does not predeclare green CI.
 
@@ -53,7 +55,7 @@ Hardware acceptance: **UNVERIFIED**. No physical firmware/protocol changes.
 The realistic identity-error text fixture is in [error-codes.md](error-codes.md);
 the browser blocker flow also captures an automated error-code screenshot.
 
-Efficiency: initial Windows wildcard/path mistakes and encoding/temp-directory
+Efficiency: initial Windows wildcard/path and test-selector mistakes and encoding/temp-directory
 issues were corrected; use scoped rg globs, explicit UTF-8 and the working
 test environment. No test expectation or required gate was removed or relaxed.
 

@@ -79,3 +79,21 @@ test('account overlay dismisses on Escape, focus departure and outside pointer u
   fireEvent.pointerDown(outside);
   expect(panel.open).toBe(false);
 });
+
+test('unknown account failures show a safe stable code without raw server details', async () => {
+  const { logout } = await import('./auth');
+  get.mockResolvedValue({ data: { token: 'csrf' } });
+  post.mockResolvedValue({ response: { ok: true, status: 200 } });
+  await logout();
+  get.mockResolvedValue({ error: {}, response: { status: 401 } });
+  render(<AuthPanel/>);
+  await waitFor(() => expect(get).toHaveBeenCalled());
+  get.mockResolvedValue({ data: { token: 'csrf' } });
+  post.mockRejectedValueOnce(new Error('private-token-chip-stacktrace'));
+  fireEvent.change(screen.getByLabelText('E-Mail'), { target: { value: 'field@example.org' } });
+  fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'unused-password' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('MM-AUTH-005');
+  expect(alert.textContent).not.toContain('private-token-chip-stacktrace');
+});

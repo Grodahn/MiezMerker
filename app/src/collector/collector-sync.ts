@@ -1,4 +1,4 @@
-import { errorCodes, withCode } from '../diagnostics/errors';
+import { errorCodes, withCode, safeFailure } from '../diagnostics/errors';
 // Collector synchronization orchestrator (issue #8).
 //
 // Keeps at least these concerns separated:
@@ -138,7 +138,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
     try {
       transport = await createTransport();
     } catch (e) {
-      emit({ nodeState: 'failed', nodeMessage: e instanceof Error ? e.message : 'Kein Node ausgewählt.' });
+      emit({ nodeState: 'failed', nodeMessage: safeFailure(e, 'Kein Node ausgewählt.', errorCodes.BLE_CONNECTION) });
       return view;
     }
     operation = bindNodeOperation(transport, auth.user.userId, organizationId, callbacks.signal);
@@ -181,7 +181,7 @@ export async function runFieldSync(callbacks: SyncCallbacks): Promise<CollectorV
       emit({ credentialState: resolved.renewed ? 'Offline-Credential erneuert.' : 'Offline-Credential gültig.' });
     } catch (e) {
       const message = e instanceof CredentialError ? e.message
-        : e instanceof Error ? e.message : 'Credential-Fehler.';
+        : safeFailure(e, 'Credential-Fehler.', errorCodes.AUTH_CREDENTIAL);
       emit({ nodeState: 'failed', nodeMessage: message, credentialState: message });
       return view;
     } finally {
