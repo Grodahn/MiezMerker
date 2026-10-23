@@ -62,6 +62,9 @@ into the bundle: changing the shell/env file requires a Vite restart or rebuild.
 `preview` serves the existing bundle and cannot change its policy. On installed
 PWAs accept the service-worker update and reload (close old tabs); inspect the
 diagnostic again. Do not erase IndexedDB/pending observations to repair an app cache.
+Preview startup therefore ignores current policy environment variables (including
+invalid values) and points to the bundle's UI diagnostic instead of claiming to
+compile a new policy. Build/dev startup still validates policy and release gates.
 
 ## Deliberate signed UTC / release path
 
@@ -145,3 +148,9 @@ and generated API drift check. A first parallel frontend run timed out under loa
 the failing files passed first, then the complete suite passed with two workers,
 without changing assertions/timeouts. Full final-head PostgreSQL, browser and
 four-profile ESP32 image/size CI remains mandatory before PR closeout.
+
+Follow-up review repaired a misleading preview startup diagnostic: a signed bundle
+could be served while the preview process logged the default alpha policy, or an
+unrelated invalid shell value could block it. A real Vite configuration regression
+now checks signed build defines, preview without replacement policy/build defines,
+and continued rejection of invalid policy during build/dev startup.

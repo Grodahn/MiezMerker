@@ -11,9 +11,13 @@ const backend = { target: process.env.MIEZMERKER_BACKEND_URL ?? 'http://127.0.0.
 // Server-rendered Admin owns this namespace in development and preview too.
 const proxy = { '/api': backend, '^/admin(?:/|\\?|$)': backend,
   '^/(?:admin-(?:shared-care|temporal-times)\\.js|shared-care\\.(?:js|css))$': backend };
-export default defineConfig(({ mode }) => {
-  const policy = buildClockPolicy(mode, loadEnv(mode, process.cwd(), 'VITE_').VITE_MM_SECURITY_CLOCK_POLICY);
-  console.info(`PWA security_clock_policy=${policy} mode=${mode} (compiled into bundle)`);
+export default defineConfig(({ mode, isPreview }) => {
+  // Preview serves a previously built bundle. Its shell environment neither
+  // selects nor validates the policy embedded in that artifact.
+  const policy = isPreview ? undefined
+    : buildClockPolicy(mode, loadEnv(mode, process.cwd(), 'VITE_').VITE_MM_SECURITY_CLOCK_POLICY);
+  console.info(policy ? `PWA security_clock_policy=${policy} mode=${mode} (compiled into bundle)`
+    : 'PWA preview serves an existing bundle; see Zeit-Policy / Diagnose for its compiled policy and build ID.');
   // HTTPS is opt-in for physical Android/Web Bluetooth testing. Never require
   // local certificates for standard dev, production builds or CI.
   let https: { key: Buffer; cert: Buffer } | undefined;
@@ -27,10 +31,10 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    define: {
+    define: policy ? {
       'import.meta.env.VITE_MM_SECURITY_CLOCK_POLICY': JSON.stringify(policy),
       'import.meta.env.VITE_MM_BUILD_ID': JSON.stringify(new Date().toISOString()),
-    },
+    } : {},
     build: { assetsInlineLimit: 0 }, // Replaceable artwork stays external and precached, including small SVGs.
     plugins: [react(), VitePWA({
       // Enable the manifest and dev service worker for Android HTTPS installation tests.
