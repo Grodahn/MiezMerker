@@ -86,7 +86,11 @@ jobs:
         run: npm run api:check
       - working-directory: app
         run: npm test
-      - working-directory: app
+      - name: Explicit signed release PWA
+        working-directory: app
+        run: npm run build:release -- --outDir dist-signed
+      - name: Default field-alpha PWA (browser fixture)
+        working-directory: app
         run: npm run build
       - name: Start packaged backend
         env:
@@ -114,6 +118,13 @@ jobs:
       - name: Offline collector and same-origin integration
         working-directory: app
         run: npm run test:e2e
+      - name: Explicit signed PWA browser compatibility
+        working-directory: app
+        env:
+          MM_E2E_CLOCK_POLICY: SIGNED_BACKEND_TIME
+          VITE_MM_SECURITY_CLOCK_POLICY: SIGNED_BACKEND_TIME
+          MM_E2E_DIST: dist-signed
+        run: npm run test:e2e -- e2e/registration.spec.ts e2e/clock-policy.spec.ts
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:

@@ -6,14 +6,11 @@ do not establish on-device success. Final hardware E2E remains tracked by #134.
 
 ## Configuration and sequence
 
-The default remains `SIGNED_BACKEND_TIME`. For field alpha, build firmware with
-`SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.field-alpha` (or explicitly enable
-`CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK=y` in a fresh configuration). Set
-`VITE_MM_SECURITY_CLOCK_POLICY=FIELD_ALPHA_PHONE_CLOCK` when building/serving the
-PWA. Neither value belongs in production defaults. Keep the independently pinned
-issuer public key configured. CI builds production, dev and field-alpha separately
-and asserts the policy flag is absent from production/dev. Rebuild both clients
-to return to signed time; no automatic policy downgrade exists.
+Superseded default selection by [#195](issue195-default-clock-policy.md): local
+PWA/backend and the documented dev firmware now use FIELD_ALPHA_PHONE_CLOCK.
+Signed UTC remains the explicit opt-in/hardened release profile. Existing dev
+SDKCONFIG values are checked for mismatch; never delete a config/issuer pin.
+The protocol and accepted risks below remain unchanged.
 
 After public identity/owner checks, capability `0x0080` selects the versioned
 `AlphaPhoneClockRequest` (`0x25`, payload `u8=1, utc_ms:u64le`). The PWA samples
@@ -108,9 +105,9 @@ RFID validation. Never record private keys or credential tokens in logs.
 7. Online, confirm account or membership revocation (#170), then go offline.
    Cooperative PWA sync must remain blocked and cached credentials removed,
    including another tab and an in-flight operation.
-8. Flash a clean production configuration and use the default PWA. Unsigned
+8. Flash a clean production configuration and use the explicit signed-time PWA. Unsigned
    `0x25` must fail; a reboot with no trusted time must still require signed UTC.
-   Also try default PWA + alpha Node and alpha PWA + production Node: explicit
+   Also try signed PWA + alpha Node and alpha PWA + signed production Node: explicit
    policy mismatch, no protected access or silent fallback.
 
 ## Review and automated evidence

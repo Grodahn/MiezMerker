@@ -1,0 +1,4 @@
+# Explicit go-live profile: conflicting environment policy must fail startup.
+miezmerker:
+  release: true
+  security-clock-policy: ${MM_SECURITY_CLOCK_POLICY:SIGNED_BACKEND_TIME}

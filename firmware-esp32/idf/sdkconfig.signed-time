@@ -1,0 +1,2 @@
+# Place last after sdkconfig.dev for the deliberate signed-time dev profile.
+# CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK is not set

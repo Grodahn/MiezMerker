@@ -272,7 +272,7 @@ describe('SyncEngine', () => {
   });
 
   test('offline reboot alpha path persists before ACK, repeats after interruption, and never calls UTC backend', async () => {
-    vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', 'FIELD_ALPHA_PHONE_CLOCK');
+    vi.stubEnv('VITE_MM_SECURITY_CLOCK_POLICY', undefined);
     const online = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
     Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
     try {

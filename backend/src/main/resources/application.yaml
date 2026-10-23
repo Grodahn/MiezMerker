@@ -38,6 +38,8 @@ springdoc:
     path: /api/v1/openapi
   paths-to-match: /api/v1/**
 miezmerker:
+  security-clock-policy: ${MM_SECURITY_CLOCK_POLICY:FIELD_ALPHA_PHONE_CLOCK}
+  release: ${MM_RELEASE:false}
   # Never enabled in production. The controller requires the explicit 'dev'
   # Spring profile as well as an opt-in flag; the file path is operator-supplied.
   dev-ca:
