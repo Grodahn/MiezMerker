@@ -9,7 +9,7 @@ const backend = { target: process.env.MIEZMERKER_BACKEND_URL ?? 'http://127.0.0.
 // Proxy and Workbox match URLs including query strings, including bare /admin?… .
 // Server-rendered Admin owns this namespace in development and preview too.
 const proxy = { '/api': backend, '^/admin(?:/|\\?|$)': backend,
-  '^/(?:admin-(?:shared-care|temporal-times)\\.js|shared-care\\.(?:js|css))$': backend };
+  '^/(?:admin-(?:shared-care|temporal-times)\\.js|shared-care\\.(?:js|css)|error-codes\\.generated\\.js)$': backend };
 export default defineConfig(({ mode }) => {
   // HTTPS is opt-in for physical Android/Web Bluetooth testing. Never require
   // local certificates for standard dev, production builds or CI.

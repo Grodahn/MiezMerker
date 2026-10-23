@@ -32,6 +32,8 @@ A code is a stable case ID, not a per-incident correlation ID.
   warnings retain their own code alongside an already successful local copy.
 - Keep specific membership/media/time advice ahead of the general safe handler;
   cover servlet fallback HTML and authentication/CSRF failures as well as MVC.
+- Include the generated static catalog in Vite Admin proxy routing and browser
+  harnesses, preserving session gates in preview/development.
 - Document default API errors without replacing successful response schemas;
   operation-scoped validation/conflict/unavailable codes improve diagnostics,
   while security denials remain neutral across operations and tenants.
