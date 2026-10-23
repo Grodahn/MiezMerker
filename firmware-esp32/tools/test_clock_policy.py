@@ -59,6 +59,14 @@ class ClockPolicyTest(unittest.TestCase):
         self.assertNotEqual(0, code)
         self.assertIn('Invalid MM_SECURITY_CLOCK_POLICY', output)
 
+    def test_cached_selector_cannot_override_current_profile(self):
+        # Both stale selectors and stale config agree, but today's raw dev
+        # command requests alpha. Looking only at selector vs config misses it.
+        code, output = self.run_guard('sdkconfig.defaults;sdkconfig.dev', False, True, explicit='SIGNED_BACKEND_TIME')
+        self.assertNotEqual(0, code)
+        self.assertIn('profile=FIELD_ALPHA_PHONE_CLOCK', output)
+        self.assertIn('-U MM_SECURITY_CLOCK_POLICY', output)
+
 
 if __name__ == '__main__':
     unittest.main()

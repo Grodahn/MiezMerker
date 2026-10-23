@@ -31,6 +31,8 @@ or offline sync. Issuer provisioning is still required once per installation.
    Change only its `# CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK is not set` line to
    `CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK=y` and rerun. Do not delete the config,
    issuer pin, NVS, identity or observations. The reverse mismatch also fails.
+   A cached `MM_SECURITY_CLOCK_POLICY` cannot override the chosen defaults profile;
+   remove only that stale selector with `-U MM_SECURITY_CLOCK_POLICY` when reported.
    ESP-IDF defaults seed missing values; they never migrate existing values.
    The Windows `tools/idf.ps1` wrapper accepts the same arguments.
 3. From `app`, run `npm ci` once, then `npm run dev:https` for Android Chrome
@@ -131,6 +133,7 @@ The integrated security review checked mismatch-before-auth ordering, retained
 revocation/cancellation fences, alpha RAM-only lifetime, signed receipt verification,
 server claim-window assumptions and fail-closed release configuration. Repairs
 preserved the existing development-input release error before the new alpha gate,
+prevented cached explicit CMake selectors from overriding a newly requested profile,
 added a compiled PWA build identifier for cache diagnosis, and updated browser
 fixtures to handle alpha time separately from ownership receipts. Both PWA modes
 retain the complete registration/focus/confirmation assertions.

@@ -39,6 +39,10 @@ reject('old-signed-dev', source.replace('CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK=y',
 reject('explicit-signed-conflict', source, 'sdkconfig.defaults;sdkconfig.dev',
        'Security clock policy mismatch', '-D', 'MM_DEVELOPMENT_BUILD=ON',
        '-D', 'MM_SECURITY_CLOCK_POLICY=SIGNED_BACKEND_TIME')
+reject('cached-signed-selector', source.replace('CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK=y',
+       '# CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK is not set'),
+       'sdkconfig.defaults;sdkconfig.dev', 'Security clock policy mismatch',
+       '-D', 'MM_DEVELOPMENT_BUILD=ON', '-D', 'MM_SECURITY_CLOCK_POLICY=SIGNED_BACKEND_TIME')
 reject('alpha-release-reject', 'CONFIG_MM_FIELD_ALPHA_PHONE_CLOCK=y\n',
        'sdkconfig.defaults;sdkconfig.field-alpha', 'forbidden in release',
        '-D', 'MM_DEVELOPMENT_BUILD=OFF')
