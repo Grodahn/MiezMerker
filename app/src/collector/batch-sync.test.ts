@@ -28,6 +28,15 @@ function successView(nodeId: string, records = 3) {
 }
 
 describe('batch orchestration (issue #76)', () => {
+  test('unstructured cancellation details are not displayed', async () => {
+    const results = await runBatchSync([input('a')], {
+      createTransport: () => ({ connect: async () => {}, disconnect: async () => {}, read: async () => new Uint8Array(), write: async () => {} }),
+      runSingleNode: async () => { throw new DOMException('private token/chip', 'AbortError'); },
+    });
+    expect(results[0].kind).toBe('cancelled');
+    expect(results[0].message).toBe('Sammel-Sync abgebrochen.');
+    expect(results[0].message).not.toContain('private token/chip');
+  });
   test('backend bootstrap timeout is not a BLE reachability failure and the next node continues', async () => {
     let calls = 0;
     const results = await runBatchSync([input('time-service-failure'), input('healthy')], {

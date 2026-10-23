@@ -1,4 +1,4 @@
-import { safeFailure } from '../diagnostics/errors';
+import { DiagnosticError, safeFailure } from '../diagnostics/errors';
 // Sequential multi-node batch synchronization (issue #76).
 //
 // One user-initiated sync operation synchronizes all previously
@@ -166,7 +166,7 @@ export function classifyBatchView(view: CollectorViewState, signalAborted: boole
 
 function classifyThrown(error: unknown, signalAborted: boolean): { kind: BatchNodeKind; message: string } {
   if (signalAborted || isCancelledError(error)) {
-    return { kind: 'cancelled', message: error instanceof Error ? error.message : 'Sammel-Sync abgebrochen.' };
+    return { kind: 'cancelled', message: error instanceof DiagnosticError ? error.message : 'Sammel-Sync abgebrochen.' };
   }
   const sourceText = error instanceof Error ? error.message : '';
   const text = safeFailure(error, 'Sync fehlgeschlagen. Bitte erneut versuchen.');

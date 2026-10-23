@@ -1,4 +1,5 @@
 import { BluetoothTransportError } from '../platform/web-bluetooth';
+import { DiagnosticError, errorCodes } from '../diagnostics/errors';
 // @vitest-environment node
 import 'fake-indexeddb/auto';
 import claimVector from '../../../protocol/fixtures/claim-advertisement-v1.hex?raw';
@@ -176,10 +177,16 @@ test('lost post-claim owner confirmation is uncertain and keeps the receipt (#16
   expect((await db.nodeMeta.get(NODE))?.claimReceipt).toBe('signed-receipt');
   db.close();
 });
-test('anchor sync loss after a committed claim stays pending, never a claim failure (#161)', async () => {
+test.each([
+  { error: new Error('private token/chip during anchor'), code: errorCodes.CLOCK_SNAPSHOT },
+  { error: new DiagnosticError(errorCodes.CLOCK_REBOOT, 'Napf während Zeitaufnahme neu gestartet.'), code: errorCodes.CLOCK_REBOOT },
+])('anchor sync loss stays pending with safe diagnostic code $code (#161)', async ({ error, code }) => {
   const transport = new ClaimTransport(); transport.phoneTime = true;
-  vi.mocked(runFieldSync).mockRejectedValueOnce(new Error('BLE disconnected during anchor'));
-  await expect(provisionNode(transport, NODE, 'org-a')).resolves.toMatchObject({ timeAnchorPending: true });
+  vi.mocked(runFieldSync).mockRejectedValueOnce(error);
+  const result = await provisionNode(transport, NODE, 'org-a');
+  expect(result).toMatchObject({ timeAnchorPending: true });
+  expect(result?.message).toContain(`[${code}]`);
+  expect(result?.message).not.toContain('private token/chip');
   const db = new CollectorDatabase(); expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
 });
 test('MEMBER cannot read or deliver claim material', async () => {
