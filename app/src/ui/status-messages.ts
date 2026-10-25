@@ -1,3 +1,4 @@
+import { messageCode, withCode, errorCodes, type ErrorCode } from '../diagnostics/errors';
 import type { StatusKind } from './Status';
 
 export interface StatusMessage { kind: StatusKind; title: string; message: string; retry?: boolean }
@@ -32,8 +33,13 @@ export const syncHelp = [
 ];
 
 // Display adapter for the existing error strings. Never infers a successful
-// operation or changes transport/auth state. Unknown domain errors retain detail.
-export function errorStatus(message: string): StatusMessage {
+// operation or changes transport/auth state. Unknown external details stay private.
+export function errorStatus(message: string, fallbackCode: ErrorCode = errorCodes.UI_UNKNOWN): StatusMessage {
+  const result = describeError(message);
+  const code = messageCode(message) ?? fallbackCode;
+  return code && result.kind === 'error' ? { ...result, message: withCode(result.message ?? message, code) } : result;
+}
+function describeError(message: string): StatusMessage {
   if (message.startsWith('Zeitbeleg vor Registrierung noch nicht prüfbar.')) {
     return { kind: 'info', title: 'Historischer Zeitbeleg noch offen', message };
   }
@@ -85,6 +91,16 @@ export function bluetoothSelectionMessage(error: unknown): string {
 }
 
 export function bluetoothErrorMessage(error: unknown, phase: 'selection' | 'operation' = 'operation'): string {
+  const message = describeBluetoothMessage(error, phase);
+  const outer = error && typeof error === 'object' ? error : undefined;
+  const cause = outer && 'cause' in outer && outer.cause && typeof outer.cause === 'object' ? outer.cause : outer;
+  const name = cause && 'name' in cause ? cause.name : undefined;
+  if (name === 'AbortError' || (phase === 'selection' && name === 'NotFoundError')) return message;
+  const code = name === 'NotAllowedError' || name === 'SecurityError' ? errorCodes.BLE_PERMISSION
+    : name === 'TimeoutError' ? errorCodes.BLE_TIMEOUT : errorCodes.BLE_CONNECTION;
+  return withCode(message, code);
+}
+function describeBluetoothMessage(error: unknown, phase: 'selection' | 'operation'): string {
   // DOMException and errors can originate in a different realm (browser/jsdom).
   const outer = error && typeof error === 'object' ? error : undefined;
   const cause = outer && 'cause' in outer && outer.cause && typeof outer.cause === 'object' ? outer.cause : outer;
@@ -105,6 +121,6 @@ export function bluetoothErrorMessage(error: unknown, phase: 'selection' | 'oper
     : 'Auslesen abgebrochen. Eine vollständige lokale Übernahme wurde nicht bestätigt. Bitte bei Bedarf erneut versuchen.';
   if (name === 'NotAllowedError' || name === 'SecurityError') return 'Bluetooth-Berechtigung verweigert. Bitte Zugriff in den Browser-Einstellungen erlauben und erneut auswählen.';
   if (name === 'NetworkError') return 'Bluetooth-Verbindung fehlgeschlagen. Bitte Napf einschalten, näher herangehen und erneut versuchen.';
-  return outer && 'message' in outer && typeof outer.message === 'string' ? outer.message
+  return outer && 'message' in outer && typeof outer.message === 'string' && messageCode(outer.message) ? outer.message
     : 'Bluetooth-Verbindung konnte nicht hergestellt werden. Bitte erneut versuchen.';
 }

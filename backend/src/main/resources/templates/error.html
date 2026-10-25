@@ -1,0 +1,8 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" lang="de">
+<head><meta charset="utf-8"><title>Vorgang nicht abgeschlossen</title></head>
+<body><main role="alert"><h1>Vorgang nicht abgeschlossen</h1>
+<p th:text="${message}">Bitte erneut versuchen.</p>
+<p><code th:text="${'[' + code + ']'}">[MM-BACKEND-500]</code></p>
+<p>Bitte Sitzung, Berechtigungen und Eingaben prüfen.</p>
+</main></body></html>

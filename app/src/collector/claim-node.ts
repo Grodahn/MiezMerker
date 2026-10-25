@@ -1,3 +1,5 @@
+import { DiagnosticError, errorCodes, apiErrorCode } from '../diagnostics/errors';
+import { claimFailureCodes, withCode, messageCode, type ErrorCode } from '../diagnostics/errors';
 // Node claiming orchestration (issue #8, provisioning #18).
 //
 // For an UNCLAIMED node only ACTIVE ADMIN may claim it; no physical release
@@ -18,12 +20,13 @@ export type ClaimFailureKind =
   | 'offline'
   | 'uncertain';
 
-export class ClaimError extends Error {
+export class ClaimError extends DiagnosticError {
   constructor(
     readonly kind: ClaimFailureKind,
     message: string,
+    readonly code: ErrorCode = messageCode(message) ?? claimFailureCodes[kind],
   ) {
-    super(message);
+    super(code, message);
     this.name = 'ClaimError';
   }
 }
@@ -105,7 +108,7 @@ export async function claimNode(
       throw new ClaimError('conflict-foreign',
         'Node gehört bereits einer anderen Organisation. Übernahme nur per Factory Reset mit neuer Node-Identität.');
     }
-    throw new ClaimError('backend', 'Claiming fehlgeschlagen. Unverändert erneut versuchen (idempotent).');
+    throw new ClaimError('backend', 'Claiming fehlgeschlagen. Unverändert erneut versuchen (idempotent).', apiErrorCode(status ?? 500, error));
   }
   if (!data.receipt || data.nodeId !== input.nodeId || data.organizationId !== organizationId) {
     throw new ClaimError('backend', 'Ungültige Claim-Antwort. Backend-Provisionierung unverändert erneut versuchen.');
@@ -124,7 +127,7 @@ export async function claimNode(
       publicKeyX: input.publicKeyX, publicKeyY: input.publicKeyY, claimReceipt: data.receipt,
     });
   } catch {
-    throw new ClaimError('backend', 'Receipt konnte nicht lokal gespeichert werden. Provisionierung unverändert erneut versuchen.');
+    throw new ClaimError('backend', 'Receipt konnte nicht lokal gespeichert werden. Provisionierung unverändert erneut versuchen.', errorCodes.CLAIM_RECEIPT_STORAGE);
   } finally { db.close(); }
   return {
     nodeId: data.nodeId ?? input.nodeId,

@@ -469,6 +469,7 @@ class AdminCatsTest {
         assertFalse(response.body().contains("Private foreign profile"));
         assertEquals(200, get("/admin-shared-care.js").statusCode());
         assertEquals(200, get("/shared-care.js").statusCode());
+        assertEquals(200, get("/error-codes.generated.js").statusCode());
     }
 
     @Test

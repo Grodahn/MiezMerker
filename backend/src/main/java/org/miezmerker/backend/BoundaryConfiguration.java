@@ -15,7 +15,6 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.http.HttpStatus;
@@ -34,7 +33,6 @@ import org.springframework.security.web.authentication.LoginUrlAuthenticationEnt
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
-import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
 
 @Configuration
@@ -88,8 +86,6 @@ public class BoundaryConfiguration {
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
         var adminLoginEntry = new LoginUrlAuthenticationEntryPoint("/admin/login");
-        var apiUnauthorized = new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED);
-        var apiDenied = new AccessDeniedHandlerImpl();
 
         return http
                 .csrf(csrf -> csrf
@@ -164,7 +160,7 @@ public class BoundaryConfiguration {
                                     adminLoginEntry.commence(request, response, entryException);
                                 }
                             } else {
-                                apiUnauthorized.commence(request, response, entryException);
+                                writeApiFailure(response, 401);
                             }
                         })
                         .accessDeniedHandler((request, response, deniedException) -> {
@@ -174,7 +170,7 @@ public class BoundaryConfiguration {
                             if (uri != null && (uri.startsWith(base) || uri.equals(adminRoot))) {
                                 request.getRequestDispatcher("/admin/denied").forward(request, response);
                             } else {
-                                apiDenied.handle(request, response, deniedException);
+                                writeApiFailure(response, 403);
                             }
                         }))
                 .formLogin(form -> form
@@ -196,4 +192,14 @@ public class BoundaryConfiguration {
                         .permitAll())
                 .build();
     }
+    private static void writeApiFailure(jakarta.servlet.http.HttpServletResponse response, int status)
+            throws java.io.IOException {
+        var error = org.miezmerker.backend.diagnostics.ApiError.forStatus(status);
+        response.setStatus(status);
+        response.setHeader("Cache-Control", "no-store");
+        response.setContentType("application/json");
+        response.getWriter().write("{\"status\":" + status + ",\"error\":\"" + error.error()
+                + "\",\"code\":\"" + error.code() + "\",\"message\":\"" + error.message() + "\"}");
+    }
+
 }

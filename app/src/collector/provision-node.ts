@@ -1,3 +1,4 @@
+import { DiagnosticError, errorCodes, safeFailure } from '../diagnostics/errors';
 import type { NodeTransport } from '../platform/node-transport';
 import { toBase64Url } from '../platform/device-keys';
 import { CollectorDatabase } from '../platform/offline-store';
@@ -29,7 +30,7 @@ function isProvisioningCancellation(error: unknown): boolean {
 
 function toUncertainError(error: unknown): ClaimError {
   if (error instanceof ClaimError && error.kind === 'uncertain') return error;
-  const detail = error instanceof Error ? error.message : String(error ?? 'unbekannt');
+  const detail = error instanceof DiagnosticError ? error.message.replace(` [${error.code}]`, '') : 'Übertragung oder Bestätigung unterbrochen';
   return new ClaimError('uncertain',
     `Napf möglicherweise bereits registriert, Bestätigung verloren (${detail}). Receipt bleibt gespeichert; Einrichtung ohne erneutes Claiming über Backend-Status fortsetzen.`);
 }
@@ -145,7 +146,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
         if (result.nodeState !== 'complete') return { timeAnchorPending: true, message: `Napf registriert; erste Zeitaufnahme noch ausstehend. Bitte erneut auslesen. ${result.nodeMessage}` };
       } catch (error) {
         if (isProvisioningCancellation(error)) throw error;
-        const detail = error instanceof Error ? error.message : String(error ?? 'unbekannt');
+        const detail = safeFailure(error, 'Übertragung oder Bestätigung unterbrochen', errorCodes.CLOCK_SNAPSHOT);
         return { timeAnchorPending: true, message: `Napf registriert; erste Zeitaufnahme noch ausstehend. Bitte erneut auslesen. ${detail}` };
       }
     }

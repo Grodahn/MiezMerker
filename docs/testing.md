@@ -316,6 +316,11 @@ budgets and the signed ESP32 receipt interoperability fixture (#146).
 success reports, owner/tenant/admin gates, historical deployment uncertainty,
 current recipient authorization, idempotency/concurrent retries and retention.
 
+`DiagnosticErrorTest` belongs to `auth`, `admin`, and `system`: safe structured
+HTTP errors, neutral tenant denials and readable admin exception pages (#194).
+`python scripts/generate-error-codes.py --check` validates the shared diagnostic
+catalog and generated TypeScript/Java/static-JavaScript/support adapters.
+
 `SecurityClockPolicyTest` belongs to `node` and `auth`: default alpha, explicit signed
 configuration and fail-closed release/invalid policy. `NodeClaimTest` explicitly
 checks alpha receipt issuance with UTC-bootstrap health disabled (#195).

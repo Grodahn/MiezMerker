@@ -24,7 +24,7 @@ test('server rejection preserves the offline snapshot for offline-sync eligibili
     user: { userId: 'user', email: 'field@example.org', memberships: [] },
   }));
   const { api } = await import('../api/client');
-  vi.mocked(api.GET).mockResolvedValue({ error: {}, response: { status: 401 } });
+  vi.mocked(api.GET).mockResolvedValue({ error: { code: 'MM-BACKEND-401', error: 'Unauthorized', message: 'Unauthorized', status: 401 }, response: new Response(null, { status: 401 }) });
   const { fetchSession, getAuthState } = await import('./auth');
   await fetchSession();
   // #31: session expiration locks management but must not destroy the

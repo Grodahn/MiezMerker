@@ -1,3 +1,4 @@
+import { errorCodes } from '../diagnostics/errors';
 import type { CollectorViewState } from './collector-sync';
 import { Status } from '../ui/Status';
 import { errorStatus, statusMessages } from '../ui/status-messages';
@@ -33,7 +34,7 @@ export function UploadStatus({ view, retry, disabled, compact = false }: { view:
     ? { kind: 'loading' as const, title: 'Backend-Upload läuft …', message: view.backendMessage }
     : view.backendState === 'waiting-for-network'
       ? { ...statusMessages.uploadPending, kind: 'offline' as const, title: 'Upload wartet auf Verbindung', message: view.backendMessage || statusMessages.uploadPending.message }
-      : view.backendState === 'failed' ? errorStatus(view.backendMessage)
+      : view.backendState === 'failed' ? errorStatus(view.backendMessage, errorCodes.UPLOAD_FAILED)
         : view.backendState === 'complete' && view.pendingUploads === 0
           ? view.uploadedCount > 0 ? { ...statusMessages.uploadSuccess, message: view.backendMessage || statusMessages.uploadSuccess.message }
             : statusMessages.noUploads

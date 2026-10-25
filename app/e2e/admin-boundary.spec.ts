@@ -41,7 +41,7 @@ test('development proxy reserves the complete Admin namespace for Spring', async
 
 test('Admin presenter resources pass through the backend session gate in preview and development', async ({ request }) => {
   for (const base of ['http://127.0.0.1:4173', 'http://127.0.0.1:5173']) {
-    for (const path of ['/admin-temporal-times.js', '/admin-shared-care.js', '/shared-care.js', '/shared-care.css']) {
+    for (const path of ['/admin-temporal-times.js', '/admin-shared-care.js', '/shared-care.js', '/shared-care.css', '/error-codes.generated.js']) {
       const response = await request.get(base + path);
       // A fresh browser has no backend session. Spring rejects the static
       // request; Vite must never answer it with the field SPA HTML instead.

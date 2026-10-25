@@ -180,7 +180,7 @@ test('Admin adapter uses twenty-item pages, clears on submit and reloads server 
   const { state, requests } = await backend(page); state.pageSize = 20;
   // Browser harness for the real static Admin adapter. AdminCatsTest separately
   // checks the actual authenticated Thymeleaf detail and resource delivery.
-  for (const file of ['admin-shared-care.js', 'shared-care.js', 'shared-care.css']) {
+  for (const file of ['admin-shared-care.js', 'shared-care.js', 'shared-care.css', 'error-codes.generated.js']) {
     const content = await readFile(new URL(`../../backend/src/main/resources/static/${file}`, import.meta.url), 'utf8');
     await page.route(`**/${file}`, route => route.fulfill({ contentType: file.endsWith('.css') ? 'text/css' : 'text/javascript', body: content }));
   }

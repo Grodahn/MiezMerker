@@ -5,7 +5,7 @@
 <main><h1>Zeitfenster und Beobachtungen</h1>
 <p>Eine RFID-Beobachtung ist noch kein bestätigter Besuch. Zeitfenster bewahren die Unsicherheit; eine genaue Dauer ist daraus nicht bekannt. Futterstellen stammen ausschließlich aus gespeicherter historischer Zuordnung.</p>
 <p>Zeiten werden in Ihrer lokalen Zeitzone angezeigt; ohne JavaScript in UTC. Reihenfolge nach Napf, Boot und Beobachtungsfolge, nicht nach Empfangszeit.</p>
-<p th:if="${error != null}" role="alert" th:text="${error}"></p>
+<p th:if="${error != null}" role="alert" th:text="${error + ' [' + errorCode + ']'}"></p>
 <form method="get"><label for="chip">Chip-ID</label><input id="chip" name="chipId" maxlength="64" required th:value="${chipId}"/><button class="btn">Anzeigen</button></form>
 <section th:if="${page != null}" aria-label="Zeitfensterverlauf">
 <p th:if="${#lists.isEmpty(page.items)}">Keine weiteren Beobachtungen.</p>

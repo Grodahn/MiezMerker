@@ -10,7 +10,7 @@
 <h1>Organisation verwalten</h1>
 
 <div th:if="${success != null}" class="alert alert-info" role="status" th:text="${success}">Erfolg</div>
-<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error}">Fehler</div>
+<div th:if="${error != null}" class="alert alert-error" role="alert" th:text="${error + ' [' + @diagnostics.form() + ']'}">Fehler</div>
 
 <section class="card">
 <h2 th:text="${org.displayName}">Name</h2>

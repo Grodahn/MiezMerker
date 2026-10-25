@@ -1,3 +1,4 @@
+import { errorCodes, DiagnosticError } from '../diagnostics/errors';
 // Web Bluetooth adapter for the NapfNode GATT contract (issue #8, protocol #6).
 //
 // Exact contract from protocol/ble/messages.md and fixtures/ble-sync-v1.json.
@@ -52,14 +53,19 @@ export type BluetoothFailureKind =
   | 'protocol'
   | 'timeout';
 
-export class BluetoothTransportError extends Error {
+export class BluetoothTransportError extends DiagnosticError {
   constructor(
     readonly kind: BluetoothFailureKind,
     message: string,
     readonly cause?: unknown,
     readonly stage?: 'connect' | 'service' | 'characteristic',
   ) {
-    super(message);
+    const code = {
+      unsupported: errorCodes.BLE_UNSUPPORTED, 'permission-denied': errorCodes.BLE_PERMISSION,
+      'no-device': errorCodes.BLE_CONNECTION, 'connection-failed': errorCodes.BLE_CONNECTION,
+      disconnected: errorCodes.BLE_CONNECTION, protocol: errorCodes.BLE_PROTOCOL, timeout: errorCodes.BLE_TIMEOUT,
+    }[kind];
+    super(code, message);
     this.name = 'BluetoothTransportError';
   }
 }
@@ -72,7 +78,7 @@ export function describeBluetoothError(error: unknown): string {
       return 'Bluetooth-Berechtigung verweigert. Bitte Zugriff erlauben und erneut versuchen.';
     }
     if (error.name === 'NetworkError') return 'BLE-Verbindung fehlgeschlagen. Näher herangehen und erneut versuchen.';
-    return error.message;
+    return 'Bluetooth-Verbindung konnte nicht hergestellt werden. Bitte erneut versuchen.';
   }
   return 'Unbekannter Bluetooth-Fehler.';
 }

@@ -1,3 +1,4 @@
+import { errorCodes, withCode, safeFailure } from '../diagnostics/errors';
 import { SyncEventOutbox } from './sync-event-outbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CollectorDatabase, requestPersistentStorage } from '../platform/offline-store';
@@ -326,7 +327,7 @@ export function CollectorShell(props: {
           pendingUploads: stats.pending + stats.failed, uploadedCount: stats.uploaded });
       } catch (e) {
         if (contextStillActive()) setUploadView(v => ({ ...v, backendState: 'failed',
-          backendMessage: `Backend-Upload fehlgeschlagen (${e instanceof Error ? e.message : 'unbekannt'}). Vor-Ort-Sync bleibt gültig.` }));
+          backendMessage: withCode('Backend-Upload fehlgeschlagen. Vor-Ort-Sync bleibt gültig.', errorCodes.UPLOAD_FAILED) }));
       } finally {
         uploadBusy.current = false;
         if (mounted.current && (uploadRequested.current || !contextStillActive())) setUploadContextVersion(v => v + 1);
@@ -673,7 +674,7 @@ export function CollectorShell(props: {
       setResumeCandidate(null);
     }).catch(async (e: unknown) => {
       if (!stillActive()) return;
-      const originalMessage = e instanceof ClaimError ? e.message : e instanceof Error ? e.message : 'Claiming fehlgeschlagen.';
+      const originalMessage = e instanceof ClaimError ? e.message : safeFailure(e, 'Claiming fehlgeschlagen.', errorCodes.CLAIM_BACKEND);
       // Issue #161: a committed receipt with a lost BLE confirmation must not
       // end as "claim failed, claim again". Recover authoritatively: if the
       // backend already owns this CLAIMED node without a deployment, offer the
@@ -775,10 +776,10 @@ export function CollectorShell(props: {
   const canStart = !needsManualSelection && !batchRunning && !claimBusy && !freigebenBusy && !registrationCandidate && !setupNodeId && !storageBlocked && !authorizationBlocked && capability === 'supported' && Boolean(auth.user && auth.activeOrganizationId);
 
   return <section className="sync-screen" aria-label="Vor-Ort-Sync"><h1>Vor-Ort-Sync</h1>
-    {storageBlocked && <Status kind="error" title="Auslesen nicht möglich" message="Der lokale Speicher ist nicht verfügbar. Bitte die App neu öffnen und den Browserspeicher prüfen."/>}
-    {authorizationBlocked && <Status kind="error" title="Berechtigung fehlt" message="Bitte einmal mit Internet anmelden, damit Sie Näpfe auch offline sicher auslesen können."/>}
-    {(!auth.user || !auth.activeOrganizationId) && <Status kind="error" title="Bitte anmelden und Organisation wählen"/>}
-    {capability !== 'supported' && <Status {...errorStatus('Dieser Browser unterstützt kein Web Bluetooth. Bitte aktuelles Chrome/Chromium auf Android verwenden.')}/>}
+    {storageBlocked && <Status kind="error" code={errorCodes.STORAGE_WRITE} title="Auslesen nicht möglich" message="Der lokale Speicher ist nicht verfügbar. Bitte die App neu öffnen und den Browserspeicher prüfen."/>}
+    {authorizationBlocked && <Status kind="error" code={errorCodes.AUTH_CREDENTIAL} title="Berechtigung fehlt" message="Bitte einmal mit Internet anmelden, damit Sie Näpfe auch offline sicher auslesen können."/>}
+    {(!auth.user || !auth.activeOrganizationId) && <Status kind="error" code={errorCodes.AUTH_SESSION} title="Bitte anmelden und Organisation wählen"/>}
+    {capability !== 'supported' && <Status {...errorStatus('Dieser Browser unterstützt kein Web Bluetooth. Bitte aktuelles Chrome/Chromium auf Android verwenden.', errorCodes.BLE_UNSUPPORTED)}/>}
 
     <div className="sync-primary">
       <button className="sync-button button--primary" type="button" disabled={!canStart} onClick={() => void startBatch()}
@@ -791,7 +792,7 @@ export function CollectorShell(props: {
         {freigebenBusy ? 'Freigabe läuft …' : 'Weiteren Napf hinzufügen'}
       </button>
     </div>
-    {devicesError && <Status kind="error" title="Geräteliste nicht verfügbar" message={devicesError}/>}
+    {devicesError && <Status kind="error" code={errorCodes.BLE_CONNECTION} title="Geräteliste nicht verfügbar" message={devicesError}/>}
     {!devicesError && devicesSupport === 'supported' && devices.length === 0 && !batchRunning && !batchResults.length && <Status kind="info" title="Noch kein Napf freigegeben" message={getDevicesFallbackMessage('supported')}/>}
     {devicesSupport === 'unsupported' && capability === 'supported' && <Status kind="info" title="Automatisches Wiederfinden nicht verfügbar" message={getDevicesFallbackMessage('unsupported')}/>}
 

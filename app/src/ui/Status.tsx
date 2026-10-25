@@ -1,3 +1,4 @@
+import { errorCodes, messageCode, type ErrorCode } from '../diagnostics/errors';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { assets } from '../assets';
 import { Graphic } from './Graphic';
@@ -6,6 +7,7 @@ import { Button, Card } from './primitives';
 export type StatusKind = 'loading' | 'empty' | 'error' | 'offline' | 'success' | 'info';
 export interface StatusProps {
   kind: StatusKind;
+  code?: ErrorCode;
   title: string;
   message?: string;
   graphic?: keyof typeof assets.status;
@@ -18,8 +20,10 @@ export interface StatusProps {
 
 // Presentation only: callers own truth, retries and operation lifetime. Optional
 // scope and real totals also support independently rendered per-node outcomes.
-export function Status({ kind, title, message, graphic = kind, scope, progress, action, children,
+export function Status({ kind, title, message, code, graphic = kind, scope, progress, action, children,
   longWaitMessage = 'Das dauert länger. Bitte Verbindung prüfen. Sie können weiterhin die Navigation verwenden.' }: StatusProps) {
+  const displayCode = kind === 'error' ? messageCode(message ?? '') ?? code ?? errorCodes.UI_UNKNOWN : kind === 'info' ? messageCode(message ?? '') : undefined;
+  const visibleMessage = displayCode ? message?.replace(` [${displayCode}]`, '') : message;
   const titleId = useId();
   const [liveReady, setLiveReady] = useState(false);
   useEffect(() => {
@@ -39,7 +43,8 @@ export function Status({ kind, title, message, graphic = kind, scope, progress, 
   const content = <>
     {scope && <p className="status-scope">{scope}</p>}
     <p id={titleId} className="status-title">{title}</p>
-    {message && message !== title && <p>{message}</p>}
+    {visibleMessage && visibleMessage !== title && <p>{visibleMessage}</p>}
+    {displayCode && <p className="error-code"><code>[{displayCode}]</code></p>}
     {longWait && kind === 'loading' && <p>{longWaitMessage}</p>}
     {measured && <p>{progress.value} von {progress.max}</p>}
   </>;

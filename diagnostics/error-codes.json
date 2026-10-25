@@ -1,0 +1,755 @@
+{
+  "UI_UNKNOWN": {
+    "code": "MM-UI-001",
+    "meaning": "Unclassified operation failure",
+    "phase": "ui",
+    "causes": "Unknown or unstructured failure",
+    "diagnose": "Retry; record the operation and code"
+  },
+  "AUTH_SESSION": {
+    "code": "MM-AUTH-001",
+    "meaning": "Session required",
+    "phase": "auth",
+    "causes": "Missing or expired session",
+    "diagnose": "Sign in online"
+  },
+  "AUTH_DENIED": {
+    "code": "MM-AUTH-002",
+    "meaning": "Access denied",
+    "phase": "auth",
+    "causes": "Inactive membership or denied permission",
+    "diagnose": "Check active organization and permissions"
+  },
+  "AUTH_CREDENTIAL": {
+    "code": "MM-AUTH-003",
+    "meaning": "Offline credential unavailable",
+    "phase": "auth",
+    "causes": "Missing or expired offline credential",
+    "diagnose": "Renew online"
+  },
+  "AUTH_CHANGED": {
+    "code": "MM-AUTH-004",
+    "meaning": "Authorization context changed",
+    "phase": "auth",
+    "causes": "Account or organization changed during operation",
+    "diagnose": "Restart in current context"
+  },
+  "AUTH_LOGIN": {
+    "code": "MM-AUTH-005",
+    "meaning": "Login rejected",
+    "phase": "auth",
+    "causes": "Credentials or session unavailable",
+    "diagnose": "Check credentials and connection"
+  },
+  "CLAIM_OFFLINE": {
+    "code": "MM-CLAIM-001",
+    "meaning": "Claim requires internet",
+    "phase": "claim",
+    "causes": "Backend provisioning unavailable offline",
+    "diagnose": "Connect and retry the same claim"
+  },
+  "CLAIM_CONFLICT": {
+    "code": "MM-CLAIM-002",
+    "meaning": "Claim ownership conflict",
+    "phase": "claim",
+    "causes": "Claim cannot be granted to this organization",
+    "diagnose": "Check organization; keep receipt"
+  },
+  "CLAIM_BACKEND": {
+    "code": "MM-CLAIM-003",
+    "meaning": "Claim provisioning not confirmed (operation fallback)",
+    "phase": "claim",
+    "causes": "Backend response or receipt invalid",
+    "diagnose": "Retry idempotently without deleting receipt"
+  },
+  "CLAIM_IDENTITY": {
+    "code": "MM-CLAIM-004",
+    "meaning": "Registration identity proof unavailable",
+    "phase": "claim",
+    "causes": "Missing or malformed proof after time preflight",
+    "diagnose": "Check security time policy and signed bootstrap"
+  },
+  "CLAIM_SIGNATURE": {
+    "code": "MM-CLAIM-005",
+    "meaning": "Registration proof signature invalid",
+    "phase": "claim",
+    "causes": "Identity binding or signature invalid",
+    "diagnose": "Stop registration; check firmware and pinned identity"
+  },
+  "CLAIM_UNCERTAIN": {
+    "code": "MM-CLAIM-006",
+    "meaning": "Claim outcome uncertain",
+    "phase": "claim",
+    "causes": "Interrupted receipt transfer or confirmation",
+    "diagnose": "Retry with saved receipt"
+  },
+  "CLAIM_RECEIPT_STORAGE": {
+    "code": "MM-CLAIM-007",
+    "meaning": "Receipt persistence failed",
+    "phase": "claim",
+    "causes": "Local database unavailable",
+    "diagnose": "Check browser storage; preserve existing receipt"
+  },
+  "CLAIM_CHANGED": {
+    "code": "MM-CLAIM-008",
+    "meaning": "Registration identity or state changed",
+    "phase": "claim",
+    "causes": "Different device or concurrent registration",
+    "diagnose": "Select device again"
+  },
+  "CLOCK_BOOTSTRAP": {
+    "code": "MM-CLOCK-001",
+    "meaning": "Signed time bootstrap unavailable",
+    "phase": "clock",
+    "causes": "Backend offline or unhealthy clock",
+    "diagnose": "Check backend clock health and internet"
+  },
+  "CLOCK_CHALLENGE": {
+    "code": "MM-CLOCK-002",
+    "meaning": "Time challenge invalid",
+    "phase": "clock",
+    "causes": "Malformed or wrong device challenge",
+    "diagnose": "Reconnect to selected device"
+  },
+  "CLOCK_REJECTED": {
+    "code": "MM-CLOCK-003",
+    "meaning": "Signed time proof rejected",
+    "phase": "clock",
+    "causes": "Authorization or proof rejected",
+    "diagnose": "Check active membership and backend time health"
+  },
+  "CLOCK_CONFIRMATION": {
+    "code": "MM-CLOCK-004",
+    "meaning": "Node did not confirm signed time",
+    "phase": "clock",
+    "causes": "Proof rejected or response lost",
+    "diagnose": "Retry bootstrap; check firmware"
+  },
+  "CLOCK_POLICY": {
+    "code": "MM-CLOCK-005",
+    "meaning": "Security time policy not satisfied",
+    "phase": "clock",
+    "causes": "No accepted secure or Alpha time",
+    "diagnose": "Check firmware policy and configured time source"
+  },
+  "CLOCK_SNAPSHOT": {
+    "code": "MM-CLOCK-006",
+    "meaning": "Phone time evidence unavailable",
+    "phase": "clock",
+    "causes": "Malformed snapshot or boot discontinuity",
+    "diagnose": "Retry after checking device continuity"
+  },
+  "BLE_CONNECTION": {
+    "code": "MM-BLE-001",
+    "meaning": "BLE connection interrupted",
+    "phase": "ble",
+    "causes": "Link unavailable or disconnected",
+    "diagnose": "Enable Bluetooth; move closer and retry"
+  },
+  "BLE_PROTOCOL": {
+    "code": "MM-BLE-002",
+    "meaning": "Malformed or unexpected protocol response",
+    "phase": "ble",
+    "causes": "Incompatible frame or peer",
+    "diagnose": "Check PWA and firmware versions"
+  },
+  "BLE_VERSION": {
+    "code": "MM-BLE-003",
+    "meaning": "Unsupported protocol version",
+    "phase": "ble",
+    "causes": "Version or capability mismatch",
+    "diagnose": "Update compatible firmware and PWA"
+  },
+  "BLE_UNSUPPORTED": {
+    "code": "MM-BLE-004",
+    "meaning": "Web Bluetooth unavailable",
+    "phase": "ble",
+    "causes": "Browser or HTTPS unsupported",
+    "diagnose": "Use supported browser on HTTPS"
+  },
+  "BLE_PERMISSION": {
+    "code": "MM-BLE-005",
+    "meaning": "Bluetooth permission denied",
+    "phase": "ble",
+    "causes": "Browser permission or security policy",
+    "diagnose": "Check browser permissions"
+  },
+  "BLE_TIMEOUT": {
+    "code": "MM-BLE-006",
+    "meaning": "BLE operation timed out",
+    "phase": "ble",
+    "causes": "Unresponsive link or peer",
+    "diagnose": "Move closer and retry"
+  },
+  "BLE_DISABLED": {
+    "code": "MM-BLE-007",
+    "meaning": "Bluetooth unavailable",
+    "phase": "ble",
+    "causes": "Adapter disabled or unavailable",
+    "diagnose": "Enable Bluetooth"
+  },
+  "NODE_IDENTITY": {
+    "code": "MM-BLE-008",
+    "meaning": "Node authenticity not confirmed",
+    "phase": "ble",
+    "causes": "Pinned identity signature failed",
+    "diagnose": "Stop sync; check trusted node record"
+  },
+  "NODE_KEY": {
+    "code": "MM-BLE-009",
+    "meaning": "Trusted node key unavailable offline",
+    "phase": "ble",
+    "causes": "No cached backend identity",
+    "diagnose": "Synchronize once online"
+  },
+  "SYNC_ACK": {
+    "code": "MM-SYNC-001",
+    "meaning": "ACK not confirmed",
+    "phase": "sync",
+    "causes": "Missing rejected or mismatched ACK",
+    "diagnose": "Retry; persisted records remain local"
+  },
+  "SYNC_GAP": {
+    "code": "MM-SYNC-002",
+    "meaning": "Sequence gap remains",
+    "phase": "sync",
+    "causes": "Noncontiguous durable records",
+    "diagnose": "Retry; inspect sequence continuity"
+  },
+  "SYNC_COMPACT": {
+    "code": "MM-SYNC-003",
+    "meaning": "Node cleanup not confirmed",
+    "phase": "sync",
+    "causes": "COMPACT or subsequent status unavailable",
+    "diagnose": "Retry next visit; do not repeat committed ACK"
+  },
+  "SYNC_METADATA": {
+    "code": "MM-SYNC-004",
+    "meaning": "Node metadata update not confirmed",
+    "phase": "sync",
+    "causes": "Metadata rejected or response lost",
+    "diagnose": "Retry next online visit"
+  },
+  "SYNC_NODE_FULL": {
+    "code": "MM-SYNC-005",
+    "meaning": "Node storage pressure",
+    "phase": "sync",
+    "causes": "Node full or almost full",
+    "diagnose": "Synchronize and clean up node"
+  },
+  "SYNC_UNCLAIMED": {
+    "code": "MM-SYNC-006",
+    "meaning": "Node registration required",
+    "phase": "sync",
+    "causes": "Unclaimed node",
+    "diagnose": "Ask active administrator to register"
+  },
+  "STORAGE_WRITE": {
+    "code": "MM-STORAGE-001",
+    "meaning": "Durable local persistence failed",
+    "phase": "storage",
+    "causes": "Database quota or transaction failure",
+    "diagnose": "Check browser storage; no ACK before persistence"
+  },
+  "STORAGE_EVENT": {
+    "code": "MM-STORAGE-002",
+    "meaning": "Sync event persistence failed after ACK",
+    "phase": "storage",
+    "causes": "Outbox write interrupted",
+    "diagnose": "Preserve copied observations; retry event capture"
+  },
+  "UPLOAD_FAILED": {
+    "code": "MM-UPLOAD-001",
+    "meaning": "Observation upload not confirmed (operation fallback)",
+    "phase": "upload",
+    "causes": "Backend or network failure",
+    "diagnose": "Retry upload; local copy remains"
+  },
+  "UPLOAD_EVIDENCE": {
+    "code": "MM-UPLOAD-002",
+    "meaning": "Time evidence upload not confirmed",
+    "phase": "upload",
+    "causes": "Invalid missing or rejected receipt",
+    "diagnose": "Retry; preserve durable evidence"
+  },
+  "UPLOAD_CONFLICT": {
+    "code": "MM-UPLOAD-003",
+    "meaning": "Observation upload conflict",
+    "phase": "upload",
+    "causes": "Backend rejected conflicting immutable event",
+    "diagnose": "Inspect conflict with authorized diagnostics"
+  },
+  "UPLOAD_OFFLINE": {
+    "code": "MM-UPLOAD-004",
+    "meaning": "Upload waiting for network",
+    "phase": "upload",
+    "causes": "No internet",
+    "diagnose": "Reconnect; local data remains"
+  },
+  "ADMIN_FORM": {
+    "code": "MM-ADMIN-001",
+    "meaning": "Form validation failed",
+    "phase": "admin",
+    "causes": "Invalid submitted fields",
+    "diagnose": "Correct marked fields"
+  },
+  "ADMIN_CONFLICT": {
+    "code": "MM-ADMIN-002",
+    "meaning": "Concurrent membership change",
+    "phase": "admin",
+    "causes": "Stale optimistic version",
+    "diagnose": "Reload current permissions before saving"
+  },
+  "ADMIN_ASYNC": {
+    "code": "MM-ADMIN-003",
+    "meaning": "Admin operation failed (operation fallback)",
+    "phase": "admin",
+    "causes": "Request rejected or unavailable",
+    "diagnose": "Retry after checking session and organization"
+  },
+  "PHOTO_FAILED": {
+    "code": "MM-ADMIN-004",
+    "meaning": "Photo operation failed (operation fallback)",
+    "phase": "admin",
+    "causes": "Invalid image denied access or network failure",
+    "diagnose": "Check image format size and permission"
+  },
+  "HTTP_BAD_REQUEST": {
+    "code": "MM-BACKEND-400",
+    "meaning": "Invalid request",
+    "phase": "backend",
+    "causes": "Malformed or invalid input",
+    "diagnose": "Check documented request contract"
+  },
+  "HTTP_UNAUTHORIZED": {
+    "code": "MM-BACKEND-401",
+    "meaning": "Authentication required",
+    "phase": "backend",
+    "causes": "Missing or expired authentication",
+    "diagnose": "Sign in"
+  },
+  "HTTP_FORBIDDEN": {
+    "code": "MM-BACKEND-403",
+    "meaning": "Access denied",
+    "phase": "backend",
+    "causes": "Permission or CSRF denied",
+    "diagnose": "Check session CSRF and organization"
+  },
+  "HTTP_NOT_FOUND": {
+    "code": "MM-BACKEND-404",
+    "meaning": "Resource unavailable",
+    "phase": "backend",
+    "causes": "Missing or hidden resource",
+    "diagnose": "Check authorized resource selection"
+  },
+  "HTTP_METHOD": {
+    "code": "MM-BACKEND-405",
+    "meaning": "Method not allowed",
+    "phase": "backend",
+    "causes": "Unsupported HTTP method",
+    "diagnose": "Check API contract"
+  },
+  "HTTP_CONFLICT": {
+    "code": "MM-BACKEND-409",
+    "meaning": "Request conflict",
+    "phase": "backend",
+    "causes": "Concurrent or immutable data conflict",
+    "diagnose": "Reload current state before retry"
+  },
+  "HTTP_TOO_LARGE": {
+    "code": "MM-BACKEND-413",
+    "meaning": "Request too large",
+    "phase": "backend",
+    "causes": "Upload or request size exceeds limit",
+    "diagnose": "Reduce request size"
+  },
+  "HTTP_MEDIA": {
+    "code": "MM-BACKEND-415",
+    "meaning": "Unsupported content type",
+    "phase": "backend",
+    "causes": "Unsupported media format",
+    "diagnose": "Check API content type"
+  },
+  "HTTP_RATE": {
+    "code": "MM-BACKEND-429",
+    "meaning": "Request limit reached",
+    "phase": "backend",
+    "causes": "Bounded abuse protection",
+    "diagnose": "Wait before retrying"
+  },
+  "HTTP_UNAVAILABLE": {
+    "code": "MM-BACKEND-503",
+    "meaning": "Service temporarily unavailable",
+    "phase": "backend",
+    "causes": "Capacity or dependency unavailable",
+    "diagnose": "Retry later; check service health"
+  },
+  "HTTP_UNKNOWN": {
+    "code": "MM-BACKEND-500",
+    "meaning": "Server request failed",
+    "phase": "backend",
+    "causes": "Unexpected internal error",
+    "diagnose": "Report code and operation; no raw details"
+  },
+  "FW_SEQUENCE": {
+    "code": "MM-BLE-010",
+    "meaning": "Firmware sequence rejected",
+    "phase": "ble",
+    "causes": "Invalid sequence",
+    "diagnose": "Reconnect and retry synchronization"
+  },
+  "FW_RECORD": {
+    "code": "MM-BLE-011",
+    "meaning": "Firmware record rejected",
+    "phase": "ble",
+    "causes": "Invalid record",
+    "diagnose": "Check firmware and protocol compatibility"
+  },
+  "FW_CLOCK": {
+    "code": "MM-BLE-012",
+    "meaning": "Firmware clock unavailable",
+    "phase": "ble",
+    "causes": "No trusted security clock",
+    "diagnose": "Check time policy and signed bootstrap"
+  },
+  "FW_EXPIRED": {
+    "code": "MM-BLE-013",
+    "meaning": "Firmware authorization expired",
+    "phase": "ble",
+    "causes": "Session or credential expired",
+    "diagnose": "Renew credential online"
+  },
+  "FW_REPLAY": {
+    "code": "MM-BLE-014",
+    "meaning": "Firmware replay rejected",
+    "phase": "ble",
+    "causes": "Stale challenge or proof",
+    "diagnose": "Reconnect with a fresh challenge"
+  },
+  "FW_CREDENTIAL": {
+    "code": "MM-BLE-015",
+    "meaning": "Firmware credential rejected",
+    "phase": "ble",
+    "causes": "Credential invalid",
+    "diagnose": "Renew credential online"
+  },
+  "FW_PROOF": {
+    "code": "MM-BLE-016",
+    "meaning": "Firmware proof rejected",
+    "phase": "ble",
+    "causes": "Proof invalid",
+    "diagnose": "Reconnect; check device keys"
+  },
+  "FW_STATE": {
+    "code": "MM-BLE-017",
+    "meaning": "Firmware state invalid",
+    "phase": "ble",
+    "causes": "Operation not permitted in current state",
+    "diagnose": "Reconnect and check claim state"
+  },
+  "FW_INTERNAL": {
+    "code": "MM-BLE-018",
+    "meaning": "Firmware operation failed",
+    "phase": "ble",
+    "causes": "Internal firmware failure",
+    "diagnose": "Retry; inspect authorized device diagnostics"
+  },
+  "CLOCK_ALPHA": {
+    "code": "MM-CLOCK-007",
+    "meaning": "Alpha phone clock rejected",
+    "phase": "clock",
+    "causes": "Phone time rejected or unavailable in opted-in Alpha mode",
+    "diagnose": "Check phone UTC and explicit firmware policy"
+  },
+  "CLOCK_REBOOT": {
+    "code": "MM-CLOCK-008",
+    "meaning": "Node reboot during phone time evidence",
+    "phase": "clock",
+    "causes": "Boot counter or uptime discontinuity",
+    "diagnose": "Retry evidence collection on stable boot"
+  },
+  "UPLOAD_PRECLAIM": {
+    "code": "MM-UPLOAD-005",
+    "meaning": "Historical pre-claim time evidence not confirmed",
+    "phase": "upload",
+    "causes": "Historical continuity cannot be authorized",
+    "diagnose": "Preserve evidence; check historical deployment continuity"
+  },
+  "UPLOAD_EVENT": {
+    "code": "MM-UPLOAD-006",
+    "meaning": "Collector sync report upload not confirmed",
+    "phase": "upload",
+    "causes": "Missing rejected or mismatched report receipt",
+    "diagnose": "Retry report queue in the original authorized context"
+  },
+  "API_NODECONTROLLER_CLAIM_400": {
+    "code": "MM-API-001",
+    "meaning": "Node claim: request validation rejected",
+    "phase": "NodeController#claim",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "NodeController#claim",
+    "status": 400
+  },
+  "API_NODECONTROLLER_CLAIM_409": {
+    "code": "MM-API-002",
+    "meaning": "Node claim: state conflict",
+    "phase": "NodeController#claim",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "NodeController#claim",
+    "status": 409
+  },
+  "API_NODECONTROLLER_CLAIM_503": {
+    "code": "MM-API-003",
+    "meaning": "Node claim: service unavailable",
+    "phase": "NodeController#claim",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "NodeController#claim",
+    "status": 503
+  },
+  "API_NODECONTROLLER_UPDATE_400": {
+    "code": "MM-API-004",
+    "meaning": "Node display name: request validation rejected",
+    "phase": "NodeController#update",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "NodeController#update",
+    "status": 400
+  },
+  "API_NODECONTROLLER_UPDATE_409": {
+    "code": "MM-API-005",
+    "meaning": "Node display name: state conflict",
+    "phase": "NodeController#update",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "NodeController#update",
+    "status": 409
+  },
+  "API_NODECONTROLLER_UPDATE_503": {
+    "code": "MM-API-006",
+    "meaning": "Node display name: service unavailable",
+    "phase": "NodeController#update",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "NodeController#update",
+    "status": 503
+  },
+  "API_NODETIMECONTROLLER_ISSUE_400": {
+    "code": "MM-API-007",
+    "meaning": "Signed time bootstrap: request validation rejected",
+    "phase": "NodeTimeController#issue",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "NodeTimeController#issue",
+    "status": 400
+  },
+  "API_NODETIMECONTROLLER_ISSUE_409": {
+    "code": "MM-API-008",
+    "meaning": "Signed time bootstrap: state conflict",
+    "phase": "NodeTimeController#issue",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "NodeTimeController#issue",
+    "status": 409
+  },
+  "API_NODETIMECONTROLLER_ISSUE_503": {
+    "code": "MM-API-009",
+    "meaning": "Signed time bootstrap: service unavailable",
+    "phase": "NodeTimeController#issue",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "NodeTimeController#issue",
+    "status": 503
+  },
+  "API_OBSERVATIONCONTROLLER_INGEST_400": {
+    "code": "MM-API-010",
+    "meaning": "Observation ingest: request validation rejected",
+    "phase": "ObservationController#ingest",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "ObservationController#ingest",
+    "status": 400
+  },
+  "API_OBSERVATIONCONTROLLER_INGEST_409": {
+    "code": "MM-API-011",
+    "meaning": "Observation ingest: state conflict",
+    "phase": "ObservationController#ingest",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "ObservationController#ingest",
+    "status": 409
+  },
+  "API_OBSERVATIONCONTROLLER_INGEST_503": {
+    "code": "MM-API-012",
+    "meaning": "Observation ingest: service unavailable",
+    "phase": "ObservationController#ingest",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "ObservationController#ingest",
+    "status": 503
+  },
+  "API_DEVICECONTROLLER_REGISTER_400": {
+    "code": "MM-API-013",
+    "meaning": "Device registration: request validation rejected",
+    "phase": "DeviceController#register",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "DeviceController#register",
+    "status": 400
+  },
+  "API_DEVICECONTROLLER_REGISTER_409": {
+    "code": "MM-API-014",
+    "meaning": "Device registration: state conflict",
+    "phase": "DeviceController#register",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "DeviceController#register",
+    "status": 409
+  },
+  "API_DEVICECONTROLLER_REGISTER_503": {
+    "code": "MM-API-015",
+    "meaning": "Device registration: service unavailable",
+    "phase": "DeviceController#register",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "DeviceController#register",
+    "status": 503
+  },
+  "API_DEVICECONTROLLER_ISSUE_400": {
+    "code": "MM-API-016",
+    "meaning": "Offline credential issuance: request validation rejected",
+    "phase": "DeviceController#issue",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "DeviceController#issue",
+    "status": 400
+  },
+  "API_DEVICECONTROLLER_ISSUE_409": {
+    "code": "MM-API-017",
+    "meaning": "Offline credential issuance: state conflict",
+    "phase": "DeviceController#issue",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "DeviceController#issue",
+    "status": 409
+  },
+  "API_DEVICECONTROLLER_ISSUE_503": {
+    "code": "MM-API-018",
+    "meaning": "Offline credential issuance: service unavailable",
+    "phase": "DeviceController#issue",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "DeviceController#issue",
+    "status": 503
+  },
+  "API_TIMEEVIDENCECONTROLLER_INGEST_400": {
+    "code": "MM-API-019",
+    "meaning": "Time anchor ingest: request validation rejected",
+    "phase": "TimeEvidenceController#ingest",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "TimeEvidenceController#ingest",
+    "status": 400
+  },
+  "API_TIMEEVIDENCECONTROLLER_INGEST_409": {
+    "code": "MM-API-020",
+    "meaning": "Time anchor ingest: state conflict",
+    "phase": "TimeEvidenceController#ingest",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "TimeEvidenceController#ingest",
+    "status": 409
+  },
+  "API_TIMEEVIDENCECONTROLLER_INGEST_503": {
+    "code": "MM-API-021",
+    "meaning": "Time anchor ingest: service unavailable",
+    "phase": "TimeEvidenceController#ingest",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "TimeEvidenceController#ingest",
+    "status": 503
+  },
+  "API_TIMEEVIDENCECONTROLLER_BOOT_400": {
+    "code": "MM-API-022",
+    "meaning": "Boot evidence ingest: request validation rejected",
+    "phase": "TimeEvidenceController#boot",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "TimeEvidenceController#boot",
+    "status": 400
+  },
+  "API_TIMEEVIDENCECONTROLLER_BOOT_409": {
+    "code": "MM-API-023",
+    "meaning": "Boot evidence ingest: state conflict",
+    "phase": "TimeEvidenceController#boot",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "TimeEvidenceController#boot",
+    "status": 409
+  },
+  "API_TIMEEVIDENCECONTROLLER_BOOT_503": {
+    "code": "MM-API-024",
+    "meaning": "Boot evidence ingest: service unavailable",
+    "phase": "TimeEvidenceController#boot",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "TimeEvidenceController#boot",
+    "status": 503
+  },
+  "API_TIMEEVIDENCECONTROLLER_PHONE_400": {
+    "code": "MM-API-025",
+    "meaning": "Phone evidence ingest: request validation rejected",
+    "phase": "TimeEvidenceController#phone",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "TimeEvidenceController#phone",
+    "status": 400
+  },
+  "API_TIMEEVIDENCECONTROLLER_PHONE_409": {
+    "code": "MM-API-026",
+    "meaning": "Phone evidence ingest: state conflict",
+    "phase": "TimeEvidenceController#phone",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "TimeEvidenceController#phone",
+    "status": 409
+  },
+  "API_TIMEEVIDENCECONTROLLER_PHONE_503": {
+    "code": "MM-API-027",
+    "meaning": "Phone evidence ingest: service unavailable",
+    "phase": "TimeEvidenceController#phone",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "TimeEvidenceController#phone",
+    "status": 503
+  },
+  "API_COLLECTORSYNCEVENTCONTROLLER_INGEST_400": {
+    "code": "MM-API-028",
+    "meaning": "Collector sync report: request validation rejected",
+    "phase": "CollectorSyncEventController#report",
+    "causes": "Request validation rejected",
+    "diagnose": "Check the request contract",
+    "operation": "CollectorSyncEventController#report",
+    "status": 400
+  },
+  "API_COLLECTORSYNCEVENTCONTROLLER_INGEST_409": {
+    "code": "MM-API-029",
+    "meaning": "Collector sync report: state conflict",
+    "phase": "CollectorSyncEventController#report",
+    "causes": "State conflict",
+    "diagnose": "Reload authorized state; preserve original durable data",
+    "operation": "CollectorSyncEventController#report",
+    "status": 409
+  },
+  "API_COLLECTORSYNCEVENTCONTROLLER_INGEST_503": {
+    "code": "MM-API-030",
+    "meaning": "Collector sync report: service unavailable",
+    "phase": "CollectorSyncEventController#report",
+    "causes": "Service unavailable",
+    "diagnose": "Check backend dependencies and retry later",
+    "operation": "CollectorSyncEventController#report",
+    "status": 503
+  }
+}
