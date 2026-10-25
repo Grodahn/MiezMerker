@@ -41,8 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Acceptance tests for #18: node identity and organization claiming/provisioning.
  */
-@org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties="miezmerker.claim-diagnostics.detailed=true")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 @Tag("node")
 @Tag("auth")
@@ -62,12 +61,34 @@ class NodeClaimTest {
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
     CookieManager cookies;
+    // Capture only structured diagnostic events, independent of which test
+    // first created the shared Spring context and console output stream.
+    final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> diagnosticEvents = new ch.qos.logback.core.read.ListAppender<>();
+    final ch.qos.logback.classic.Logger diagnosticLogger = (ch.qos.logback.classic.Logger)
+        org.slf4j.LoggerFactory.getLogger(org.miezmerker.backend.diagnostics.ClaimDiagnostics.class);
+    final DiagnosticOutput output = new DiagnosticOutput();
+    class DiagnosticOutput {
+        String getOut() {
+            synchronized (diagnosticEvents.list) {
+                return diagnosticEvents.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            }
+        }
+    }
 
     @BeforeEach
     void http() {
+        diagnosticEvents.list = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        diagnosticEvents.start();
+        diagnosticLogger.addAppender(diagnosticEvents);
         cookies = new CookieManager();
         client = HttpClient.newBuilder().cookieHandler(cookies)
                 .connectTimeout(Duration.ofSeconds(5)).build();
+    }
+    @org.junit.jupiter.api.AfterEach
+    void stopDiagnosticCapture() {
+        diagnosticLogger.detachAppender(diagnosticEvents);
+        diagnosticEvents.stop();
     }
 
     String base(String path) {
@@ -217,7 +238,7 @@ class NodeClaimTest {
     }
 
     @Test
-    void adminCannotClaimWithForgedOrStaleIdentityProof(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+    void adminCannotClaimWithForgedOrStaleIdentityProof() throws Exception {
         Seed s = seed();
         login("admin-a@example.org", "supersecret-password-a");
         NodeKeys n = NodeKeys.fresh();
@@ -495,7 +516,7 @@ class NodeClaimTest {
         assertTrue(nodes.findAll().isEmpty()); // Telemetry never reserves a Node.
     }
 
-    @Test void diagnosticsRejectSecretsInjectionAndUnboundedPayloads(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+    @Test void diagnosticsRejectSecretsInjectionAndUnboundedPayloads() throws Exception {
         var seed = seed(); login("admin-a@example.org", "supersecret-password-a");
         String body = diagnosticJson(seed.orgA().getId());
         for (String invalid : java.util.List.of(
@@ -519,7 +540,7 @@ class NodeClaimTest {
         assertEquals(429,post("/api/v1/nodes/claim-diagnostics",diagnosticJson(seed.orgA().getId())).statusCode());
     }
 
-    @Test void correlatedClaimLogsOnlySafeMilestones(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+    @Test void correlatedClaimLogsOnlySafeMilestones() throws Exception {
         var seed=seed(); login("admin-a@example.org","supersecret-password-a");
         var n=NodeKeys.fresh(); long now=System.currentTimeMillis();
         String signature=NodeClaimVerifier.signClaim(n.kp().getPrivate(),n.nodeId(),n.x(),n.y(),now);
