@@ -1,3 +1,7 @@
+import { securityClockPolicy } from '../platform/security-clock-policy';
+import { startProvisionAttempt, flushClaimAttempt } from '../diagnostics/claim-delivery';
+import { diagnosticTransport, advertisementError } from './claim-diagnostic-transport';
+import type { ClaimAttempt } from '../diagnostics/claim-attempt';
 import { DiagnosticError, errorCodes, safeFailure } from '../diagnostics/errors';
 import type { NodeTransport } from '../platform/node-transport';
 import { toBase64Url } from '../platform/device-keys';
@@ -35,6 +39,14 @@ function toUncertainError(error: unknown): ClaimError {
     `Napf möglicherweise bereits registriert, Bestätigung verloren (${detail}). Receipt bleibt gespeichert; Einrichtung ohne erneutes Claiming über Backend-Status fortsetzen.`);
 }
 export async function provisionNode(transport: NodeTransport, nodeId: string, organizationId: string, signal?: AbortSignal): Promise<void | { timeAnchorPending: true; message: string }> {
+  const attempt = startProvisionAttempt(nodeId, organizationId);
+  try {
+    const result = await provision(diagnosticTransport(transport, attempt), nodeId, organizationId, signal, attempt);
+    attempt.event('complete', 'ok'); return result;
+  } catch (error) { attempt.failure(error); throw error; }
+  finally { flushClaimAttempt(attempt); }
+}
+async function provision(transport: NodeTransport, nodeId: string, organizationId: string, signal: AbortSignal | undefined, attempt: ClaimAttempt): Promise<void | { timeAnchorPending: true; message: string }> {
   assertAdminMayClaim(organizationId);
   const operation = bindNodeOperation(transport, getAuthState().user!.userId, organizationId, signal, 'ADMIN');
   transport = operation.transport;
@@ -43,6 +55,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     await transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode, payload }));
     const frame = decodeFrame(await transport.read());
     if (!frame || frame.version !== PROTOCOL_VERSION || frame.opcode !== opcode + 1) {
+      if (opcode === Opcode.ClaimAdvertisementRequest) throw advertisementError(frame);
       throw new ClaimError('backend', 'Registrierung abgelehnt. Signierten Identitätsnachweis und Sicherheitszeit-Policy (Alpha: Handyzeit) prüfen. Gespeichertes Receipt bleibt retrybar.');
     }
     return frame.payload;
@@ -58,26 +71,30 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
     let savedReceipt = receipt?.organizationId === organizationId ? receipt.claimReceipt : undefined;
     let issuanceWaitMs = 2100;
     // Receipt recovery needs fresh policy-selected time after reboot.
+    attempt.metadata = { caps: hello.caps ?? 0, protocolVersion: hello.serverVer ?? 1, policy: securityClockPolicy() };
+    attempt.event('hello', 'ok');
+    attempt.event('policy', 'started');
     const alphaClock = usesAlphaPhoneClock(hello.caps ?? 0);
-    if (alphaClock) issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive, hello.caps);
+    attempt.event('policy', 'ok');
+    if (alphaClock) issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive, hello.caps, attempt);
     await transport.write(encodeFrame({ version: PROTOCOL_VERSION, opcode: Opcode.ClaimAdvertisementRequest, payload: new Uint8Array() }));
     let frame = decodeFrame(await transport.read());
     if (frame?.opcode === Opcode.Error && !alphaClock) {
-      issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
+      issuanceWaitMs = await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive, 0, attempt);
       frame = decodeFrame(encodeFrame({ version: 1, opcode: Opcode.ClaimAdvertisementResponse,
         payload: await roundTrip(Opcode.ClaimAdvertisementRequest) }));
     }
     const advertisement = frame?.version === 1 && frame.opcode === Opcode.ClaimAdvertisementResponse
       ? decodeClaimAdvertisement(frame.payload) : null;
     if (!advertisement || advertisement.nodeId !== nodeId || advertisement.timestampMillis > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new ClaimError('backend', 'Ungültiger Claim-Nachweis vom Node.');
+      throw advertisementError(frame);
     }
     const retrieveReceipt = async () => {
       const outcome = await claimNode(organizationId, {
         nodeId, publicKeyX: toBase64Url(advertisement.publicKey.slice(1, 33)),
         publicKeyY: toBase64Url(advertisement.publicKey.slice(33)),
         claimSignature: toBase64Url(advertisement.signature), timestampMillis: Number(advertisement.timestampMillis),
-      }, { assertActive: operation.assertActive });
+      }, { assertActive: operation.assertActive, attempt });
       return outcome.receipt;
     };
     if (!savedReceipt) savedReceipt = await retrieveReceipt();
@@ -103,7 +120,7 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
       if (!(error instanceof ClaimError)) throw toUncertainError(error);
       operation.assertActive();
       issuanceWaitMs = alphaClock ? 2100
-        : await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive);
+        : await bootstrapRegistrationTime(transport, nodeId, organizationId, operation.assertActive, 0, attempt);
       savedReceipt = await retrieveReceipt();
       if (!savedReceipt) throw new ClaimError('backend', 'Claim-Receipt fehlt.');
       await waitForIssuanceBound();
@@ -115,13 +132,14 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
         throw retryError;
       }
     }
-    if (response.length !== 1 || response[0] !== 0) throw new ClaimError('backend', 'Node hat Receipt nicht bestätigt. Bitte erneut versuchen.');
+    if (response.length !== 1 || response[0] !== 0) throw new ClaimError('uncertain', 'Node hat Receipt nicht bestätigt. Bitte erneut versuchen.');
     // Firmware refreshes public Hello/Owner from the committed identity before
     // acknowledging the receipt. Verify those reads on this connection instead
     // of making Android rediscover every characteristic immediately after claim.
     // Final cleanup disconnects; the next protected sync uses a fresh authorizer.
     // A transport loss here (after the receipt ACK) leaves the commit uncertain:
     // the firmware may already be CLAIMED while this connection cannot prove it.
+    attempt.event('node_claimed', 'started');
     let after: Awaited<ReturnType<PublicProbeTransport['readPublicHello']>>;
     try {
       after = await new PublicProbeTransport(transport).readPublicHello({ alreadyConnected: true, keepConnected: true });
@@ -131,8 +149,9 @@ export async function provisionNode(transport: NodeTransport, nodeId: string, or
       throw toUncertainError(error);
     }
     if (after.nodeId !== nodeId || after.incarnation !== hello.incarnation || after.claimState !== 1 || after.owner?.organizationId !== organizationId) {
-      throw new ClaimError('backend', 'Node-Provisionierung noch nicht bestätigt. Receipt bleibt lokal gespeichert.');
+      throw new ClaimError('uncertain', 'Node-Provisionierung noch nicht bestätigt. Receipt bleibt lokal gespeichert.');
     }
+    attempt.event('node_claimed', 'ok');
     await db.nodeMeta.update(nodeId, { claimState: 1 });
     if ((after.caps ?? 0) & CAP_CLOCK_SNAPSHOT) {
       // Claim completion grants no session. Reuse the ordinary credential/PoP/

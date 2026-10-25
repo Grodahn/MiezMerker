@@ -1,3 +1,4 @@
+import type { ClaimAttempt } from '../diagnostics/claim-attempt';
 import { DiagnosticError, errorCodes, apiErrorCode } from '../diagnostics/errors';
 import { claimFailureCodes, withCode, messageCode, type ErrorCode } from '../diagnostics/errors';
 // Node claiming orchestration (issue #8, provisioning #18).
@@ -76,7 +77,7 @@ async function csrfHeaders(): Promise<Record<string, string>> {
 export async function claimNode(
   organizationId: string,
   input: ClaimInput,
-  options: { assertActive?: () => void } = {},
+  options: { assertActive?: () => void; attempt?: ClaimAttempt } = {},
 ): Promise<ClaimOutcome> {
   assertAdminMayClaim(organizationId);
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -85,6 +86,8 @@ export async function claimNode(
   const headers = await csrfHeaders();
   options.assertActive?.();
   assertAdminMayClaim(organizationId);
+  options.attempt?.event('backend_claim', 'started');
+  if (options.attempt) headers['X-MM-Claim-Attempt'] = options.attempt.attemptId;
   const { data, error, response } = await api.POST('/api/v1/nodes/claim', {
     signal: AbortSignal.timeout(10_000),
     body: {
@@ -99,20 +102,23 @@ export async function claimNode(
     headers,
   });
   if (error || !data) {
+    options.attempt?.event('backend_claim', 'rejected', apiErrorCode(response?.status ?? 500, error));
     const status = (response as Response | undefined)?.status;
     if (status === 403) {
       throw new ClaimError('forbidden-role',
-        'Registrierung verweigert: ACTIVE ADMIN erforderlich oder signierter Identitäts-/Zeitnachweis ungültig.');
+        'Registrierung verweigert: ACTIVE ADMIN erforderlich oder signierter Identitäts-/Zeitnachweis ungültig.', apiErrorCode(status, error));
     }
     if (status === 409) {
       throw new ClaimError('conflict-foreign',
-        'Node gehört bereits einer anderen Organisation. Übernahme nur per Factory Reset mit neuer Node-Identität.');
+        'Node gehört bereits einer anderen Organisation. Übernahme nur per Factory Reset mit neuer Node-Identität.', apiErrorCode(status, error));
     }
     throw new ClaimError('backend', 'Claiming fehlgeschlagen. Unverändert erneut versuchen (idempotent).', apiErrorCode(status ?? 500, error));
   }
   if (!data.receipt || data.nodeId !== input.nodeId || data.organizationId !== organizationId) {
     throw new ClaimError('backend', 'Ungültige Claim-Antwort. Backend-Provisionierung unverändert erneut versuchen.');
   }
+  options.attempt?.event('backend_claim', 'ok');
+  options.attempt?.event('receipt_persisted', 'started');
   const db = new CollectorDatabase();
   try {
     const previous = await db.nodeMeta.get(input.nodeId);
@@ -129,6 +135,7 @@ export async function claimNode(
   } catch {
     throw new ClaimError('backend', 'Receipt konnte nicht lokal gespeichert werden. Provisionierung unverändert erneut versuchen.', errorCodes.CLAIM_RECEIPT_STORAGE);
   } finally { db.close(); }
+  options.attempt?.event('receipt_persisted', 'ok');
   return {
     nodeId: data.nodeId ?? input.nodeId,
     organizationId: data.organizationId ?? organizationId,

@@ -1,3 +1,5 @@
+import { claimAttempt, flushClaimAttempt, lastClaimAttempt } from '../diagnostics/claim-delivery';
+import { diagnosticTransport } from './claim-diagnostic-transport';
 import { errorCodes, withCode, safeFailure } from '../diagnostics/errors';
 import { SyncEventOutbox } from './sync-event-outbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -374,6 +376,8 @@ export function CollectorShell(props: {
     const stillActive = () => mounted.current && batchController.current === operation && !operation.signal.aborted && contextKey() === startedContext;
     const orgStillActive = () => mounted.current && batchController.current === operation && contextKey() === startedContext;
     const organizationId = state.activeOrganizationId;
+    const diagnostic = registration ? claimAttempt('', organizationId, true) : undefined;
+    diagnostic?.event('discovered', 'ok');
     let verifiedCandidate: BatchNodeResult | null = null;
     const verifiedNodeIds = new Set<string>();
     let preflightError: unknown;
@@ -401,12 +405,12 @@ export function CollectorShell(props: {
       setBatchProgress({ done: 0, total: inputs.length, current: '', detail: 'Starte Sammel-Sync …' });
       credentialCheckGeneration.current++;
       let results = await runBatchSync(inputs, {
-        runSingleNode: (transport, signal, onUpdate) => runFieldSync({ createTransport: () => transport, signal, onUpdate,
+        runSingleNode: (transport, signal, onUpdate) => runFieldSync({ createTransport: () => diagnostic ? diagnosticTransport(transport, diagnostic) : transport, signal, onUpdate,
           onUnclaimed: getAuthState().user?.memberships.some(m => m.organizationId === organizationId && m.status === 'ACTIVE' && m.role === 'ADMIN')
             ? async (connected, hello) => {
               setFreigebenMessage('Napf verbunden. Signierter Identitätsnachweis wird geprüft …');
               try {
-                await verifyRegistrationCandidate(connected, hello.nodeId, organizationId, signal, true);
+                await verifyRegistrationCandidate(connected, hello.nodeId, organizationId, signal, true, diagnostic);
                 verifiedNodeIds.add(hello.nodeId);
               } catch (error) { preflightError = error; throw error; }
             } : undefined,
@@ -427,6 +431,9 @@ export function CollectorShell(props: {
           if (stillActive()) setBatchProgress(previous => previous ? { ...previous, done: index + 1 } : previous);
         },
       });
+      if (diagnostic && !results.some(r => r.kind === 'unclaimed' || r.kind === 'success')) {
+        diagnostic.event(operation.signal.aborted ? 'preflight' : 'connection', operation.signal.aborted ? 'cancelled' : 'failed', operation.signal.aborted ? errorCodes.AUTH_CHANGED : errorCodes.BLE_CONNECTION);
+      }
       // Cancellation keeps completed nodes valid: show partial results even
       // when the user aborted. Only an organization change discards them.
       if (!orgStillActive()) return;
@@ -450,7 +457,7 @@ export function CollectorShell(props: {
           if (input) {
             setFreigebenMessage('Napf verbunden. Signierter Identitätsnachweis wird geprüft …');
             if (!verifiedNodeIds.has(candidate.nodeId!)) {
-              await verifyRegistrationCandidate(new WebBluetoothTransport(input.device as never), candidate.nodeId!, organizationId, operation.signal);
+              await verifyRegistrationCandidate(new WebBluetoothTransport(input.device as never), candidate.nodeId!, organizationId, operation.signal, false, diagnostic);
             }
             if (stillActive()) { setFreigebenMessage(''); verifiedCandidate = candidate; }
           }
@@ -509,11 +516,13 @@ export function CollectorShell(props: {
         }
       }
     } catch (error) {
+      diagnostic?.failure(error);
       if (orgStillActive()) {
         setFreigebenMessage(''); // Preflight is finished; do not retain its busy hint.
         setBatchNotice(bluetoothErrorMessage(error));
       }
     } finally {
+      if (diagnostic) flushClaimAttempt(diagnostic);
       if (batchController.current === operation) {
         batchController.current = null;
         setBatchRunning(false);
@@ -792,6 +801,7 @@ export function CollectorShell(props: {
         {freigebenBusy ? 'Freigabe läuft …' : 'Weiteren Napf hinzufügen'}
       </button>
     </div>
+    <ClaimDiagnosticControls key={lastClaimAttempt()?.attemptId ?? "none"}/>
     {devicesError && <Status kind="error" code={errorCodes.BLE_CONNECTION} title="Geräteliste nicht verfügbar" message={devicesError}/>}
     {!devicesError && devicesSupport === 'supported' && devices.length === 0 && !batchRunning && !batchResults.length && <Status kind="info" title="Noch kein Napf freigegeben" message={getDevicesFallbackMessage('supported')}/>}
     {devicesSupport === 'unsupported' && capability === 'supported' && <Status kind="info" title="Automatisches Wiederfinden nicht verfügbar" message={getDevicesFallbackMessage('unsupported')}/>}
@@ -869,4 +879,18 @@ export function CollectorShell(props: {
       <h2>Hinweise zu Fehlerfällen</h2><ul>{syncHelp.map(message => <li key={message}>{message}</li>)}</ul>
     </details>
   </section>;
+}
+
+function ClaimDiagnosticControls() {
+  const [exportText, setExportText] = useState('');
+  const [copied, setCopied] = useState(false);
+  const attempt = lastClaimAttempt();
+  if (!attempt) return null;
+  return <aside aria-label="Claim-Diagnose">
+    <p>Diagnose-ID: <code>{attempt.attemptId}</code></p>
+    <button type="button" onClick={() => { void navigator.clipboard?.writeText(attempt.attemptId).then(() => setCopied(true)).catch(() => setCopied(false)); }}>Diagnose-ID kopieren</button>
+    {copied && <span role="status">Kopiert</span>}
+    <button type="button" onClick={() => setExportText(attempt.export())}>Lokalen Diagnoseexport anzeigen</button>
+    {exportText && <label>Lokaler Export – Übertragung ans Backend nicht bestätigt<textarea readOnly value={exportText}/></label>}
+  </aside>;
 }

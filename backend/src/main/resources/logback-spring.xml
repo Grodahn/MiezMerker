@@ -1,0 +1,17 @@
+<configuration>
+  <!-- Reuse Spring Boot's standard console encoder and existing stdout collection. -->
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+  <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+  <root level="INFO"><appender-ref ref="CONSOLE"/></root>
+  <!-- Bounded native logging queue: diagnostics must never wait for log I/O. -->
+  <appender name="CLAIM_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+    <queueSize>256</queueSize>
+    <discardingThreshold>0</discardingThreshold>
+    <neverBlock>true</neverBlock>
+    <includeCallerData>false</includeCallerData>
+    <appender-ref ref="CONSOLE"/>
+  </appender>
+  <logger name="org.miezmerker.backend.diagnostics.ClaimDiagnostics" additivity="false">
+    <appender-ref ref="CLAIM_ASYNC"/>
+  </logger>
+</configuration>
