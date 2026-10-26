@@ -29,11 +29,15 @@ public class ClaimDiagnosticsController {
             catch (IllegalAccessException e) { throw new IllegalStateException(e); } }).collect(java.util.stream.Collectors.toSet());
     private final TenantService tenants;
     private final NodeTimeRateLimiter limits;
+    private final org.springframework.transaction.support.TransactionTemplate authorization;
     private final ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder()
         .enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
         .enable(tools.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
-    public ClaimDiagnosticsController(TenantService tenants, NodeTimeRateLimiter limits) {
+    public ClaimDiagnosticsController(TenantService tenants, NodeTimeRateLimiter limits,
+            org.springframework.transaction.PlatformTransactionManager transactions) {
         this.tenants=tenants; this.limits=limits;
+        this.authorization = new org.springframework.transaction.support.TransactionTemplate(transactions);
+        this.authorization.setReadOnly(true);
     }
     @io.swagger.v3.oas.annotations.media.Schema(additionalProperties=io.swagger.v3.oas.annotations.media.Schema.AdditionalPropertiesValue.FALSE)
     public record Event(int sequence, String phase, String status, String code, long durationMs, long elapsedMs,
@@ -45,7 +49,6 @@ public class ClaimDiagnosticsController {
     @io.swagger.v3.oas.annotations.Operation(operationId="collectClaimDiagnostics", summary="Collect bounded untrusted claim diagnostics; ACTIVE ADMIN, CSRF, 12 KiB, 12 requests/user/minute",
         requestBody=@io.swagger.v3.oas.annotations.parameters.RequestBody(required=true,
             content=@io.swagger.v3.oas.annotations.media.Content(schema=@io.swagger.v3.oas.annotations.media.Schema(implementation=Batch.class))))
-    @org.springframework.transaction.annotation.Transactional(readOnly=true)
     @PostMapping(value="/api/v1/nodes/claim-diagnostics", consumes="application/json")
     public ResponseEntity<Void> collect(HttpServletRequest request, @AuthenticationPrincipal AppUserDetails principal) throws IOException {
         var user = TenantService.currentUserId(principal);
@@ -61,7 +64,9 @@ public class ClaimDiagnosticsController {
         if (!ClaimDiagnostics.validAttempt(attempt)) throw bad();
         UUID org;
         try { org = UUID.fromString(root.path("organizationId").asText()); } catch (IllegalArgumentException e) { throw bad(); }
-        tenants.requireAdmin(user,org);
+        // Reading a slow/chunked client body must never reserve a claim DB
+        // connection. Keep only the lazy membership checks in a short transaction.
+        authorization.executeWithoutResult(status -> tenants.requireAdmin(user,org));
         limits.acquire("claim-diagnostics-org",org,60);
         var events = root.path("events");
         if (!events.isArray() || events.isEmpty() || events.size() > 32) throw bad();

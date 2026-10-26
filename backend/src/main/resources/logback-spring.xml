@@ -2,7 +2,6 @@
   <!-- Reuse Spring Boot's standard console encoder and existing stdout collection. -->
   <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
   <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
-  <root level="INFO"><appender-ref ref="CONSOLE"/></root>
   <!-- Bounded native logging queue: diagnostics must never wait for log I/O. -->
   <appender name="CLAIM_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
     <queueSize>256</queueSize>
@@ -11,7 +10,29 @@
     <includeCallerData>false</includeCallerData>
     <appender-ref ref="CONSOLE"/>
   </appender>
-  <logger name="org.miezmerker.backend.diagnostics.ClaimDiagnostics" additivity="false">
-    <appender-ref ref="CLAIM_ASYNC"/>
-  </logger>
+  <!-- Spring Boot publishes logging.file.name/path as LOG_FILE. Preserve
+       that existing output, without creating a default file when unset. -->
+  <condition class="ch.qos.logback.core.boolex.IsPropertyDefinedCondition"><key>LOG_FILE</key></condition>
+  <if>
+    <then>
+      <include resource="org/springframework/boot/logging/logback/file-appender.xml"/>
+      <root level="INFO"><appender-ref ref="CONSOLE"/><appender-ref ref="FILE"/></root>
+      <appender name="CLAIM_FILE_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>256</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="FILE"/>
+      </appender>
+      <logger name="org.miezmerker.backend.diagnostics.ClaimDiagnostics" additivity="false">
+        <appender-ref ref="CLAIM_ASYNC"/><appender-ref ref="CLAIM_FILE_ASYNC"/>
+      </logger>
+    </then>
+    <else>
+      <root level="INFO"><appender-ref ref="CONSOLE"/></root>
+      <logger name="org.miezmerker.backend.diagnostics.ClaimDiagnostics" additivity="false">
+        <appender-ref ref="CLAIM_ASYNC"/>
+      </logger>
+    </else>
+  </if>
 </configuration>

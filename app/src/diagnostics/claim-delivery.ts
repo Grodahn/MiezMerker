@@ -4,11 +4,11 @@ import { authenticationEpoch } from '../platform/authorization-status';
 
 // Only one current attempt is retained, for at most 15 minutes. Never persisted.
 let current: { attempt: ClaimAttempt; node: string; org: string; user: string; epoch: string | null;
-  provisioned: boolean; created: number; sent: number; posts: number; pending: boolean; controller?: AbortController; timer?: ReturnType<typeof setTimeout> } | undefined;
+  provisioned: boolean; created: number; sent: number; posts: number; pending: boolean; flushRequested: boolean; controller?: AbortController; timer?: ReturnType<typeof setTimeout> } | undefined;
 function valid(c: NonNullable<typeof current>): boolean {
   const s = getAuthState();
   return s.user?.userId === c.user && s.activeOrganizationId === c.org && authenticationEpoch() === c.epoch
-    && Date.now() - c.created < 900000 && !!s.user.memberships.some(m => m.organizationId === c.org && m.role === 'ADMIN' && m.status === 'ACTIVE');
+    && performance.now() - c.created < 900000 && !!s.user.memberships.some(m => m.organizationId === c.org && m.role === 'ADMIN' && m.status === 'ACTIVE');
 }
 function clear() { if (current) { clearTimeout(current.timer); current.controller?.abort(); current = undefined; } }
 subscribeAuth(() => {
@@ -25,7 +25,7 @@ if (typeof window !== 'undefined') window.addEventListener('storage', () => { if
 export function claimAttempt(node: string, org: string, fresh = false): ClaimAttempt {
   if (current && (!valid(current) || fresh || (current.node !== node && current.node !== '') || current.org !== org)) clear();
   if (!current) current = { attempt: new ClaimAttempt(), node, org, user: getAuthState().user?.userId ?? '',
-    epoch: authenticationEpoch(), provisioned: false, created: Date.now(), sent: 0, posts: 0, pending: false };
+    epoch: authenticationEpoch(), provisioned: false, created: performance.now(), sent: 0, posts: 0, pending: false, flushRequested: false };
   current.node = node;
   return current.attempt;
 }
@@ -40,10 +40,17 @@ export function lastClaimAttempt(): ClaimAttempt | undefined {
 }
 export function flushClaimAttempt(attempt: ClaimAttempt): void {
   const c = current;
-  if (!c || c.attempt !== attempt || c.pending || c.posts >= 4 || !valid(c)) return;
+  if (!c || c.attempt !== attempt || c.posts >= 4 || !valid(c)) return;
+  if (c.pending) { c.flushRequested = true; return; }
   c.pending = true;
+  c.flushRequested = false;
   // Scheduling, CSRF fetch and network all happen after returning to the caller.
-  c.timer = setTimeout(() => { void send(c).catch(() => {}).finally(() => { c.pending = false; }); }, 0);
+  c.timer = setTimeout(() => { void send(c).catch(() => {}).finally(() => {
+    c.pending = false;
+    // A completion flush may arrive after send drained the queue but before
+    // this promise finalizer runs. Coalesce it without losing terminal events.
+    if (c.flushRequested) flushClaimAttempt(attempt);
+  }); }, 0);
 }
 async function send(c: NonNullable<typeof current>): Promise<void> {
   for (let retry = 0; retry < 2 && c.posts < 4; retry++) {

@@ -57,6 +57,7 @@ class NodeClaimTest {
     @Autowired CredentialIssuerService issuer;
     @Autowired org.miezmerker.backend.crypto.BootstrapTimeSource bootstrapClock;
     @Autowired org.miezmerker.backend.crypto.SecurityClockPolicy clockPolicy;
+    @Autowired org.miezmerker.backend.web.ClaimDiagnosticsController diagnostics;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
@@ -499,6 +500,30 @@ class NodeClaimTest {
     String diagnosticJson(UUID org) {
         return "{\"attemptId\":\"" + UUID.randomUUID() + "\",\"organizationId\":\"" + org + "\",\"events\":[{"
             + "\"sequence\":1,\"phase\":\"claim_advert\",\"status\":\"failed\",\"code\":\"MM-CLAIM-004\",\"durationMs\":2,\"elapsedMs\":8}]}";
+    }
+
+    @Test void diagnosticsReadChunkedBodiesWithoutHoldingDatabaseTransactions() throws Exception {
+        var seed = seed();
+        var user = users.findByEmail("admin-a@example.org").orElseThrow();
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        byte[] body = diagnosticJson(seed.orgA().getId()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var request = new org.springframework.mock.web.MockHttpServletRequest() {
+            @Override public jakarta.servlet.ServletInputStream getInputStream() {
+                return new org.springframework.mock.web.DelegatingServletInputStream(new java.io.ByteArrayInputStream(body) {
+                    private void check() {
+                        reads.incrementAndGet();
+                        assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive(),
+                            "A slow diagnostic body must not occupy a claim DB connection");
+                    }
+                    @Override public synchronized int read() { check(); return super.read(); }
+                    @Override public synchronized int read(byte[] b, int off, int len) { check(); return super.read(b,off,len); }
+                });
+            }
+        };
+        var principal = new org.miezmerker.backend.security.AppUserDetails(user.getId(), "admin-a@example.org", "unused",
+            org.miezmerker.backend.domain.UserStatus.ACTIVE);
+        assertEquals(204,diagnostics.collect(request,principal).getStatusCode().value());
+        assertTrue(reads.get() > 0);
     }
 
     @Test void diagnosticsRejectUnauthorizedCsrfForeignTenantAndMember() throws Exception {

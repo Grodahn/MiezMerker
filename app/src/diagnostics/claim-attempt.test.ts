@@ -84,3 +84,29 @@ test('confirmed same-account session refresh preserves correlation; unverified e
   for (const fn of listeners) fn();
   expect(lastClaimAttempt()).toBeUndefined();
 });
+test('completion flush racing an already drained upload still delivers terminal events', async () => {
+  const a = claimAttempt('node', 'org-secret', true); a.event('preflight', 'ok');
+  let resolveFirst!: (value: { ok: boolean }) => void;
+  vi.mocked(fetch).mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve as typeof resolveFirst; }));
+  flushClaimAttempt(a); await vi.advanceTimersByTimeAsync(0);
+  resolveFirst({ ok: true });
+  await Promise.resolve(); // send has drained; its chained finalizer is still pending.
+  a.event('complete', 'ok'); flushClaimAttempt(a);
+  await vi.runAllTimersAsync();
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[1][1]?.body as string).events).toMatchObject([{ phase: 'complete', status: 'ok' }]);
+});
+test('coalesced flushes cannot exceed the attempt-wide network budget', async () => {
+  const a = claimAttempt('node', 'org-secret', true); a.event('complete', 'ok');
+  vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+  flushClaimAttempt(a); await vi.advanceTimersByTimeAsync(0);
+  for (let i = 0; i < 100; i++) flushClaimAttempt(a);
+  await vi.runAllTimersAsync();
+  expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(4);
+});
+test('rolling phone time back cannot extend the local diagnostic retention window', () => {
+  claimAttempt('node', 'org-secret', true);
+  vi.setSystemTime(Date.now() - 3600000);
+  vi.advanceTimersByTime(900000);
+  expect(lastClaimAttempt()).toBeUndefined();
+});

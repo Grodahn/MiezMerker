@@ -100,7 +100,7 @@ remain separate events and take precedence over an intermediate success.
   for invalid attempts too (organization budget after authorization). The
   existing limiter retains at most 10,000 windows. A gateway must enforce
   aggregate/unauthenticated request limits across replicas.
-* One current in-memory attempt, 64 events, available for at most 15 minutes
+* One current in-memory attempt, 64 events, available for at most 15 monotonic minutes
   when accessed. New preflight/retry replaces it. No IndexedDB/offline outbox.
   Organization/account changes and unverified cross-tab authentication-epoch
   changes discard queued data and abort in-flight uploads. A confirmed
@@ -111,13 +111,18 @@ remain separate events and take precedence over an intermediate success.
   per failed flush, 2-second upload deadline. No periodic/background retry loop.
   Exhaustion/offline leaves the local export available. A CSRF lookup may
   outlive that deadline, but its late result cannot initiate an expired POST.
-* Backend diagnostic log I/O uses Logback's native AsyncAppender: 256 entries,
+* Backend diagnostic log I/O uses Logback's native AsyncAppender: 256 entries per output,
   `neverBlock=true`, no caller stack capture. Full queues drop diagnostic
   events instead of stalling claiming. There is no new diagnostic database or
   reader API. Access is limited to existing operator log access. Apply the
   existing stdout collector's short dev/staging retention (recommended 24h),
   and disable detailed mode after diagnosis; this change creates no retention
-  service or independent tracking storage.
+  service or independent tracking storage. Existing `logging.file.name`/
+  `logging.file.path` output is preserved; diagnostics use a separate bounded,
+  nonblocking queue for that file. No default file is created when unset.
+  Diagnostic request bodies are size-limited and read before opening the short
+  read-only transaction used for membership checks, so slow uploads cannot hold
+  a claim database connection.
 
 Actual ESP32 and Android hardware validation: **UNVERIFIED**. Automated browser
 tests use a protocol-faithful GATT mock; they cannot establish radio behavior.
