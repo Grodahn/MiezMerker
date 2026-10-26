@@ -16,6 +16,8 @@ public class SecurityClockPolicy {
             throw new IllegalStateException("Release requires SIGNED_BACKEND_TIME; FIELD_ALPHA_PHONE_CLOCK is field-test only");
         }
         this.mode = mode;
+        org.slf4j.LoggerFactory.getLogger(SecurityClockPolicy.class).info(
+            "claim_policy policy={} release={} freshnessWindowMs=300000 receiptSigned=true", mode, release);
         org.slf4j.LoggerFactory.getLogger(SecurityClockPolicy.class).warn(
                 "security_clock_policy={} release={}; claim window=300000ms against server UTC; "
                 + "signed receipts, ACTIVE ADMIN and tenant gates remain mandatory. "

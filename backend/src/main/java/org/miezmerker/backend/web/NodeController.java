@@ -13,6 +13,8 @@ import java.util.UUID;
 import org.miezmerker.backend.crypto.CredentialIssuerService;
 import org.miezmerker.backend.crypto.EcKeyUtils;
 import org.miezmerker.backend.crypto.NodeClaimVerifier;
+import org.miezmerker.backend.diagnostics.ClaimDiagnostics;
+import org.miezmerker.backend.diagnostics.ErrorCodes;
 import org.miezmerker.backend.domain.NodeDevice;
 import org.miezmerker.backend.domain.NodeState;
 import org.miezmerker.backend.domain.Organization;
@@ -49,6 +51,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/v1/nodes")
 public class NodeController {
+    private static void diagnostic(String phase) { org.miezmerker.backend.diagnostics.ClaimDiagnostics.phase(phase); }
     private final NodeRepository nodes;
     private final OrganizationRepository organizations;
     private final TenantService tenants;
@@ -134,7 +137,9 @@ public class NodeController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         // Only ACTIVE ADMIN may claim; PENDING/MEMBER/DISABLED get 403 here.
+        diagnostic("active_admin");
         tenants.requireAdmin(principal.getId(), request.organizationId());
+        diagnostic("organization");
         if (request.nodeId().version() != 4 || request.nodeId().variant() != 2) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "node identity must be UUIDv4");
         }
@@ -148,20 +153,31 @@ public class NodeController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid node public key");
         }
+        diagnostic("claim_reservation");
         nodes.lockClaims();
         NodeDevice existing = nodes.findById(request.nodeId()).orElse(null);
         boolean retry = existing != null && existing.getState() == NodeState.CLAIMED
                 && existing.getOrganization().getId().equals(org.getId())
                 && existing.getFingerprint().equals(fingerprint);
+        diagnostic("identity_time_policy");
         try {
             claimVerifier.verify(request.nodeId(), request.publicKeyX(), request.publicKeyY(),
                     request.timestampMillis(), request.claimSignature(), !retry);
         } catch (IllegalArgumentException e) {
             // Includes: invalid signature/marker, stale advertisement.
+            // Internal catalog classification only; never log the exception or
+            // disclose the security decision through the neutral HTTP response.
+            ClaimDiagnostics.rejected(switch (String.valueOf(e.getMessage())) {
+                case "missing timestamp" -> ErrorCodes.FW_CLOCK;
+                case "stale claim advertisement" -> ErrorCodes.FW_EXPIRED;
+                case "invalid node public key" -> ErrorCodes.NODE_KEY;
+                default -> ErrorCodes.CLAIM_SIGNATURE;
+            });
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "claim identity proof invalid: "
                     + e.getMessage());
         }
 
+        diagnostic(retry ? "idempotent_retry" : "ownership_binding");
         if (existing != null) {
             if (existing.getState() == NodeState.CLAIMED) {
                 if (!existing.getOrganization().getId().equals(org.getId())) {
@@ -203,6 +219,7 @@ public class NodeController {
     }
 
     private ClaimReceiptView receiptFor(NodeDevice node, Organization org) {
+        diagnostic("receipt_issuance");
         String receipt;
         try {
             receipt = issuer.issueClaimReceipt(node.getNodeId(), org.getId(), org.getSlug(),
@@ -213,6 +230,7 @@ public class NodeController {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Claim receipt exceeds BLE transport budget; shorten the organization's public name or contact");
         }
+        diagnostic("transaction_completion");
         return new ClaimReceiptView(node.getNodeId(), org.getId().toString(), receipt,
                 "Claim-ES256-JWT");
     }

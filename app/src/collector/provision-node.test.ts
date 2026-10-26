@@ -12,7 +12,10 @@ vi.mock('./collector-sync', () => ({ runFieldSync: vi.fn() }));
 vi.mock('../platform/auth', () => ({ getAuthState: auth,
   subscribeAuth: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); } }));
 import { CollectorDatabase } from '../platform/offline-store';
+import { claimAttempt, lastClaimAttempt } from '../diagnostics/claim-delivery';
 import { provisionNode } from './provision-node';
+// Lifetime diagnostics subscription is separate from per-operation cancellation listeners.
+const lifetimeListeners = listeners.size;
 import { runFieldSync } from './collector-sync';
 import { decodeFrame, encodeFrame, encodeHelloPublic, encodeOwnerResponse, encodeClaimAdvertisement, decodeClaimAdvertisement, Opcode } from './ble-codec';
 
@@ -238,7 +241,7 @@ test('a claim response received after switching organization is saved but never 
   auth.mockReturnValue(initiatingAuth);
   await provisionNode(transport, NODE, 'org-a');
   expect(transport.claimed).toBe(true); expect(post).toHaveBeenCalledTimes(1);
-  expect(listeners.size).toBe(0);
+  expect(listeners.size).toBe(lifetimeListeners);
 });
 
 
@@ -277,4 +280,15 @@ test('alpha renews a rejected cached receipt once without replacing its connecti
     const db = new CollectorDatabase();
     expect((await db.nodeMeta.get(NODE))?.claimState).toBe(1); db.close();
   } finally { vi.unstubAllEnvs(); }
+});
+
+test('successful claim records correlated durable receipt and owner milestones', async () => {
+  const a=claimAttempt(NODE,'org-a',true);
+  await provisionNode(new ClaimTransport(),NODE,'org-a');
+  expect(lastClaimAttempt()?.attemptId).toBe(a.attemptId);
+  expect(post.mock.calls[0][1].headers['X-MM-Claim-Attempt']).toBe(a.attemptId);
+  const ok=a.events.filter(e=>e.status==='ok').map(e=>e.phase);
+  for (const phase of ['connection','hello','policy','claim_advert','backend_claim','receipt_persisted','receipt','node_claimed','complete']) expect(ok).toContain(phase);
+  expect(ok.indexOf('receipt_persisted')).toBeLessThan(ok.indexOf('receipt'));
+  expect(a.export()).not.toContain('signed-receipt');
 });

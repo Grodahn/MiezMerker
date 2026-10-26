@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class NodeTimeService {
+    private static void diagnostic(String phase) { org.miezmerker.backend.diagnostics.ClaimDiagnostics.phase(phase); }
     /** Only emitted after the complete authorization/possession/ownership gate. */
     public static final class Unavailable extends ResponseStatusException {
         private final String diagnostic;
@@ -45,10 +46,13 @@ public class NodeTimeService {
         UUID org = NodeTimeProtocol.uuid(request.organizationId());
         var c = request.challenge();
         // Tenant context first; never return any owning organization's metadata.
+        diagnostic("membership");
         var membership = tenants.requireActive(user,org);
+        diagnostic("challenge_verification");
         try { NodeTimeProtocol.verifyChallenge(c); }
         catch (IllegalArgumentException e) { throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Time bootstrap denied"); }
         // Same DB lock as claiming: protects absent rows as well as registered identities.
+        diagnostic("ownership_binding");
         nodes.lockClaims();
         var existing = nodes.findById(NodeTimeProtocol.uuid(c.nodeId())).orElse(null);
         boolean claimed = "CLAIMED".equals(request.registrationState());
@@ -74,10 +78,13 @@ public class NodeTimeService {
         if (!claimed) limits.acquire("unclaimed-user",user,5);
         // Sample only after validation/lock waits. No async signing or client wall time.
         boolean admin = membership.getRole() == MembershipRole.ADMIN;
+        diagnostic("issuer_available");
         if (!issuer.hasStableKey()) throw new Unavailable(admin ? "issuer-key-missing" : null);
+        diagnostic("utc_attestation");
         long utcMillis;
         try { utcMillis = time.issuanceMillis(); }
         catch (IllegalStateException e) { throw new Unavailable(admin ? "utc-unconfirmed" : null); }
+        diagnostic("time_proof_issuance");
         String proof;
         try { proof = issuer.issueTimeProof(c,utcMillis); }
         catch (IllegalStateException e) { throw new Unavailable(null); }

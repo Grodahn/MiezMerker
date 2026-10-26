@@ -222,6 +222,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/claim-diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Collect bounded untrusted claim diagnostics; ACTIVE ADMIN, CSRF, 12 KiB, 12 requests/user/minute */
+        post: operations["collectClaimDiagnostics"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/phone-time-evidence": {
         parameters: {
             query?: never;
@@ -893,6 +910,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Batch: {
+            /** Format: uuid */
+            attemptId: string;
+            events: components["schemas"]["Event"][];
+            /** Format: uuid */
+            organizationId: string;
+        };
         Boot: {
             /** Format: int64 */
             bootCounter: number;
@@ -1089,6 +1113,22 @@ export interface components {
             message: string;
             /** Format: int32 */
             status: number;
+        };
+        Event: {
+            /** Format: int32 */
+            caps?: number;
+            code?: string;
+            /** Format: int64 */
+            durationMs?: number;
+            /** Format: int64 */
+            elapsedMs?: number;
+            phase?: string;
+            policy?: string;
+            /** Format: int32 */
+            protocolVersion?: number;
+            /** Format: int32 */
+            sequence?: number;
+            status?: string;
         };
         /** @description One chip's activity at its frozen feeding site */
         FeedingSiteCatActivityView: {
@@ -1954,6 +1994,29 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClaimReceiptView"];
                 };
+            };
+            default: components["responses"]["DiagnosticError"];
+        };
+    };
+    collectClaimDiagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Batch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["DiagnosticError"];
         };

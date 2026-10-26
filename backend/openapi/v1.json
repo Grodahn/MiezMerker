@@ -13,6 +13,33 @@
       }
     },
     "schemas": {
+      "Batch": {
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attemptId",
+          "events",
+          "organizationId"
+        ],
+        "type": "object"
+      },
       "Boot": {
         "additionalProperties": false,
         "properties": {
@@ -594,6 +621,44 @@
           "message",
           "status"
         ],
+        "type": "object"
+      },
+      "Event": {
+        "additionalProperties": false,
+        "properties": {
+          "caps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          },
+          "durationMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "elapsedMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "policy": {
+            "type": "string"
+          },
+          "protocolVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "FeedingSiteCatActivityView": {
@@ -2650,6 +2715,33 @@
         "summary": "Claim an UNCLAIMED node for my organization (ACTIVE ADMIN + signed node identity)",
         "tags": [
           "node-controller"
+        ]
+      }
+    },
+    "/api/v1/nodes/claim-diagnostics": {
+      "post": {
+        "operationId": "collectClaimDiagnostics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Batch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/DiagnosticError"
+          }
+        },
+        "summary": "Collect bounded untrusted claim diagnostics; ACTIVE ADMIN, CSRF, 12 KiB, 12 requests/user/minute",
+        "tags": [
+          "claim-diagnostics-controller"
         ]
       }
     },

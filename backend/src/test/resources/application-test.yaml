@@ -9,6 +9,10 @@ server:
       cookie:
         secure: false
 miezmerker:
+  # Reuse the shared test context/pool for positive diagnostic assertions.
+  # A per-class SpringBootTest property would allocate another cached DB pool.
+  claim-diagnostics:
+    detailed: true
   security:
     # Test-only BCrypt cost (#59): real BCrypt hashing/matching semantics at a
     # fraction of the production cost (12). Active only via the "test" profile;

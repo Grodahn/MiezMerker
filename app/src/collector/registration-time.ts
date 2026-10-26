@@ -1,3 +1,4 @@
+import type { ClaimAttempt } from '../diagnostics/claim-attempt';
 import { errorCodes } from '../diagnostics/errors';
 import { api } from '../api/client';
 import { fetchCsrfToken, getAuthState } from '../platform/auth';
@@ -14,7 +15,7 @@ export class TimeBootstrapUnavailableError extends ClaimError {
 // Shared purpose-scoped bridge to ADR 0017. The phone forwards signed bytes; only
 // the firmware's independently pinned verifier may establish trusted UTC.
 export async function bootstrapRegistrationTime(transport: NodeTransport, nodeId: string,
-  organizationId: string, assertActive: () => void, caps = 0): Promise<number> {
+  organizationId: string, assertActive: () => void, caps = 0, attempt?: ClaimAttempt): Promise<number> {
   assertActive(); assertAdminMayClaim(organizationId);
   if (usesAlphaPhoneClock(caps)) {
     await supplyAlphaPhoneClock(transport, () => { assertActive(); assertAdminMayClaim(organizationId); });
@@ -22,12 +23,12 @@ export async function bootstrapRegistrationTime(transport: NodeTransport, nodeId
   }
   return bootstrapNodeTime(transport, nodeId, organizationId, () => {
     assertActive(); assertAdminMayClaim(organizationId);
-  }, 'UNCLAIMED');
+  }, 'UNCLAIMED', undefined, attempt);
 }
 
 export async function bootstrapNodeTime(transport: NodeTransport, nodeId: string,
   organizationId: string, assertActive: () => void, registrationState: 'UNCLAIMED' | 'CLAIMED',
-  incarnation?: string): Promise<number> {
+  incarnation?: string, attempt?: ClaimAttempt): Promise<number> {
   const started = performance.now();
   assertActive();
   const exchange = async (opcode: Opcode, payload: Uint8Array = new Uint8Array()) => {
@@ -66,7 +67,7 @@ export async function bootstrapNodeTime(transport: NodeTransport, nodeId: string
     body: { organizationId, registrationState, challenge },
     // Preserve uint64 as a JSON integer, including values beyond Number's range.
     bodySerializer: body => JSON.stringify(body).replace('"challengeUptimeMs":0', `"challengeUptimeMs":${uptime}`),
-    headers: csrf ? { 'X-XSRF-TOKEN': csrf } : {}, signal: AbortSignal.timeout(10_000),
+    headers: { ...(csrf ? { 'X-XSRF-TOKEN': csrf } : {}), ...(attempt ? { 'X-MM-Claim-Attempt': attempt.attemptId } : {}) }, signal: AbortSignal.timeout(10_000),
   }).catch(error => {
     assertActive();
     const detail = 'Keine bestätigte Antwort.';

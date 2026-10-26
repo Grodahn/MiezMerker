@@ -28,6 +28,8 @@ for (const { width, stallFirstDiscovery } of [
     payload: encodeClaimAdvertisement({ nodeId: NODE, publicKey, timestampMillis, signature }) }));
   const receiptAck = Array.from(encodeFrame({ version: 1, opcode: Opcode.ClaimReceiptResponse, payload: new Uint8Array([0]) }));
   const alphaAck = Array.from(encodeFrame({ version: 1, opcode: Opcode.AlphaPhoneClockResponse, payload: new Uint8Array([0]) }));
+  const diagnostics: Array<{ attemptId: string; events: Array<{ phase: string; status: string }> }> = [];
+  let backendAttempt = '';
   let timeBootstrapRequests = 0;
   let claims = 0, deployments = 0, displayName: string | null = null;
   await page.route('**/api/v1/**', route => {
@@ -37,7 +39,8 @@ for (const { width, stallFirstDiscovery } of [
     if (path.endsWith('/auth/session')) return send({ userId: 'admin', email: 'admin@example.org', memberships: [
       { membershipId: 'member', organizationId: ORG, organizationName: 'Feldteam', role: 'ADMIN', status: 'ACTIVE' }] });
     if (path.endsWith('/auth/csrf')) return send({ token: 'csrf' });
-    if (path.endsWith('/nodes/claim')) { claims++; return send({ nodeId: NODE, organizationId: ORG, receipt: 'mock-backend-receipt' }); }
+    if (path.endsWith('/nodes/claim-diagnostics')) { diagnostics.push(route.request().postDataJSON()); return route.fulfill({ status: 204 }); }
+    if (path.endsWith('/nodes/claim')) { backendAttempt = route.request().headers()['x-mm-claim-attempt']; claims++; return send({ nodeId: NODE, organizationId: ORG, receipt: 'mock-backend-receipt' }); }
     if (path.endsWith(`/nodes/${NODE}`)) {
       if (route.request().method() === 'PATCH') displayName = route.request().postDataJSON().displayName;
       return send({ nodeId: NODE, organizationId: ORG, state: 'CLAIMED', displayName, publicKeyX: x, publicKeyY: y });
@@ -124,5 +127,18 @@ for (const { width, stallFirstDiscovery } of [
   expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { registrationEvents: { activation: boolean } }).registrationEvents.activation)).toBe(true);
+  await expect.poll(() => diagnostics.filter(d => d.attemptId === backendAttempt).flatMap(d => d.events).some(e => e.phase === 'node_claimed' && e.status === 'ok')).toBe(true);
+  const phases = diagnostics.filter(d => d.attemptId === backendAttempt).flatMap(d => d.events).map(e => e.phase);
+  expect(phases).toContain('local_signature'); expect(phases).toContain('receipt_persisted');
+  expect(JSON.stringify(diagnostics)).not.toContain('mock-backend-receipt');
+  await dialog.getByRole('button', { name: 'Einrichtung schließen' }).click();
+  await expect(page.getByLabel('Claim-Diagnose')).toContainText(backendAttempt);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+    writeText: async (text: string) => { Object.assign(window, { copiedDiagnosis: text }); },
+  } }));
+  await page.getByRole('button', { name: 'Diagnose-ID kopieren' }).click();
+  expect(await page.evaluate(() => (window as unknown as { copiedDiagnosis: string }).copiedDiagnosis)).toBe(backendAttempt);
+  await page.getByRole('button', { name: 'Lokalen Diagnoseexport anzeigen' }).click();
+  await expect(page.getByRole('textbox', { name: /Lokaler Export/ })).toHaveValue(/not-confirmed/);
   await page.screenshot({ path: test.info().outputPath(`registration-${width}.png`) });
 });

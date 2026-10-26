@@ -57,16 +57,39 @@ class NodeClaimTest {
     @Autowired CredentialIssuerService issuer;
     @Autowired org.miezmerker.backend.crypto.BootstrapTimeSource bootstrapClock;
     @Autowired org.miezmerker.backend.crypto.SecurityClockPolicy clockPolicy;
+    @Autowired org.miezmerker.backend.web.ClaimDiagnosticsController diagnostics;
 
     final ObjectMapper mapper = new ObjectMapper();
     HttpClient client;
     CookieManager cookies;
+    // Capture only structured diagnostic events, independent of which test
+    // first created the shared Spring context and console output stream.
+    final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> diagnosticEvents = new ch.qos.logback.core.read.ListAppender<>();
+    final ch.qos.logback.classic.Logger diagnosticLogger = (ch.qos.logback.classic.Logger)
+        org.slf4j.LoggerFactory.getLogger(org.miezmerker.backend.diagnostics.ClaimDiagnostics.class);
+    final DiagnosticOutput output = new DiagnosticOutput();
+    class DiagnosticOutput {
+        String getOut() {
+            synchronized (diagnosticEvents.list) {
+                return diagnosticEvents.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            }
+        }
+    }
 
     @BeforeEach
     void http() {
+        diagnosticEvents.list = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        diagnosticEvents.start();
+        diagnosticLogger.addAppender(diagnosticEvents);
         cookies = new CookieManager();
         client = HttpClient.newBuilder().cookieHandler(cookies)
                 .connectTimeout(Duration.ofSeconds(5)).build();
+    }
+    @org.junit.jupiter.api.AfterEach
+    void stopDiagnosticCapture() {
+        diagnosticLogger.detachAppender(diagnosticEvents);
+        diagnosticEvents.stop();
     }
 
     String base(String path) {
@@ -232,6 +255,13 @@ class NodeClaimTest {
         String staleSig = NodeClaimVerifier.signClaim(n.kp().getPrivate(), n.nodeId(), n.x(), n.y(), stale);
         var res2 = post("/api/v1/nodes/claim", claimJson(n, s.orgA().getId(), stale, staleSig));
         assertEquals(403, res2.statusCode(), res2.body());
+        long deadline = System.nanoTime() + 2_000_000_000L;
+        while (!(output.getOut().contains("code=MM-CLAIM-005") && output.getOut().contains("code=MM-BLE-013"))
+                && System.nanoTime() < deadline) Thread.sleep(10);
+        assertTrue(output.getOut().contains("code=MM-CLAIM-005"));
+        assertTrue(output.getOut().contains("code=MM-BLE-013"));
+        assertFalse(output.getOut().contains(badSig));
+        assertFalse(output.getOut().contains(staleSig));
     }
 
     @Test
@@ -465,5 +495,96 @@ class NodeClaimTest {
         assertNotEquals(a, b);
         assertTrue(a.toString().matches(
                 "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"));
+    }
+
+    String diagnosticJson(UUID org) {
+        return "{\"attemptId\":\"" + UUID.randomUUID() + "\",\"organizationId\":\"" + org + "\",\"events\":[{"
+            + "\"sequence\":1,\"phase\":\"claim_advert\",\"status\":\"failed\",\"code\":\"MM-CLAIM-004\",\"durationMs\":2,\"elapsedMs\":8}]}";
+    }
+
+    @Test void diagnosticsReadChunkedBodiesWithoutHoldingDatabaseTransactions() throws Exception {
+        var seed = seed();
+        var user = users.findByEmail("admin-a@example.org").orElseThrow();
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        byte[] body = diagnosticJson(seed.orgA().getId()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var request = new org.springframework.mock.web.MockHttpServletRequest() {
+            @Override public jakarta.servlet.ServletInputStream getInputStream() {
+                return new org.springframework.mock.web.DelegatingServletInputStream(new java.io.ByteArrayInputStream(body) {
+                    private void check() {
+                        reads.incrementAndGet();
+                        assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive(),
+                            "A slow diagnostic body must not occupy a claim DB connection");
+                    }
+                    @Override public synchronized int read() { check(); return super.read(); }
+                    @Override public synchronized int read(byte[] b, int off, int len) { check(); return super.read(b,off,len); }
+                });
+            }
+        };
+        var principal = new org.miezmerker.backend.security.AppUserDetails(user.getId(), "admin-a@example.org", "unused",
+            org.miezmerker.backend.domain.UserStatus.ACTIVE);
+        assertEquals(204,diagnostics.collect(request,principal).getStatusCode().value());
+        assertTrue(reads.get() > 0);
+    }
+
+    @Test void diagnosticsRejectUnauthorizedCsrfForeignTenantAndMember() throws Exception {
+        var seed = seed();
+        String body = diagnosticJson(seed.orgA().getId());
+        assertEquals(401, post("/api/v1/nodes/claim-diagnostics",body).statusCode());
+        login("admin-a@example.org", "supersecret-password-a");
+        var noCsrf = client.send(HttpRequest.newBuilder(URI.create(base("/api/v1/nodes/claim-diagnostics")))
+            .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
+        assertEquals(403,noCsrf.statusCode());
+        assertEquals(204,post("/api/v1/nodes/claim-diagnostics",body).statusCode());
+        assertEquals(403,post("/api/v1/nodes/claim-diagnostics",diagnosticJson(seed.orgB().getId())).statusCode());
+        login("member-a@example.org", "supersecret-password-m");
+        assertEquals(403,post("/api/v1/nodes/claim-diagnostics",body).statusCode());
+        assertTrue(nodes.findAll().isEmpty()); // Telemetry never reserves a Node.
+    }
+
+    @Test void diagnosticsRejectSecretsInjectionAndUnboundedPayloads() throws Exception {
+        var seed = seed(); login("admin-a@example.org", "supersecret-password-a");
+        String body = diagnosticJson(seed.orgA().getId());
+        for (String invalid : java.util.List.of(
+            body.replace("\"events\":", "\"receipt\":\"secret-jws\",\"events\":"),
+            body.replace("claim_advert", "claim_advert\\nforged=ok"),
+            body.replace("MM-CLAIM-004", "secret-jws"),
+            body.replace("\"durationMs\":2", "\"durationMs\":-1"),
+            body.replace("\"durationMs\":2", "\"durationMs\":2,\"durationMs\":3"),
+            body + "{}", body.replace("\"sequence\":1", "\"sequence\":1,\"token\":\"secret-jws\""))) {
+            assertEquals(400,post("/api/v1/nodes/claim-diagnostics",invalid).statusCode());
+        }
+        assertEquals(413,post("/api/v1/nodes/claim-diagnostics"," ".repeat(12289)).statusCode());
+        assertFalse(output.getOut().contains("secret-jws"));
+        assertFalse(output.getOut().contains("forged=ok"));
+        assertTrue(nodes.findAll().isEmpty());
+    }
+
+    @Test void diagnosticsHaveBoundedUserRate() throws Exception {
+        var seed = seed(); login("admin-a@example.org", "supersecret-password-a");
+        for (int i=0;i<12;i++) assertEquals(204,post("/api/v1/nodes/claim-diagnostics",diagnosticJson(seed.orgA().getId())).statusCode());
+        assertEquals(429,post("/api/v1/nodes/claim-diagnostics",diagnosticJson(seed.orgA().getId())).statusCode());
+    }
+
+    @Test void correlatedClaimLogsOnlySafeMilestones() throws Exception {
+        var seed=seed(); login("admin-a@example.org","supersecret-password-a");
+        var n=NodeKeys.fresh(); long now=System.currentTimeMillis();
+        String signature=NodeClaimVerifier.signClaim(n.kp().getPrivate(),n.nodeId(),n.x(),n.y(),now);
+        String attempt=UUID.randomUUID().toString();
+        var response=client.send(HttpRequest.newBuilder(URI.create(base("/api/v1/nodes/claim")))
+            .header("Content-Type","application/json").header("X-XSRF-TOKEN",csrf())
+            .header("X-MM-Claim-Attempt",attempt)
+            .POST(HttpRequest.BodyPublishers.ofString(claimJson(n,seed.orgA().getId(),now,signature))).build(),HttpResponse.BodyHandlers.ofString());
+        assertEquals(200,response.statusCode());
+        assertEquals(attempt,response.headers().firstValue("X-MM-Claim-Attempt").orElseThrow());
+        // The bounded native AsyncAppender must remain nonblocking for claims.
+        long deadline=System.nanoTime()+2_000_000_000L;
+        while (!output.getOut().contains("attemptId="+attempt+" source=backend untrusted=false phase=complete status=ok") && System.nanoTime()<deadline) Thread.sleep(10);
+        var lines=output.getOut().lines().filter(line->line.contains("attemptId="+attempt)).toList();
+        for (String phase: java.util.List.of("authorization_csrf","active_admin","organization","claim_reservation","identity_time_policy","ownership_binding","receipt_issuance","transaction_completion","complete")) {
+            assertTrue(lines.stream().anyMatch(line->line.contains("phase="+phase+" status=ok")),phase);
+        }
+        assertFalse(output.getOut().contains(signature));
+        assertFalse(output.getOut().contains(n.x()));
+        assertFalse(output.getOut().contains(mapper.readTree(response.body()).path("receipt").asText()));
     }
 }
