@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NodeBowlNumberTest {
     @Autowired NodeRepository nodes;
     @Autowired DataSource dataSource;
+    @Autowired org.springframework.core.env.Environment environment;
     @Autowired org.miezmerker.backend.crypto.CredentialIssuerService issuer;
 
     @Test
@@ -78,12 +79,18 @@ class NodeBowlNumberTest {
 
     @Test
     void migrationBackfillsDeterministicallyAndAdvancesSequence() throws Exception {
+        // Schema-mutating migration fixtures must never borrow the shared
+        // application pool: Flyway/JDBC schema changes can outlive a lease.
+        var fixture = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                environment.getRequiredProperty("spring.datasource.url"),
+                environment.getRequiredProperty("spring.datasource.username"),
+                environment.getProperty("spring.datasource.password", ""));
         String schema = "bowl_" + UUID.randomUUID().toString().replace("-", "");
-        var config = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema);
+        var config = Flyway.configure().dataSource(fixture).schemas(schema).defaultSchema(schema);
         config.target("20").load().migrate();
         var first = UUID.fromString("11111111-1111-4111-8111-111111111111");
         var second = UUID.fromString("22222222-2222-4222-8222-222222222222");
-        try (var c = dataSource.getConnection()) {
+        try (var c = fixture.getConnection()) {
             c.setSchema(schema);
             // Insert in reverse order, equal timestamps: UUID breaks the tie.
             for (var id : new UUID[]{second, first}) {
@@ -91,7 +98,7 @@ class NodeBowlNumberTest {
                     insert.setObject(1, id); insert.setString(2, id.toString()); insert.executeUpdate();
                 }
             }
-            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load().migrate();
+            Flyway.configure().dataSource(fixture).schemas(schema).defaultSchema(schema).load().migrate();
             try (var s = c.createStatement(); var r = s.executeQuery("SELECT node_id, bowl_number FROM nodes ORDER BY bowl_number")) {
                 assertTrue(r.next()); assertEquals(first, r.getObject(1, UUID.class)); assertEquals(1, r.getInt(2));
                 assertTrue(r.next()); assertEquals(second, r.getObject(1, UUID.class)); assertEquals(2, r.getInt(2));
@@ -106,8 +113,14 @@ class NodeBowlNumberTest {
             }
         } finally {
             // INFORMATION_SCHEMA is shared with other regression tests.
-            try (var c = dataSource.getConnection(); var statement = c.createStatement()) {
+            try (var c = fixture.getConnection(); var statement = c.createStatement()) {
                 statement.execute("DROP SCHEMA \"" + schema + "\" CASCADE");
+            }
+        }
+        try (var c = dataSource.getConnection(); var statement = c.createStatement()) {
+            assertEquals("public", c.getSchema().toLowerCase(java.util.Locale.ROOT));
+            try (var nodes = statement.executeQuery("SELECT count(*) FROM nodes")) {
+                assertTrue(nodes.next());
             }
         }
     }

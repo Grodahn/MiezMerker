@@ -36,7 +36,13 @@ export default defineConfig(({ mode, isPreview }) => {
       'import.meta.env.VITE_MM_BUILD_ID': JSON.stringify(new Date().toISOString()),
     } : {},
     build: { assetsInlineLimit: 0 }, // Replaceable artwork stays external and precached, including small SVGs.
-    plugins: [react(), VitePWA({
+    plugins: [react(), {
+      name: 'deployment-build-identity',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'build.json',
+          source: JSON.stringify({ sha: process.env.GITHUB_SHA ?? 'local', policy }) });
+      },
+    }, VitePWA({
       // Enable the manifest and dev service worker for Android HTTPS installation tests.
       // Keep standard HTTP development free of service-worker caching.
       devOptions: { enabled: mode === 'local-https' },
@@ -53,6 +59,10 @@ export default defineConfig(({ mode, isPreview }) => {
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,ico,svg,webp}'],
         navigateFallback: 'index.html',
+        // Match the deployed Caddy PWA namespaces. A controlling worker must
+        // never turn private/unknown URLs into a cached successful SPA page.
+        navigateFallbackAllowlist: [/^\/(?:\?.*)?$/, /^\/(?:sync|cats)(?:\?|$)/,
+          /^\/(?:nodes|feeding-sites)(?:\/|\?|$)/],
         navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/, /^\/admin(?:\/|\?|$)/],
         // HTTP business data is never cached by this foundation.
         runtimeCaching: [],

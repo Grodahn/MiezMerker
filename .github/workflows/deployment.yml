@@ -1,0 +1,41 @@
+name: Deployment approval
+on:
+  workflow_run:
+    workflows: [Foundation CI, ESP32-C3 board build, Offline credential interoperability, Local issuer setup, Windows IDF wrapper]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: deployment-approval-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+jobs:
+  approve:
+    if: >-
+      github.repository == 'Grodahn/MiezMerker' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      # workflow_run uses trusted default-branch code, never an upstream PR ref
+      # or files from a candidate archive. No host credentials exist in Actions.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify every final main CI run and immutable candidate identity
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/deployment/github.py
+      - name: Publish approval (payload remains in original tested CI run)
+        if: steps.gate.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployment-approved-${{ github.event.workflow_run.head_sha }}
+          overwrite: true
+          path: approval/approved.json
+          if-no-files-found: error
+          retention-days: 30

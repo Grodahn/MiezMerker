@@ -81,6 +81,8 @@ jobs:
         run: ./mvnw -B -ntp test
       - name: Check stable diagnostic catalog adapters
         run: python3 scripts/generate-error-codes.py --check
+      - name: Deployment format and failure recovery contracts
+        run: python3 -m unittest discover -s scripts/tests -p test_deployment.py -v
       - working-directory: app
         run: npm ci
       - name: Check backend spec and generated TypeScript client for drift
@@ -126,7 +128,22 @@ jobs:
           MM_E2E_CLOCK_POLICY: SIGNED_BACKEND_TIME
           VITE_MM_SECURITY_CLOCK_POLICY: SIGNED_BACKEND_TIME
           MM_E2E_DIST: dist-signed
-        run: npm run test:e2e -- e2e/registration.spec.ts e2e/clock-policy.spec.ts
+        run: npm run test:e2e -- e2e/registration.spec.ts e2e/clock-policy.spec.ts e2e/deployment.spec.ts
+      # A candidate is NOT a deployment approval. deployment.yml releases only
+      # after every main workflow, including all image variants, has succeeded.
+      # Reuse exactly the JAR and default PWA already tested above.
+      - name: Package field-alpha deployment candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Grodahn/MiezMerker'
+        run: python3 scripts/deployment/artifacts.py deployment-candidate
+      - name: Store deployment candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Grodahn/MiezMerker'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployment-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: deployment-candidate/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
