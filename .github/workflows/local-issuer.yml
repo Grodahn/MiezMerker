@@ -8,11 +8,6 @@ on:
       - '.github/workflows/local-issuer.yml'
   push:
     branches: [main]
-    paths:
-      - 'scripts/dev-issuer.ps1'
-      - 'scripts/DevIssuer.java'
-      - 'scripts/tests/test_dev_issuer.py'
-      - '.github/workflows/local-issuer.yml'
 permissions:
   contents: read
 concurrency:

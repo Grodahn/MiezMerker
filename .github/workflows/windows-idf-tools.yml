@@ -4,7 +4,6 @@ on:
     paths: ['firmware-esp32/tools/idf.ps1', 'firmware-esp32/tools/test_idf_wrapper.py', '.github/workflows/windows-idf-tools.yml']
   push:
     branches: [main]
-    paths: ['firmware-esp32/tools/idf.ps1', 'firmware-esp32/tools/test_idf_wrapper.py', '.github/workflows/windows-idf-tools.yml']
 permissions:
   contents: read
 concurrency:
