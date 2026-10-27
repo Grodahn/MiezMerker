@@ -276,6 +276,38 @@ class DeploymentTests(unittest.TestCase):
             command.assert_not_called()
 
     @unittest.skipUnless(os.name == "posix", "POSIX host filesystem and systemd deployment")
+    def test_failed_migration_invalidates_older_rollback_compatibility(self):
+        deployer = self.deployer()
+        older = 'c' * 40
+        old_state = dict(sha=OLD, previous=older, rollback_compatible=True,
+                         database_schema='before', database_migrations={})
+        deployer.state = dict(old_state)
+        (deployer.releases / OLD).mkdir()
+        pull.save(deployer.pending, dict(old=OLD, new=SHA, old_state=old_state,
+                                        database_schema=self.manifest['schema'], database_migrations=self.manifest['migrations']))
+        with patch.object(deployer, 'command'), patch.object(deployer, 'healthy', return_value=True):
+            deployer.recover()
+        self.assertFalse(deployer.state['rollback_compatible'])
+        self.assertEqual(deployer.state['database_schema'], self.manifest['schema'])
+        with self.assertRaisesRegex(ValueError, 'No recorded compatible'):
+            deployer.install(self.package, dict(self.manifest, sha=older), self.api.foundation, rollback=True)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX host filesystem and systemd deployment")
+    def test_held_poll_still_recovers_an_interrupted_operator_rollback(self):
+        deployer = self.deployer()
+        old_state = dict(sha=OLD, held=True, database_schema=self.manifest['schema'])
+        deployer.state = dict(old_state)
+        (deployer.releases / OLD).mkdir()
+        pull.save(deployer.pending, dict(old=OLD, new=SHA, old_state=old_state,
+                                        database_schema=self.manifest['schema'], database_migrations=self.manifest['migrations']))
+        with patch.object(deployer, 'command') as command, patch.object(deployer, 'healthy', return_value=True), \
+                patch.object(self.api, 'get', side_effect=AssertionError('held poll must not query GitHub')):
+            deployer.poll()
+        self.assertGreater(command.call_count, 0)
+        self.assertFalse(deployer.pending.exists())
+        self.assertTrue(deployer.state['held'])
+
+    @unittest.skipUnless(os.name == "posix", "POSIX host filesystem and systemd deployment")
     def test_download_interrupt_and_github_outage_preserve_state(self):
         deployer = self.deployer()
         with patch.object(self.api, "download", side_effect=OSError("interrupted")), patch.object(deployer, "command") as command:

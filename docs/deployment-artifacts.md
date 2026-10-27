@@ -76,6 +76,9 @@ never rolled back by changing the JAR. If recovery itself fails, the transaction
 remains for operator intervention. Existing PostgreSQL, photos and issuer keys
 are always persistent and external to releases. Schema equality alone is not
 proof of semantic data compatibility; review app/data contract changes as well.
+After a possibly applied migration, an older compatibility approval cannot justify
+another step back to an even older application. That rollback stays blocked.
+Interrupted activation is recovered even when ordinary polling is held.
 
 For an operator rollback, invoke the configured client with `--rollback` as its
 dedicated deploy user. It acquires the same operation lock, verifies the recorded

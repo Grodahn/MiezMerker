@@ -106,6 +106,11 @@ class Deployer:
         self.state = transaction["old_state"]
         # A JAR rollback never rolls Flyway back. Conservatively keep every
         # possibly applied migration in the database high-water mark.
+        if transaction["old_state"].get("database_schema") != transaction["database_schema"]:
+            # Approval covers returning to old, not the even older release
+            # recorded in old_state.previous. That earlier compatibility proof
+            # predates this possibly applied migration set.
+            self.state["rollback_compatible"] = False
         self.state.update(database_schema=transaction["database_schema"],
                           database_migrations=transaction["database_migrations"])
         self.reject(transaction["new"])
@@ -199,12 +204,12 @@ class Deployer:
             shutil.rmtree(path)
 
     def poll(self):
-        if self.state.get("held"):
-            print("Polling held after operator rollback; explicit --resume required")
-            return
         if (self.root / "halt.json").exists():
             raise RuntimeError("Deployment halted after recovery failure; operator required")
         self.recover()
+        if self.state.get("held"):
+            print("Polling held after operator rollback; explicit --resume required")
+            return
         runs = self.api.get("/actions/workflows/ci.yml/runs?event=push&branch=main&per_page=20")["workflow_runs"]
         eligible = [r for r in runs if trusted(r, self.api.repository)
                     and r["status"] == "completed" and r["conclusion"] == "success"]
@@ -289,7 +294,7 @@ class Deployer:
     def rollback(self):
         if self.pending.exists() or (self.root / "halt.json").exists():
             raise ContractError("Resolve interrupted/failed recovery before manual rollback")
-        sha = self.state.get("previous", "")
+        sha = self.state.get("previous") or ""
         if not SHA.fullmatch(sha):
             raise ContractError("No previous release")
         folder = self.releases / sha
