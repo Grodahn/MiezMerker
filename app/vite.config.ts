@@ -59,6 +59,10 @@ export default defineConfig(({ mode, isPreview }) => {
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,ico,svg,webp}'],
         navigateFallback: 'index.html',
+        // Match the deployed Caddy PWA namespaces. A controlling worker must
+        // never turn private/unknown URLs into a cached successful SPA page.
+        navigateFallbackAllowlist: [/^\/(?:\?.*)?$/, /^\/(?:sync|cats)(?:\?|$)/,
+          /^\/(?:nodes|feeding-sites)(?:\/|\?|$)/],
         navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/, /^\/admin(?:\/|\?|$)/],
         // HTTP business data is never cached by this foundation.
         runtimeCaching: [],
