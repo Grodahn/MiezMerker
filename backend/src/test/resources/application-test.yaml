@@ -3,6 +3,12 @@ spring:
     url: ${TEST_DB_URL:jdbc:h2:mem:miezmerker;MODE=PostgreSQL;DB_CLOSE_DELAY=-1}
     username: ${TEST_DB_USER:sa}
     password: ${TEST_DB_PASSWORD:}
+    hikari:
+      # Many distinct cached Spring test contexts share the CI PostgreSQL server.
+      # Do not eagerly keep ten idle connections per context. The maximum pool
+      # size and concurrency coverage stay unchanged; fixture connections remain
+      # independent of the application pool.
+      minimum-idle: 0
 server:
   servlet:
     session:
