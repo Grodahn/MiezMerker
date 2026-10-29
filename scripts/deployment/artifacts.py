@@ -28,7 +28,7 @@ def migrations(jar):
         return {n.removeprefix("BOOT-INF/classes/db/migration/"):
                 hashlib.sha256(archive.read(n)).hexdigest()
                 for n in sorted(archive.namelist())
-                if n.startswith("BOOT-INF/classes/db/migration/") and n.endswith(".sql")}
+                if n.startswith("BOOT-INF/classes/db/migration/") and n.endswith((".sql", ".class"))}
 
 
 def schema_id(items):
@@ -74,7 +74,7 @@ def extract(archive_path, target):
         archive.extractall(target)
 
 
-def verify(root, sha, run_id, attempt):
+def verify(root, sha, run_id, attempt, *, allow_legacy=False):
     manifest = json.loads((root / "manifest.json").read_text())
     for key, value in dict(format=1, sha=sha, run_id=run_id, attempt=attempt, policy=POLICY).items():
         if manifest.get(key) != value:
@@ -85,6 +85,10 @@ def verify(root, sha, run_id, attempt):
     if actual != manifest["files"] or not {"backend.jar", "public/index.html", "public/sw.js", "public/build.json"} <= actual.keys():
         raise ContractError("Artifact checksum/completeness mismatch")
     migration_map = migrations(root / "backend.jar")
+    # Already admitted rollback targets may predate Java fingerprints. Their
+    # complete JAR checksum remains mandatory. Never admit a new such bundle.
+    if allow_legacy and not any(n.endswith(".class") for n in manifest["migrations"]):
+        migration_map = {n: h for n, h in migration_map.items() if n.endswith(".sql")}
     if not migration_map or migration_map != manifest["migrations"] or schema_id(migration_map) != manifest["schema"]:
         raise ContractError("Migration manifest mismatch")
     if json.loads((root / "public/build.json").read_text()) != {"sha": sha, "policy": POLICY}:
