@@ -81,6 +81,8 @@ class DeploymentTests(unittest.TestCase):
         jar.parent.mkdir(parents=True)
         with zipfile.ZipFile(jar, "w") as archive:
             archive.writestr("BOOT-INF/classes/db/migration/V1__init.sql", "create table test(id int);")
+            archive.writestr("BOOT-INF/classes/db/migration/V22__immutable.class", b"java-migration")
+            archive.writestr("BOOT-INF/classes/db/migration/V22__immutable$Helper.class", b"migration-helper")
         public = self.source / "app/dist"
         public.mkdir(parents=True)
         for name in ["index.html", "sw.js"]:
@@ -125,6 +127,60 @@ class DeploymentTests(unittest.TestCase):
         (self.package / "public/index.html").unlink()
         with self.assertRaisesRegex(ValueError, "checksum"):
             artifacts.verify(self.package, SHA, self.api.foundation["id"], 1)
+
+    def test_java_migration_changes_cannot_bypass_schema_approval(self):
+        deployer = self.deployer()
+        previous = deployer.releases / OLD
+        import shutil
+        shutil.copytree(self.package, previous)
+        legacy = copy.deepcopy(self.manifest)
+        legacy["migrations"] = {n: h for n, h in legacy["migrations"].items() if n.endswith(".sql")}
+        legacy["schema"] = artifacts.schema_id(legacy["migrations"])
+        (previous / "manifest.json").write_text(json.dumps(legacy))
+        deployer.state = dict(sha=OLD, database_schema=legacy["schema"], database_migrations=legacy["migrations"])
+        # Identical Java code still needs a fresh root/backup approval when
+        # adopting the complete schema fingerprint on an existing host.
+        with self.assertRaisesRegex(ValueError, "local migration approval"):
+            deployer.migration_guard(self.manifest)
+        for name in ["V22__immutable.class", "V22__immutable$Helper.class"]:
+            self.assertIn(name, self.manifest["migrations"])
+            for remove in [False, True]:
+                with self.subTest(name=name, remove=remove):
+                    altered = copy.deepcopy(self.manifest)
+                    if remove:
+                        altered["migrations"].pop(name)
+                    else:
+                        altered["migrations"][name] = "changed-bytecode"
+                    altered["schema"] = artifacts.schema_id(altered["migrations"])
+                    with self.assertRaisesRegex(ValueError, "changed/removed"):
+                        deployer.migration_guard(altered)
+        # A possibly applied newer Java migration in state must not be replaced
+        # by the older current JAR when recovering/stepping back.
+        deployer.state["database_migrations"] = dict(self.manifest["migrations"])
+        deployer.state["database_migrations"]["V22__immutable.class"] = "newer-high-water"
+        with self.assertRaisesRegex(ValueError, "changed/removed"):
+            deployer.migration_guard(self.manifest)
+
+    def test_legacy_java_manifest_cannot_admit_new_candidates(self):
+        legacy = copy.deepcopy(self.manifest)
+        legacy["migrations"] = {n: h for n, h in legacy["migrations"].items() if n.endswith(".sql")}
+        legacy["schema"] = artifacts.schema_id(legacy["migrations"])
+        (self.package / "manifest.json").write_text(json.dumps(legacy))
+        with self.assertRaisesRegex(ValueError, "Migration manifest mismatch"):
+            artifacts.verify(self.package, SHA, self.api.foundation["id"], 1)
+        self.assertEqual(artifacts.verify(self.package, SHA, self.api.foundation["id"], 1,
+                                         allow_legacy=True), legacy)
+
+    def test_initial_failure_java_high_water_without_current_release(self):
+        deployer = self.deployer()
+        deployer.state = dict(database_schema=self.manifest["schema"],
+                              database_migrations=self.manifest["migrations"])
+        deployer.migration_guard(self.manifest)
+        altered = copy.deepcopy(self.manifest)
+        altered["migrations"]["V22__immutable.class"] = "changed-bytecode"
+        altered["schema"] = artifacts.schema_id(altered["migrations"])
+        with self.assertRaisesRegex(ValueError, "changed/removed"):
+            deployer.migration_guard(altered)
 
     def test_zip_traversal_symlink_duplicate_and_bomb(self):
         # On Windows ZipInfo normalizes backslashes while reading, before our
@@ -349,6 +405,7 @@ class DeploymentTests(unittest.TestCase):
         deployer.state["sha"] = OLD
         (deployer.releases / OLD).mkdir()
         (deployer.releases / OLD / "manifest.json").write_text(json.dumps(self.manifest))
+        (deployer.releases / OLD / "backend.jar").write_bytes((self.package / "backend.jar").read_bytes())
         deployer.migration_guard(self.manifest)  # unchanged schema needs no approval
         altered = copy.deepcopy(self.manifest)
         altered["schema"] = "new"

@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 import zipfile
 
-from artifacts import ContractError, MAX_BYTES, SHA, extract, verify
+from artifacts import ContractError, MAX_BYTES, SHA, extract, migrations, verify
 from github import GATE, GitHub, approval, trusted
 
 
@@ -124,10 +124,18 @@ class Deployer:
         if self.state.get("database_schema"):
             previous = {"schema": self.state["database_schema"],
                         "migrations": self.state["database_migrations"]}
-        if previous and previous["schema"] == manifest["schema"]:
-            return
-        if previous and any(manifest["migrations"].get(n) != h for n, h in previous["migrations"].items()):
-            raise ContractError("Applied Flyway migrations changed/removed; refusing update")
+        if previous:
+            applied = dict(previous["migrations"])
+            # Legacy state tracked SQL only. Protect Java bytecode from the
+            # admitted application too, without weakening any DB high-water mark.
+            java_baseline = migrations(self.releases / old / "backend.jar") if old else {}
+            for name, checksum in java_baseline.items():
+                if name.endswith(".class"):
+                    applied.setdefault(name, checksum)
+            if any(manifest["migrations"].get(n) != h for n, h in applied.items()):
+                raise ContractError("Applied Flyway migrations changed/removed; refusing update")
+            if previous["schema"] == manifest["schema"]:
+                return
         path = Path(self.config["migration_approvals"]) / (manifest["sha"] + ".json")
         if not path.is_file() or path.is_symlink():
             raise ContractError("Schema/initial deployment requires local migration approval and backup")
@@ -299,7 +307,7 @@ class Deployer:
             raise ContractError("No previous release")
         folder = self.releases / sha
         identity = json.loads((folder / "manifest.json").read_text())
-        manifest = verify(folder, sha, identity["run_id"], identity["attempt"])
+        manifest = verify(folder, sha, identity["run_id"], identity["attempt"], allow_legacy=True)
         self.install(folder, manifest, {"id": self.state["run_id"], "run_number": self.state["run_number"]}, rollback=True)
 
 

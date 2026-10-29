@@ -3,7 +3,7 @@
 Foundation CI reuses its tested Spring Boot executable JAR and **app/dist**;
 **dist-signed is never published for this environment**. Both PWA builds and
 their browser tests remain. Vite emits build.json with full GITHUB_SHA and the
-compiled policy. The candidate manifest binds JAR, PWA, Flyway SQL checksums,
+compiled policy. The candidate manifest binds JAR, PWA, Flyway SQL and Java bytecode checksums,
 FIELD_ALPHA_PHONE_CLOCK, full SHA, Foundation run ID and attempt. The artifact
 contains application outputs only; host configuration and credentials are absent.
 
@@ -67,6 +67,17 @@ fingerprint, explicit rollback compatibility, a successful backup within 24 hour
 an expiry, and a live backup/USB guard. Modified or removed applied migrations are
 always rejected. Incompatible/destructive migrations require a separate operator
 procedure; **do not grant a compatibility approval to bypass that procedure**.
+
+Java migration classes and their helpers under `BOOT-INF/classes/db/migration/`
+participate in the schema fingerprint, including V22. Updating a legacy SQL-only
+host requires updating the pull-client tooling before the next deployment;
+the old verifier safely rejects the more complete candidate. The first complete
+fingerprint needs a fresh local backup/compatibility approval even when existing
+Java bytecode is identical. Review the installed JAR and actual Flyway history
+when adopting it. Changed/removed Java bytecode from the admitted JAR is rejected,
+and database high-water fingerprints take precedence over older application code.
+Legacy bundles remain verifiable only as already admitted compatible rollback
+targets; they cannot be accepted as new candidates by the updated client.
 
 On failed start/health or interrupted activation, the previous admitted compatible
 application is restored and checked, and the bad SHA is quarantined. On initial
